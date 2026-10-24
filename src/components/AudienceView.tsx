@@ -1,0 +1,363 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { PresentationState } from '../types';
+import { api } from '../services/api';
+import { mediaService, getMediaTypeFromExtension } from '../services/mediaService';
+
+export const AudienceView: React.FC = () => {
+  const [presentationState, setPresentationState] = useState<PresentationState>({
+    currentPresentationId: null,
+    currentSlideId: null,
+    currentSlideIndex: 0,
+    totalSlides: 0,
+    currentSlide: null,
+    nextSlide: null,
+    isBlackout: false,
+    isLive: false,
+    mediaPlayback: null,
+  });
+
+  const [bgFailed, setBgFailed] = useState<boolean>(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    // Initial fetch of current presentation state
+    api.getPresentationState().then((state) => {
+      setPresentationState(state);
+    });
+
+    // Subscribe to state change broadcasts from operator window
+    let unsubscribe: (() => void) | undefined;
+    api.subscribeStateChanges((newState) => {
+      setPresentationState(newState);
+    }).then((unsub) => {
+      unsubscribe = unsub;
+    });
+
+    // Disable keyboard event bubble in audience window to prevent duplicate presentation commands
+    const blockKeys = (e: KeyboardEvent) => {
+      if (e.key === ' ' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', blockKeys);
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+      window.removeEventListener('keydown', blockKeys);
+      if (videoRef.current) {
+        try {
+          videoRef.current.pause();
+          videoRef.current.src = '';
+          videoRef.current.load();
+        } catch (_) {}
+      }
+      if (audioRef.current) {
+        try {
+          audioRef.current.pause();
+          audioRef.current.src = '';
+          audioRef.current.load();
+        } catch (_) {}
+      }
+    };
+  }, []);
+
+  const { isLive, isBlackout, currentSlide, mediaPlayback } = presentationState;
+
+  // Sync Video playback state with mediaPlayback
+  useEffect(() => {
+    if (!videoRef.current || !mediaPlayback) return;
+    const v = videoRef.current;
+
+    v.muted = !!mediaPlayback.isMuted;
+    v.volume = typeof mediaPlayback.volume === 'number' ? mediaPlayback.volume : 1.0;
+    v.loop = mediaPlayback.isLooping !== false;
+
+    if (mediaPlayback.isPlaying && v.paused) {
+      v.play().catch(() => {});
+    } else if (!mediaPlayback.isPlaying && !v.paused) {
+      v.pause();
+    }
+  }, [mediaPlayback]);
+
+  // Sync Audio playback state
+  useEffect(() => {
+    if (!audioRef.current || !mediaPlayback || mediaPlayback.mediaType !== 'audio') return;
+    const a = audioRef.current;
+
+    a.muted = !!mediaPlayback.isMuted;
+    a.volume = typeof mediaPlayback.volume === 'number' ? mediaPlayback.volume : 1.0;
+    a.loop = mediaPlayback.isLooping !== false;
+
+    if (mediaPlayback.isPlaying && a.paused) {
+      a.play().catch(() => {});
+    } else if (!mediaPlayback.isPlaying && !a.paused) {
+      a.pause();
+    }
+  }, [mediaPlayback]);
+
+  // Reset background failure status when slide or media URL changes
+  useEffect(() => {
+    setBgFailed(false);
+  }, [currentSlide?.backgroundImage, mediaPlayback?.mediaUrl]);
+
+  // Determine motion background video source:
+  // Either from slide.backgroundImage (if it's a video file) or from active mediaPlayback of type video
+  const slideBgType = currentSlide?.backgroundImage
+    ? getMediaTypeFromExtension(currentSlide.backgroundImage)
+    : null;
+
+  const motionVideoUrl =
+    slideBgType === 'video'
+      ? mediaService.resolveMediaUrl(currentSlide?.backgroundImage)
+      : mediaPlayback?.mediaType === 'video' && mediaPlayback.mediaUrl
+      ? mediaPlayback.mediaUrl
+      : null;
+
+  const isFullscreenVideoMode =
+    mediaPlayback?.mediaType === 'video' &&
+    (!currentSlide || !currentSlide.body.trim()) &&
+    mediaPlayback.mediaUrl;
+
+  // Render pure black screen when blackout is active or not live
+  if (isBlackout || !isLive) {
+    return (
+      <div
+        data-testid="audience-blackout"
+        style={{
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: '#000000',
+          cursor: 'none',
+          overflow: 'hidden',
+        }}
+      />
+    );
+  }
+
+  // Fullscreen standalone video presentation mode
+  if (isFullscreenVideoMode && mediaPlayback) {
+    const objectFit =
+      mediaPlayback.fitMode === 'contain'
+        ? 'contain'
+        : mediaPlayback.fitMode === 'stretch'
+        ? 'fill'
+        : 'cover';
+
+    return (
+      <div
+        data-testid="audience-video-fullscreen"
+        style={{
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: '#000000',
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'none',
+        }}
+      >
+        <video
+          ref={videoRef}
+          src={mediaPlayback.mediaUrl || ''}
+          autoPlay={mediaPlayback.isPlaying}
+          loop={mediaPlayback.isLooping}
+          muted={mediaPlayback.isMuted}
+          playsInline
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit,
+          }}
+          onError={() => {
+            api.logClientDiagnostic(
+              'ERROR',
+              'AudienceView',
+              'Standalone video presentation failed to play',
+              mediaPlayback.mediaUrl || undefined
+            ).catch(() => {});
+          }}
+        />
+      </div>
+    );
+  }
+
+  // If no current slide and no video, show clean black
+  if (!currentSlide) {
+    return (
+      <div
+        data-testid="audience-blackout"
+        style={{
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: '#000000',
+          cursor: 'none',
+          overflow: 'hidden',
+        }}
+      />
+    );
+  }
+
+  // Calculate dynamic font scale relative to screen size
+  const getFontSize = (size?: string) => {
+    switch (size) {
+      case 'small':
+        return 'clamp(1.5rem, 3.5vw, 2.5rem)';
+      case 'medium':
+        return 'clamp(2rem, 4.5vw, 3.5rem)';
+      case 'large':
+        return 'clamp(2.5rem, 5.5vw, 4.5rem)';
+      case 'xlarge':
+        return 'clamp(3rem, 6.8vw, 5.8rem)';
+      default:
+        return 'clamp(2.5rem, 5.5vw, 4.5rem)';
+    }
+  };
+
+  const textAlign = currentSlide.textAlignment || 'center';
+  const alignItems =
+    textAlign === 'center'
+      ? 'center'
+      : textAlign === 'right'
+      ? 'flex-end'
+      : 'flex-start';
+
+  const justifyContent =
+    currentSlide.verticalAlignment === 'top'
+      ? 'flex-start'
+      : currentSlide.verticalAlignment === 'bottom'
+      ? 'flex-end'
+      : 'center';
+
+  const isImageBackground =
+    currentSlide.backgroundImage && slideBgType !== 'video' && !bgFailed;
+
+  return (
+    <div
+      data-testid="audience-display"
+      style={{
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: currentSlide.backgroundColor || '#0a0f1d',
+        backgroundImage: isImageBackground
+          ? `url("${mediaService.resolveMediaUrl(currentSlide.backgroundImage)}")`
+          : undefined,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        color: currentSlide.foregroundColor || '#ffffff',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: justifyContent,
+        alignItems: alignItems,
+        padding: '5vw 6vw',
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+        position: 'relative',
+        cursor: 'none',
+        userSelect: 'none',
+      }}
+    >
+      {/* Background Image Preload / Error Fallback Watcher */}
+      {currentSlide.backgroundImage && slideBgType !== 'video' && (
+        <img
+          src={mediaService.resolveMediaUrl(currentSlide.backgroundImage)}
+          alt="bg-preload"
+          style={{ display: 'none' }}
+          onError={() => {
+            setBgFailed(true);
+            api.logClientDiagnostic(
+              'WARN',
+              'AudienceView',
+              'Background image failed to load; fell back to theme background color',
+              currentSlide.backgroundImage || undefined
+            ).catch(() => {});
+          }}
+        />
+      )}
+
+      {/* Motion Background Video Behind Lyrics (Seamless Across Slide Changes) */}
+      {motionVideoUrl && (
+        <video
+          ref={videoRef}
+          data-testid="audience-motion-background"
+          src={motionVideoUrl}
+          autoPlay
+          loop
+          muted={mediaPlayback ? mediaPlayback.isMuted : true}
+          playsInline
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            zIndex: 0,
+            pointerEvents: 'none',
+          }}
+          onError={() => {
+            setBgFailed(true);
+            api.logClientDiagnostic(
+              'WARN',
+              'AudienceView',
+              'Motion background video failed to load; fell back to theme background color',
+              motionVideoUrl || undefined
+            ).catch(() => {});
+          }}
+        />
+      )}
+
+      {/* Invisible Background Audio Player */}
+      {mediaPlayback?.mediaType === 'audio' && mediaPlayback.mediaUrl && (
+        <audio
+          ref={audioRef}
+          data-testid="audience-audio-player"
+          src={mediaPlayback.mediaUrl}
+          autoPlay={mediaPlayback.isPlaying}
+          loop={mediaPlayback.isLooping}
+          muted={mediaPlayback.isMuted}
+          style={{ display: 'none' }}
+        />
+      )}
+
+      {/* Optional Dark Scrim / Color Overlay */}
+      {currentSlide.overlayColor && (
+        <div
+          data-testid="audience-slide-overlay"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backgroundColor: currentSlide.overlayColor,
+            zIndex: 1,
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* Lyrics / Slide Text Overlay */}
+      <div
+        data-testid="audience-slide-body"
+        className="multilingual-text"
+        style={{
+          position: 'relative',
+          zIndex: 2,
+          width: '100%',
+          textAlign: textAlign,
+          fontSize: getFontSize(currentSlide.fontSize),
+          fontWeight: currentSlide.fontWeight === 'normal' ? 500 : 700,
+          fontFamily: currentSlide.fontFamily || 'var(--font-family)',
+          lineHeight: currentSlide.lineSpacing || 1.35,
+          letterSpacing: '0.015em',
+          textShadow:
+            currentSlide.textShadow !== null && currentSlide.textShadow !== undefined
+              ? currentSlide.textShadow
+              : '0 2px 12px rgba(0, 0, 0, 0.85)',
+        }}
+      >
+        {currentSlide.body}
+      </div>
+    </div>
+  );
+};
+
+export default AudienceView;

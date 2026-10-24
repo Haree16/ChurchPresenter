@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for Church Presenter desktop",
+  "windows": ["main", "audience", "stage", "overlay"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:event:default",
+    "opener:default"
+  ]
+}

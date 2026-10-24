@@ -1,0 +1,86 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Church Presenter",
+  "version": "1.0.0",
+  "identifier": "com.churchpresenter.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Church Presenter",
+        "label": "main",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "devtools": true
+      },
+      {
+        "title": "Church Presenter - Audience Display",
+        "label": "audience",
+        "url": "index.html?window=audience",
+        "width": 1024,
+        "height": 768,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": false,
+        "decorations": false,
+        "skipTaskbar": true,
+        "devtools": true
+      },
+      {
+        "title": "Church Presenter - Stage Confidence Display",
+        "label": "stage",
+        "url": "index.html?window=stage",
+        "width": 1024,
+        "height": 768,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": false,
+        "decorations": false,
+        "skipTaskbar": true,
+        "devtools": true
+      },
+      {
+        "title": "Church Presenter - Livestream Overlay",
+        "label": "overlay",
+        "url": "index.html?window=overlay",
+        "width": 1920,
+        "height": 1080,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "devtools": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost data: blob:; media-src 'self' asset: https://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ws: http:; script-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Presentation",
+    "shortDescription": "Offline-First Church Presentation & Live Production Desktop Software",
+    "longDescription": "High-performance church presentation desktop application supporting worship lyrics, scripture lookup, ordered service playlists, motion backgrounds, timers, stage confidence monitors, and livestream lower-thirds.",
+    "copyright": "Copyright © 2026 Church Presenter Contributors",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
