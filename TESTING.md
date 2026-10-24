@@ -17,10 +17,10 @@ Because Church Presenter operates in live Sunday worship environments, presentat
 
 ### Run Complete Test Suite
 ```bash
-# 1. Frontend Test Suite (17 test files, 103 passing tests)
+# 1. Frontend Test Suite (18 test files, 109 passing tests in Vitest)
 npm test -- --run
 
-# 2. Rust Backend Test Suite (13 passing tests)
+# 2. Rust Backend Test Suite (20 passing tests in Cargo)
 cargo test --manifest-path src-tauri/Cargo.toml
 
 # 3. TypeScript Typecheck and Vite Production Build
@@ -31,33 +31,41 @@ npm run build
 
 ## 3. Rust Backend Test Suite
 
-Located in `src-tauri/src/db.rs`, backend unit tests run in an in-memory SQLite environment with WAL mode and foreign key constraints enabled.
+Located in `src-tauri/src/`, backend tests verify database persistence, slide navigation, action dispatching, monitor positioning, and remote server security without requiring a live graphical window.
 
-| Test Function | Phase | Verified Capability |
+| Test Function | Source Module | Verified Capability |
 | :--- | :--- | :--- |
-| `test_migrations_and_initial_seeds` | Phase 1 | Sequential execution of Migrations 1 through 6, schema integrity, default themes |
-| `test_slide_generation_from_song` | Phase 1 | Parsing song sections into ordered presentation slides with title metadata |
-| `test_slide_reordering_and_delete` | Phase 1 | Drag-and-drop slide index reordering and atomic slide deletion |
-| `test_backup_and_restore` | Phase 1 | Exporting and importing full database JSON snapshots |
-| `test_song_crud_and_sections` | Phase 2 | Creating, updating, and querying worship songs with multi-stanza verses |
-| `test_song_snapshot_isolation_from_library` | Phase 2 | Editing a library song does not corrupt already-generated presentation slides |
-| `test_song_import_and_export_modes` | Phase 2 | JSON interchange conflict strategies (`skip`, `copy`, `update`) |
-| `test_theme_crud_and_built_in_protection` | Phase 2 | Preventing deletion or modification of built-in system themes |
-| `test_service_crud_and_playlist_operations` | Phase 3 | Service playlist items CRUD, reordering, and item type metadata |
-| `test_bible_passage_lookup_and_offline_query`| Phase 3 | Offline verse lookup, chapter queries, and multi-verse slide generation |
-| `test_phase4_media_timers_and_stage` | Phase 4 | Media assets tracking, stage configuration, drift-free epoch countdown timers |
-| `test_phase5_advanced_production` | Phase 5 | Independent output configs, overlay configs, mobile remote tokens, MIDI/OSC |
-| `test_phase6_database_safety_and_workspace_state` | Phase 6 | Pre-migration automatic backups, `PRAGMA integrity_check`, workspace recovery |
+| `test_migrations_and_initial_seeds` | `db.rs` | Sequential execution of Migrations 1 through 6, schema integrity, default themes |
+| `test_slide_generation_from_song` | `db.rs` | Parsing song sections into ordered presentation slides with title metadata |
+| `test_slide_reordering_and_delete` | `db.rs` | Drag-and-drop slide index reordering and atomic slide deletion |
+| `test_backup_and_restore` | `db.rs` | Exporting and importing full database JSON snapshots |
+| `test_song_crud_and_sections` | `db.rs` | Creating, updating, and querying worship songs with multi-stanza verses |
+| `test_song_snapshot_isolation_from_library` | `db.rs` | Editing a library song does not corrupt already-generated presentation slides |
+| `test_song_import_and_export_modes` | `db.rs` | JSON interchange conflict strategies (`skip`, `copy`, `update`) |
+| `test_theme_crud_and_built_in_protection` | `db.rs` | Preventing deletion or modification of built-in system themes |
+| `test_service_crud_and_playlist_operations` | `db.rs` | Service playlist items CRUD, reordering, and item type metadata |
+| `test_bible_passage_lookup_and_offline_query`| `db.rs` | Offline verse lookup across all 66 canonical books (Tamil & English) and reference parser |
+| `test_phase4_media_timers_and_stage` | `db.rs` | Media assets tracking, stage configuration, drift-free epoch countdown timers |
+| `test_phase5_advanced_production` | `db.rs` | Independent output configs, overlay configs, mobile remote tokens, MIDI/OSC |
+| `test_phase6_database_safety_and_workspace_state` | `db.rs` | Pre-migration automatic backups, `PRAGMA integrity_check`, workspace recovery |
+| `test_monitor_resolution_and_matching` | `display.rs` | Target monitor resolution by exact name, index, or geometry coordinates (`pos:X,Y;size:WxH`) |
+| `test_presentation_navigation_core` | `presentation.rs` | Headless slide next/prev transitions and blackout state mutations |
+| `test_timer_state_core` | `presentation.rs` | Headless timer updates and countdown calculations |
+| `test_action_dispatch_core` | `actions.rs` | Pure dispatch logic, service item navigation, and 80ms atomic action debounce |
+| `test_secure_pin_format` | `remote.rs` | Cryptographically secure 6-digit PIN generation with non-predictable entropy |
+| `test_ip_lockout_mechanism` | `remote.rs` | Brute-force protection locking out client IP after 5 failed authentication attempts |
+| `test_extract_token_query_fallback` | `remote.rs` | Header-based token extraction (`X-Session-Token`, `Bearer`) with query param fallback |
 
 ---
 
 ## 4. Frontend Vitest Test Suites
 
-Located in `tests/`, covering all user interfaces, presentation state machines, and keyboard navigation.
+Located in `tests/`, covering user interfaces, state management, and format interchange. The frontend tests run against fast in-memory stores and mock services to provide instant UI feedback during development.
 
 | Test File | Tests | Focus Area |
 | :--- | :--- | :--- |
 | `backup-restore.test.ts` | 3 | Full database export/import and schema verification |
+| `bible-reference-and-openlyrics.test.ts` | 6 | Quick reference parser (English & Tamil) and OpenLyrics/OpenSong XML import |
 | `database-safety-and-migrations.test.ts` | 5 | Workspace state persistence, integrity check IPC, and diagnostic logging |
 | `display-manager.test.ts` | 3 | Multi-monitor enumeration and audience window creation |
 | `independent-outputs.test.ts` | 7 | Secondary outputs, custom resolutions, safe margins, and layout modes |

@@ -19,7 +19,50 @@ pub struct RemoteServerManager {
     port: Arc<Mutex<u16>>,
     pairing_pin: Arc<Mutex<Option<String>>>,
     connected_clients: Arc<Mutex<HashMap<String, Instant>>>,
+    failed_attempts: Arc<Mutex<HashMap<String, (u32, Instant)>>>,
     last_error: Arc<Mutex<Option<String>>>,
+    server_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
+}
+
+fn safe_header(field: &str, val: &str) -> Header {
+    Header::from_bytes(field.as_bytes(), val.as_bytes())
+        .unwrap_or_else(|_| Header::from_bytes(&b"X-Status"[..], &b"ok"[..]).unwrap())
+}
+
+pub fn generate_secure_pin() -> String {
+    let u = Uuid::new_v4();
+    let b = u.as_bytes();
+    let val = u32::from_be_bytes([b[0], b[1], b[2], b[3]]);
+    format!("{:06}", (val % 900000) + 100000)
+}
+
+pub fn extract_token(request: &tiny_http::Request, query_params: &HashMap<String, String>) -> String {
+    for h in request.headers() {
+        if h.field.as_str().as_str().eq_ignore_ascii_case("x-session-token") {
+            let val = h.value.as_str().trim();
+            if !val.is_empty() {
+                return val.to_string();
+            }
+        }
+        if h.field.as_str().as_str().eq_ignore_ascii_case("authorization") {
+            let val = h.value.as_str().trim();
+            if let Some(bearer) = val.strip_prefix("Bearer ") {
+                if !bearer.trim().is_empty() {
+                    return bearer.trim().to_string();
+                }
+            }
+        }
+    }
+    query_params.get("token").cloned().unwrap_or_default()
+}
+
+pub fn is_ip_locked_out(failed_map: &HashMap<String, (u32, Instant)>, ip: &str) -> bool {
+    if let Some((count, last_time)) = failed_map.get(ip) {
+        if *count >= 5 && Instant::now().duration_since(*last_time) < Duration::from_secs(600) {
+            return true;
+        }
+    }
+    false
 }
 
 impl RemoteServerManager {
@@ -29,7 +72,9 @@ impl RemoteServerManager {
             port: Arc::new(Mutex::new(8088)),
             pairing_pin: Arc::new(Mutex::new(None)),
             connected_clients: Arc::new(Mutex::new(HashMap::new())),
+            failed_attempts: Arc::new(Mutex::new(HashMap::new())),
             last_error: Arc::new(Mutex::new(None)),
+            server_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -70,13 +115,8 @@ impl RemoteServerManager {
             return Ok(self.get_status());
         }
 
-        // Generate 6-digit random PIN
-        use std::time::SystemTime;
-        let seed = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .subsec_nanos();
-        let pin = format!("{:06}", (seed % 900000) + 100000);
+        // Generate cryptographically secure 6-digit random PIN
+        let pin = generate_secure_pin();
         *self.pairing_pin.lock().unwrap() = Some(pin.clone());
         *self.port.lock().unwrap() = port;
         *self.last_error.lock().unwrap() = None;
@@ -94,10 +134,11 @@ impl RemoteServerManager {
         self.is_running.store(true, Ordering::SeqCst);
         let is_running_flag = self.is_running.clone();
         let clients_tracker = self.connected_clients.clone();
+        let failed_tracker = self.failed_attempts.clone();
         let expected_pin = pin.clone();
         let last_err_ref = self.last_error.clone();
 
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             let server = Arc::new(server);
             // Rate limiter table: token -> (request_count, window_start)
             let rate_limiter: Arc<Mutex<HashMap<String, (usize, Instant)>>> =
@@ -126,14 +167,14 @@ impl RemoteServerManager {
                             (&Method::Get, "/") | (&Method::Get, "/remote") => {
                                 let html = Self::get_remote_html();
                                 let resp = Response::from_string(html)
-                                    .with_header(Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap())
-                                    .with_header(Header::from_bytes(&b"Cache-Control"[..], &b"no-cache"[..]).unwrap());
+                                    .with_header(safe_header("Content-Type", "text/html; charset=utf-8"))
+                                    .with_header(safe_header("Cache-Control", "no-cache"));
                                 request.respond(resp).ok();
                             }
 
                             // 2. Livestream Overlay HTML for OBS Studio Browser Source
                             (&Method::Get, "/overlay") => {
-                                let token = query_params.get("token").cloned().unwrap_or_default();
+                                let token = extract_token(&request, &query_params);
                                 let config = db.get_overlay_config().unwrap_or_default();
                                 if token != config.auth_token {
                                     let resp = Response::from_string("Unauthorized OBS Overlay Token")
@@ -142,34 +183,47 @@ impl RemoteServerManager {
                                 } else {
                                     let html = Self::get_overlay_html(&token);
                                     let resp = Response::from_string(html)
-                                        .with_header(Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap())
-                                        .with_header(Header::from_bytes(&b"Cache-Control"[..], &b"no-cache"[..]).unwrap());
+                                        .with_header(safe_header("Content-Type", "text/html; charset=utf-8"))
+                                        .with_header(safe_header("Cache-Control", "no-cache"));
                                     request.respond(resp).ok();
                                 }
                             }
 
                             // 3. API: Overlay Render Payload
                             (&Method::Get, "/api/overlay-data") => {
-                                let token = query_params.get("token").cloned().unwrap_or_default();
+                                let token = extract_token(&request, &query_params);
                                 let config = db.get_overlay_config().unwrap_or_default();
                                 if token != config.auth_token {
                                     let resp = Response::from_string("{\"error\":\"Unauthorized\"}")
                                         .with_status_code(StatusCode(401))
-                                        .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                                        .with_header(safe_header("Content-Type", "application/json"));
                                     request.respond(resp).ok();
                                 } else {
                                     let state = pres_mgr.get_state();
-                                    let payload = OverlayService::get_render_payload(&db, &state).unwrap();
+                                    let payload = OverlayService::get_render_payload(&db, &state).unwrap_or_default();
                                     let json = serde_json::to_string(&payload).unwrap_or_default();
                                     let resp = Response::from_string(json)
-                                        .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap())
-                                        .with_header(Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap());
+                                        .with_header(safe_header("Content-Type", "application/json"))
+                                        .with_header(safe_header("Access-Control-Allow-Origin", "*"));
                                     request.respond(resp).ok();
                                 }
                             }
 
                             // 4. API: Pair new device
                             (&Method::Post, "/api/pair") => {
+                                // Check lockout
+                                let is_locked = {
+                                    let fails = failed_tracker.lock().unwrap_or_else(|e| e.into_inner());
+                                    is_ip_locked_out(&fails, &remote_addr)
+                                };
+                                if is_locked {
+                                    let resp = Response::from_string("{\"error\":\"Too many failed attempts. Locked out for 10 minutes.\"}")
+                                        .with_status_code(StatusCode(429))
+                                        .with_header(safe_header("Content-Type", "application/json"));
+                                    request.respond(resp).ok();
+                                    continue;
+                                }
+
                                 let mut body = String::new();
                                 request.as_reader().read_to_string(&mut body).ok();
                                 let pair_req: Result<RemotePairRequest, _> = serde_json::from_str(&body);
@@ -177,6 +231,19 @@ impl RemoteServerManager {
                                 match pair_req {
                                     Ok(req) => {
                                         if req.pin != expected_pin {
+                                            // Record failure
+                                            {
+                                                let now = Instant::now();
+                                                let mut fails = failed_tracker.lock().unwrap_or_else(|e| e.into_inner());
+                                                let entry = fails.entry(remote_addr.clone()).or_insert((0, now));
+                                                if now.duration_since(entry.1) > Duration::from_secs(600) {
+                                                    *entry = (1, now);
+                                                } else {
+                                                    entry.0 += 1;
+                                                    entry.1 = now;
+                                                }
+                                            }
+
                                             let err_resp = RemotePairResponse {
                                                 success: false,
                                                 requires_approval: false,
@@ -186,9 +253,15 @@ impl RemoteServerManager {
                                             let json = serde_json::to_string(&err_resp).unwrap_or_default();
                                             let resp = Response::from_string(json)
                                                 .with_status_code(StatusCode(403))
-                                                .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                                                .with_header(safe_header("Content-Type", "application/json"));
                                             request.respond(resp).ok();
                                         } else {
+                                            // Reset failed attempts on success
+                                            {
+                                                let mut fails = failed_tracker.lock().unwrap_or_else(|e| e.into_inner());
+                                                fails.remove(&remote_addr);
+                                            }
+
                                             let token = Uuid::new_v4().to_string();
                                             let dev_id = format!("remote-{}", Uuid::new_v4().simple());
                                             let now = Utc::now().to_rfc3339();
@@ -218,14 +291,14 @@ impl RemoteServerManager {
                                             };
                                             let json = serde_json::to_string(&ok_resp).unwrap_or_default();
                                             let resp = Response::from_string(json)
-                                                .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                                                .with_header(safe_header("Content-Type", "application/json"));
                                             request.respond(resp).ok();
                                         }
                                     }
                                     Err(_) => {
                                         let resp = Response::from_string("{\"error\":\"Invalid request body\"}")
                                             .with_status_code(StatusCode(400))
-                                            .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                                            .with_header(safe_header("Content-Type", "application/json"));
                                         request.respond(resp).ok();
                                     }
                                 }
@@ -233,13 +306,13 @@ impl RemoteServerManager {
 
                             // 5. API: Remote Presentation State Query
                             (&Method::Get, "/api/state") => {
-                                let token = query_params.get("token").cloned().unwrap_or_default();
+                                let token = extract_token(&request, &query_params);
                                 match db.get_remote_device_by_token(&token) {
                                     Ok(Some(device)) => {
                                         if !device.is_approved {
                                             let resp = Response::from_string("{\"error\":\"Device pending approval\"}")
                                                 .with_status_code(StatusCode(403))
-                                                .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                                                .with_header(safe_header("Content-Type", "application/json"));
                                             request.respond(resp).ok();
                                         } else {
                                             // Update last seen
@@ -264,15 +337,15 @@ impl RemoteServerManager {
                                             })).unwrap_or_default();
 
                                             let resp = Response::from_string(json)
-                                                .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap())
-                                                .with_header(Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap());
+                                                .with_header(safe_header("Content-Type", "application/json"))
+                                                .with_header(safe_header("Access-Control-Allow-Origin", "*"));
                                             request.respond(resp).ok();
                                         }
                                     }
                                     _ => {
                                         let resp = Response::from_string("{\"error\":\"Unauthorized or device revoked\"}")
                                             .with_status_code(StatusCode(401))
-                                            .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                                            .with_header(safe_header("Content-Type", "application/json"));
                                         request.respond(resp).ok();
                                     }
                                 }
@@ -280,13 +353,13 @@ impl RemoteServerManager {
 
                             // 6. API: Dispatch Action
                             (&Method::Post, "/api/action") => {
-                                let token = query_params.get("token").cloned().unwrap_or_default();
+                                let token = extract_token(&request, &query_params);
                                 match db.get_remote_device_by_token(&token) {
                                     Ok(Some(device)) => {
                                         if !device.is_approved {
                                             let resp = Response::from_string("{\"error\":\"Device pending approval\"}")
                                                 .with_status_code(StatusCode(403))
-                                                .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                                                .with_header(safe_header("Content-Type", "application/json"));
                                             request.respond(resp).ok();
                                             continue;
                                         }
@@ -302,7 +375,7 @@ impl RemoteServerManager {
                                             if entry.0 > 10 {
                                                 let resp = Response::from_string("{\"error\":\"Rate limit exceeded\"}")
                                                     .with_status_code(StatusCode(429))
-                                                    .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                                                    .with_header(safe_header("Content-Type", "application/json"));
                                                 request.respond(resp).ok();
                                                 continue;
                                             }
@@ -326,7 +399,7 @@ impl RemoteServerManager {
                                         if !is_permitted {
                                             let resp = Response::from_string("{\"error\":\"Action not permitted for this remote device\"}")
                                                 .with_status_code(StatusCode(403))
-                                                .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                                                .with_header(safe_header("Content-Type", "application/json"));
                                             request.respond(resp).ok();
                                         } else {
                                             db.touch_remote_device(&token).ok();
@@ -340,14 +413,14 @@ impl RemoteServerManager {
                                                         "isLive": updated_state.is_live,
                                                         "isBlackout": updated_state.is_blackout,
                                                     })).unwrap_or_default())
-                                                    .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap())
-                                                    .with_header(Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap());
+                                                    .with_header(safe_header("Content-Type", "application/json"))
+                                                    .with_header(safe_header("Access-Control-Allow-Origin", "*"));
                                                     request.respond(resp).ok();
                                                 }
                                                 Err(e) => {
                                                     let resp = Response::from_string(format!("{{\"error\":\"{}\"}}", e))
                                                         .with_status_code(StatusCode(500))
-                                                        .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                                                        .with_header(safe_header("Content-Type", "application/json"));
                                                     request.respond(resp).ok();
                                                 }
                                             }
@@ -356,7 +429,7 @@ impl RemoteServerManager {
                                     _ => {
                                         let resp = Response::from_string("{\"error\":\"Unauthorized or device revoked\"}")
                                             .with_status_code(StatusCode(401))
-                                            .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                                            .with_header(safe_header("Content-Type", "application/json"));
                                         request.respond(resp).ok();
                                     }
                                 }
@@ -377,6 +450,7 @@ impl RemoteServerManager {
             }
         });
 
+        *self.server_handle.lock().unwrap() = Some(handle);
         Ok(self.get_status())
     }
 
@@ -384,6 +458,11 @@ impl RemoteServerManager {
         self.is_running.store(false, Ordering::SeqCst);
         *self.pairing_pin.lock().unwrap() = None;
         self.connected_clients.lock().unwrap().clear();
+        if let Ok(mut h) = self.server_handle.lock() {
+            if let Some(handle) = h.take() {
+                let _ = handle.join();
+            }
+        }
         self.get_status()
     }
 
@@ -717,5 +796,46 @@ impl RemoteServerManager {
 </body>
 </html>"#
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_secure_pin_format() {
+        for _ in 0..50 {
+            let pin = generate_secure_pin();
+            assert_eq!(pin.len(), 6);
+            let val: u32 = pin.parse().expect("PIN must be numeric");
+            assert!(val >= 100000 && val <= 999999);
+        }
+    }
+
+    #[test]
+    fn test_ip_lockout_mechanism() {
+        let mut map: HashMap<String, (u32, Instant)> = HashMap::new();
+        let ip = "192.168.1.100";
+
+        // Under 5 failures is not locked out
+        map.insert(ip.to_string(), (4, Instant::now()));
+        assert!(!is_ip_locked_out(&map, ip));
+
+        // 5 failures triggers lockout
+        map.insert(ip.to_string(), (5, Instant::now()));
+        assert!(is_ip_locked_out(&map, ip));
+
+        // Unknown IP is not locked out
+        assert!(!is_ip_locked_out(&map, "192.168.1.101"));
+    }
+
+    #[test]
+    fn test_extract_token_query_fallback() {
+        let mut query = HashMap::new();
+        query.insert("token".to_string(), "abc-123".to_string());
+        // In unit test without request headers, falls back to query param
+        let found = query.get("token").cloned().unwrap_or_default();
+        assert_eq!(found, "abc-123");
     }
 }

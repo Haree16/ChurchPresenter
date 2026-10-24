@@ -21,7 +21,7 @@ import { LivestreamOverlayModal } from './Production/LivestreamOverlayModal';
 import { ProductionIntegrationsModal } from './Production/ProductionIntegrationsModal';
 import { DiagnosticsModal } from './Production/DiagnosticsModal';
 import { SettingsModal } from './Settings/SettingsModal';
-import { Slide, AudienceWindowStatus, StageWindowStatus } from '../types';
+import { Slide, AudienceWindowStatus, StageWindowStatus, RemoteServerStatus } from '../types';
 import { api } from '../services/api';
 import { AlertTriangle, X, Sparkles, Plus, BookOpen } from 'lucide-react';
 
@@ -69,6 +69,8 @@ export const OperatorView: React.FC = () => {
     isFullscreen: false,
   });
 
+  const [remoteServerStatus, setRemoteServerStatus] = useState<RemoteServerStatus | undefined>(undefined);
+
   const refreshAudienceStatus = async () => {
     try {
       const status = await api.getAudienceStatus();
@@ -87,13 +89,31 @@ export const OperatorView: React.FC = () => {
     }
   };
 
+  const refreshRemoteStatus = async () => {
+    try {
+      const status = await api.getRemoteServerStatus();
+      setRemoteServerStatus(status);
+    } catch {
+      // Ignore in mock/browser
+    }
+  };
+
   // First-run welcome banner state
   const [showWelcomeBanner, setShowWelcomeBanner] = useState<boolean>(false);
 
   useEffect(() => {
     refreshAudienceStatus();
     refreshStageStatus();
+    refreshRemoteStatus();
 
+    const interval = setInterval(() => {
+      refreshRemoteStatus();
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
     // Session Recovery: Restore last workspace state
     api.getWorkspaceState().then((ws) => {
       if (ws) {
@@ -229,6 +249,7 @@ export const OperatorView: React.FC = () => {
         presentationState={presentationState}
         audienceStatus={audienceStatus}
         stageStatus={stageStatus}
+        remoteServerStatus={remoteServerStatus}
         activeView={activeView}
         onChangeView={(view) => {
           if (view === 'themes') {

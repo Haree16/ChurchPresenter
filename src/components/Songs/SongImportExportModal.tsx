@@ -9,11 +9,150 @@ import {
 } from 'lucide-react';
 import {
   Song,
+  SongSection,
   SongExportData,
   SongImportOptions,
   SongImportResult,
 } from '../../types';
 import { api } from '../../services/api';
+
+export function parseOpenSongOrOpenLyrics(xml: string): SongExportData | null {
+  const trimmed = xml.trim();
+  if (!trimmed.startsWith('<')) return null;
+
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(trimmed, 'text/xml');
+
+    // Check OpenLyrics
+    if (doc.querySelector('song[xmlns*="openlyrics"]') || doc.querySelector('lyrics verse')) {
+      const title = doc.querySelector('title')?.textContent?.trim() || 'Untitled Song';
+      const author = doc.querySelector('author')?.textContent?.trim() || '';
+      const ccli = doc.querySelector('ccliNo')?.textContent?.trim() || '';
+      const key = doc.querySelector('key')?.textContent?.trim() || '';
+
+      const sections: SongSection[] = [];
+      const verses = doc.querySelectorAll('verse');
+      verses.forEach((v, idx) => {
+        const name = v.getAttribute('name') || `Verse ${idx + 1}`;
+        const lines = Array.from(v.querySelectorAll('lines'))
+          .map((l) => l.textContent || '')
+          .join('\n');
+        sections.push({
+          id: `sec-${idx + 1}`,
+          songId: '',
+          sectionType: name.toLowerCase().startsWith('c')
+            ? 'chorus'
+            : name.toLowerCase().startsWith('b')
+            ? 'bridge'
+            : 'verse',
+          label: name,
+          sortOrder: idx,
+          lyrics: lines.trim(),
+        });
+      });
+
+      return {
+        version: '1.0.0',
+        exportedAt: new Date().toISOString(),
+        app: 'OpenLyrics Import',
+        themes: [],
+        songs: [
+          {
+            song: {
+              id: '',
+              title,
+              author,
+              ccliNumber: ccli,
+              songKey: key || null,
+              tags: [],
+              language: /[\u0B80-\u0BFF]/.test(title) ? 'Tamil' : 'English',
+              category: 'Praise & Worship',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+            sections,
+          },
+        ],
+      };
+    }
+
+    // Check OpenSong
+    const titleEl = doc.querySelector('title');
+    const lyricsEl = doc.querySelector('lyrics');
+    if (titleEl || lyricsEl) {
+      const title = titleEl?.textContent?.trim() || 'Untitled Song';
+      const author = doc.querySelector('author')?.textContent?.trim() || '';
+      const key = doc.querySelector('key')?.textContent?.trim() || '';
+      const ccli = doc.querySelector('ccli')?.textContent?.trim() || '';
+      const rawLyrics = lyricsEl?.textContent || '';
+
+      const sections: SongSection[] = [];
+      const blocks = rawLyrics.split(/\n(?=\[[A-Za-z0-9]+\])/);
+      blocks.forEach((block, idx) => {
+        const lines = block.split('\n');
+        let label = `Section ${idx + 1}`;
+        const cleanLines: string[] = [];
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith('[') && trimmedLine.endsWith(']')) {
+            label = trimmedLine.slice(1, -1);
+          } else if (trimmedLine.startsWith('.')) {
+            continue;
+          } else if (trimmedLine.startsWith(';')) {
+            continue;
+          } else {
+            cleanLines.push(line.replace(/^[ 1-9]/, ''));
+          }
+        }
+
+        const lyricsText = cleanLines.join('\n').trim();
+        if (lyricsText) {
+          sections.push({
+            id: `sec-${idx + 1}`,
+            songId: '',
+            sectionType: label.toLowerCase().startsWith('c')
+              ? 'chorus'
+              : label.toLowerCase().startsWith('b')
+              ? 'bridge'
+              : 'verse',
+            label,
+            sortOrder: idx,
+            lyrics: lyricsText,
+          });
+        }
+      });
+
+      return {
+        version: '1.0.0',
+        exportedAt: new Date().toISOString(),
+        app: 'OpenSong Import',
+        themes: [],
+        songs: [
+          {
+            song: {
+              id: '',
+              title,
+              author,
+              ccliNumber: ccli,
+              songKey: key || null,
+              tags: [],
+              language: /[\u0B80-\u0BFF]/.test(title) ? 'Tamil' : 'English',
+              category: 'Praise & Worship',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+            sections,
+          },
+        ],
+      };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 interface SongImportExportModalProps {
   isOpen: boolean;
@@ -95,12 +234,23 @@ export const SongImportExportModal: React.FC<SongImportExportModalProps> = ({
     setParseError(null);
     setImportResult(null);
 
-    let parsed: SongExportData;
-    try {
-      parsed = JSON.parse(importJsonText);
-    } catch (e: any) {
-      setParseError(`JSON syntax error: ${e.message}`);
-      return;
+    let parsed: SongExportData | null = null;
+    const trimmed = importJsonText.trim();
+
+    // Check if XML format (OpenLyrics or OpenSong)
+    if (trimmed.startsWith('<')) {
+      parsed = parseOpenSongOrOpenLyrics(trimmed);
+      if (!parsed) {
+        setParseError('Failed to parse OpenLyrics or OpenSong XML format.');
+        return;
+      }
+    } else {
+      try {
+        parsed = JSON.parse(importJsonText);
+      } catch (e: any) {
+        setParseError(`JSON syntax error: ${e.message}`);
+        return;
+      }
     }
 
     if (!parsed || !Array.isArray(parsed.songs)) {

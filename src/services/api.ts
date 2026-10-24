@@ -3353,6 +3353,107 @@ class MockDataStore {
       totalMedia: this.mediaAssets.length,
     };
   }
+
+  public async getAppDataDir(): Promise<string> {
+    return '';
+  }
+
+  public async resolveMediaUrl(relativePath: string): Promise<string> {
+    return relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
+  }
+
+  public async parseBibleReference(reference: string): Promise<BiblePassageQuery | null> {
+    const trimmed = reference.trim();
+    if (!trimmed) return null;
+
+    let cleanInput = trimmed;
+    let translation = '';
+
+    const parenMatch = trimmed.match(/\(([^)]+)\)\s*$/);
+    if (parenMatch) {
+      translation = parenMatch[1].trim();
+      cleanInput = trimmed.slice(0, parenMatch.index).trim();
+    } else {
+      const parts = trimmed.split(/\s+/);
+      if (parts.length > 1) {
+        const last = parts[parts.length - 1].toUpperCase();
+        if (['KJV', 'WEB', 'TAMIL', 'ESV', 'NIV', 'NLT', 'NKJV', 'NASB'].includes(last)) {
+          translation = parts[parts.length - 1];
+          cleanInput = parts.slice(0, -1).join(' ').trim();
+        }
+      }
+    }
+
+    const hasTamil = /[\u0B80-\u0BFF]/.test(cleanInput);
+    if (!translation) {
+      translation = hasTamil ? 'Tamil' : 'KJV';
+    } else if (translation.toLowerCase() === 'tamil' || (hasTamil && translation.toLowerCase() === 'kjv')) {
+      translation = 'Tamil';
+    }
+
+    let splitPos = -1;
+    for (let i = cleanInput.length - 1; i >= 0; i--) {
+      const code = cleanInput.charCodeAt(i);
+      const ch = cleanInput[i];
+      if (/[a-zA-Z]/.test(ch) || (code >= 0x0B80 && code <= 0x0BFF)) {
+        splitPos = i + 1;
+        break;
+      }
+    }
+
+    if (splitPos <= 0) return null;
+
+    const bookPart = cleanInput.slice(0, splitPos).trim();
+    const chapVersePart = cleanInput.slice(splitPos).trim();
+
+    if (!bookPart || !chapVersePart) return null;
+
+    const chapVerseCleaned = chapVersePart.replace(/\./g, ':').replace(/[–—]/g, '-');
+    const parts = chapVerseCleaned.split(':');
+
+    let chapter: number;
+    let startVerse: number;
+    let endVerse: number | null = null;
+
+    if (parts.length >= 2) {
+      chapter = parseInt(parts[0].trim(), 10);
+      const verseStr = parts[1].trim();
+      if (verseStr.includes('-')) {
+        const [sv, ev] = verseStr.split('-').map((s) => parseInt(s.trim(), 10));
+        startVerse = sv;
+        endVerse = isNaN(ev) ? sv : ev;
+      } else {
+        startVerse = parseInt(verseStr, 10);
+        endVerse = startVerse;
+      }
+    } else {
+      chapter = parseInt(parts[0].trim(), 10);
+      startVerse = 1;
+      endVerse = null;
+    }
+
+    if (isNaN(chapter) || isNaN(startVerse)) return null;
+
+    return {
+      translation,
+      book: bookPart,
+      chapter,
+      startVerse,
+      endVerse,
+    };
+  }
+
+  public async importBibleVerses(verses: BibleVerse[]): Promise<number> {
+    for (const v of verses) {
+      const idx = this.bibleVerses.findIndex((x) => x.id === v.id);
+      if (idx >= 0) {
+        this.bibleVerses[idx] = v;
+      } else {
+        this.bibleVerses.push(v);
+      }
+    }
+    return verses.length;
+  }
 }
 
 const mockStore = new MockDataStore();
@@ -4526,6 +4627,34 @@ export const api = {
       return await invoke<void>('open_devtools');
     }
     return mockStore.openDevtools();
+  },
+
+  getAppDataDir: async (): Promise<string> => {
+    if (isTauri()) {
+      return await invoke<string>('get_app_data_dir');
+    }
+    return mockStore.getAppDataDir();
+  },
+
+  resolveMediaUrl: async (relativePath: string): Promise<string> => {
+    if (isTauri()) {
+      return await invoke<string>('resolve_media_url', { relativePath });
+    }
+    return mockStore.resolveMediaUrl(relativePath);
+  },
+
+  parseBibleReference: async (reference: string): Promise<BiblePassageQuery | null> => {
+    if (isTauri()) {
+      return await invoke<BiblePassageQuery | null>('parse_bible_reference', { reference });
+    }
+    return mockStore.parseBibleReference(reference);
+  },
+
+  importBibleVerses: async (verses: BibleVerse[]): Promise<number> => {
+    if (isTauri()) {
+      return await invoke<number>('import_bible_verses', { verses });
+    }
+    return mockStore.importBibleVerses(verses);
   },
 };
 

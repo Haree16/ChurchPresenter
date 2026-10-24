@@ -18,18 +18,53 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Install panic hook that records crash diagnostics to disk
+    std::panic::set_hook(Box::new(|info| {
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown".into());
+        let msg = match info.payload().downcast_ref::<&str>() {
+            Some(s) => *s,
+            None => match info.payload().downcast_ref::<String>() {
+                Some(s) => &s[..],
+                None => "Box<Any>",
+            },
+        };
+        eprintln!("PANIC in Church Presenter at {}: {}", location, msg);
+        if let Ok(current_dir) = std::env::current_dir() {
+            let log_dir = current_dir.join(".data");
+            let _ = std::fs::create_dir_all(&log_dir);
+            let log_file = log_dir.join("panic.log");
+            let timestamp = chrono::Utc::now().to_rfc3339();
+            let log_entry = format!("[{}] PANIC at {}: {}\n", timestamp, location, msg);
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log_file)
+                .and_then(|mut f| std::io::Write::write_all(&mut f, log_entry.as_bytes()));
+        }
+    }));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Resolve app data directory for SQLite database storage
             let app_data_dir = app
                 .path()
                 .app_data_dir()
-                .unwrap_or_else(|_| std::env::current_dir().unwrap().join(".data"));
+                .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(".data"));
 
             let db_path = app_data_dir.join("church_presenter.db");
-            let db_manager = DbManager::new(&db_path)
-                .expect("Failed to initialize SQLite database and run migrations");
+            let db_manager = match DbManager::new(&db_path) {
+                Ok(db) => db,
+                Err(err) => {
+                    eprintln!("Database initialization failed at {:?}: {}", db_path, err);
+                    DbManager::new_in_memory()
+                        .expect("Failed to initialize fallback in-memory database")
+                }
+            };
 
             let pres_manager = PresentationManager::new();
             pres_manager.init_pointers(&db_manager);
@@ -195,7 +230,31 @@ pub fn run() {
             commands::verify_database_integrity,
             commands::get_app_info,
             commands::open_devtools,
+            commands::get_app_data_dir,
+            commands::resolve_media_url,
+            commands::parse_bible_reference,
+            commands::import_bible_verses,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Auto-backup database on application exit
+                if let Some(db) = app_handle.try_state::<DbManager>() {
+                    let app_data_dir = app_handle
+                        .path()
+                        .app_data_dir()
+                        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(".data"));
+                    let backup_dir = app_data_dir.join("backups");
+                    let _ = std::fs::create_dir_all(&backup_dir);
+                    let filename = format!("auto-backup-{}.json", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
+                    let backup_file = backup_dir.join(filename);
+                    if let Ok(backup) = db.export_backup() {
+                        if let Ok(json) = serde_json::to_string_pretty(&backup) {
+                            let _ = std::fs::write(backup_file, json);
+                        }
+                    }
+                }
+            }
+        });
 }

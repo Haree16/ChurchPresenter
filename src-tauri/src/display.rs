@@ -58,34 +58,77 @@ impl DisplayManager {
         Ok(result)
     }
 
+    pub fn find_monitor_index(
+        monitors: &[DisplayMonitor],
+        spec: &str,
+    ) -> Option<usize> {
+        if monitors.is_empty() {
+            return None;
+        }
+
+        // 1. Match by position and size: e.g. "pos:1920,0;size:1920x1080" or "1920,0"
+        if spec.starts_with("pos:") || spec.contains(',') {
+            if let Some(pos) = monitors.iter().position(|m| {
+                let key = format!("pos:{},{};size:{}x{}", m.x, m.y, m.width, m.height);
+                let coords = format!("{},{}", m.x, m.y);
+                key == spec || spec == coords
+            }) {
+                return Some(pos);
+            }
+        }
+
+        // 2. Match by exact id
+        if let Some(pos) = monitors.iter().position(|m| m.id == spec) {
+            return Some(pos);
+        }
+
+        // 3. Match by name
+        if let Some(pos) = monitors.iter().position(|m| m.name.eq_ignore_ascii_case(spec)) {
+            return Some(pos);
+        }
+
+        // 4. Match by "display-N" index
+        if let Some(idx) = spec.strip_prefix("display-").and_then(|s| s.parse::<usize>().ok()) {
+            if idx < monitors.len() {
+                return Some(idx);
+            }
+        }
+
+        // 5. If "external-projector", pick non-primary
+        if spec == "external-projector" {
+            if let Some(pos) = monitors.iter().position(|m| !m.is_primary) {
+                return Some(pos);
+            }
+        }
+
+        // Fallback: non-primary or first
+        monitors.iter().position(|m| !m.is_primary).or(Some(0))
+    }
+
     pub fn open_audience_window(
         app: &AppHandle,
         monitor_id: Option<String>,
         fullscreen: bool,
     ) -> Result<AudienceWindowStatus, String> {
+        let available = Self::get_available_monitors(app)?;
         let monitors = app
             .available_monitors()
             .map_err(|e| format!("Failed to query available monitors: {}", e))?;
 
         // Find matching monitor
         let target_monitor = if let Some(ref mid) = monitor_id {
-            let idx = mid
-                .strip_prefix("display-")
-                .and_then(|s| s.parse::<usize>().ok());
-            if let Some(i) = idx {
-                monitors.get(i).cloned()
+            if let Some(idx) = Self::find_monitor_index(&available, mid) {
+                monitors.get(idx).cloned()
             } else {
                 None
             }
         } else {
             // Prefer non-primary external monitor if available
-            monitors.iter().find(|m| {
-                if let Ok(Some(primary)) = app.primary_monitor() {
-                    m.name() != primary.name()
-                } else {
-                    false
-                }
-            }).cloned().or_else(|| monitors.first().cloned())
+            if let Some(idx) = Self::find_monitor_index(&available, "") {
+                monitors.get(idx).cloned()
+            } else {
+                monitors.first().cloned()
+            }
         };
 
         // If audience window already exists, bring it up and re-position
@@ -189,17 +232,15 @@ impl DisplayManager {
         monitor_id: Option<String>,
         fullscreen: bool,
     ) -> Result<StageWindowStatus, String> {
+        let available = Self::get_available_monitors(app)?;
         let monitors = app
             .available_monitors()
             .map_err(|e| format!("Failed to query available monitors: {}", e))?;
 
         // Find matching monitor
         let target_monitor = if let Some(ref mid) = monitor_id {
-            let idx = mid
-                .strip_prefix("display-")
-                .and_then(|s| s.parse::<usize>().ok());
-            if let Some(i) = idx {
-                monitors.get(i).cloned()
+            if let Some(idx) = Self::find_monitor_index(&available, mid) {
+                monitors.get(idx).cloned()
             } else {
                 None
             }
@@ -414,6 +455,57 @@ impl DisplayManager {
                 error: None,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_monitor_resolution_and_matching() {
+        let monitors = vec![
+            DisplayMonitor {
+                id: "display-0".to_string(),
+                name: "Built-in Screen".to_string(),
+                width: 1920,
+                height: 1080,
+                x: 0,
+                y: 0,
+                scale_factor: 1.0,
+                is_primary: true,
+            },
+            DisplayMonitor {
+                id: "display-1".to_string(),
+                name: "Epson Projector".to_string(),
+                width: 1920,
+                height: 1080,
+                x: 1920,
+                y: 0,
+                scale_factor: 1.0,
+                is_primary: false,
+            },
+        ];
+
+        // 1. Match by position coordinates
+        let idx = DisplayManager::find_monitor_index(&monitors, "pos:1920,0;size:1920x1080");
+        assert_eq!(idx, Some(1));
+
+        // 2. Match by coordinates shortcut
+        let idx = DisplayManager::find_monitor_index(&monitors, "1920,0");
+        assert_eq!(idx, Some(1));
+
+        // 3. Match by name
+        let idx = DisplayManager::find_monitor_index(&monitors, "Epson Projector");
+        assert_eq!(idx, Some(1));
+
+        // 4. Match by index
+        let idx = DisplayManager::find_monitor_index(&monitors, "display-1");
+        assert_eq!(idx, Some(1));
+
+        // 5. Fallback for external-projector
+        let idx = DisplayManager::find_monitor_index(&monitors, "external-projector");
+        assert_eq!(idx, Some(1));
     }
 }
 

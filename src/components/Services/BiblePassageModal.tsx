@@ -27,6 +27,25 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
   const [endVerse, setEndVerse] = useState<number | string>(17);
   const [versesPerSlide, setVersesPerSlide] = useState<number>(1);
   const [selectedThemeId, setSelectedThemeId] = useState<string>('theme-builtin-dark');
+  const [quickRefInput, setQuickRefInput] = useState<string>('');
+
+  const handleQuickRefChange = async (val: string) => {
+    setQuickRefInput(val);
+    try {
+      const parsed = await api.parseBibleReference(val);
+      if (parsed) {
+        if (parsed.translation === 'Tamil' || parsed.translation === 'WEB' || parsed.translation === 'KJV') {
+          setTranslation(parsed.translation);
+        }
+        setBook(parsed.book);
+        setChapter(parsed.chapter);
+        setStartVerse(parsed.startVerse);
+        setEndVerse(parsed.endVerse ?? parsed.startVerse);
+      }
+    } catch {
+      // Ignore parse failure on partial keystrokes
+    }
+  };
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -222,6 +241,31 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Live Quick Reference Input */}
+          <div style={{ backgroundColor: '#090d16', padding: '12px 14px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#38bdf8', marginBottom: '6px' }}>
+              Quick Reference (Type to auto-parse: e.g. John 3:16-18, Ps 23, Gen 1:1, மத்தேயு 6:9-13)
+            </label>
+            <input
+              data-testid="quick-reference-input"
+              type="text"
+              placeholder="Type reference (e.g. John 3:16-18, Ps 23, Rom 8:38-39)..."
+              value={quickRefInput}
+              onChange={(e) => handleQuickRefChange(e.target.value)}
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '8px 12px',
+                backgroundColor: '#1e293b',
+                border: '1px solid #334155',
+                borderRadius: '6px',
+                color: '#fff',
+                fontSize: '13px',
+                outline: 'none',
+              }}
+            />
           </div>
 
           {/* Reference selection controls */}

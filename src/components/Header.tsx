@@ -20,7 +20,12 @@ import {
   Activity,
   Settings,
 } from 'lucide-react';
-import { PresentationState, AudienceWindowStatus, StageWindowStatus } from '../types';
+import {
+  PresentationState,
+  AudienceWindowStatus,
+  StageWindowStatus,
+  RemoteServerStatus,
+} from '../types';
 
 export type OperatorActiveView = 'services' | 'presentations' | 'songs' | 'themes';
 
@@ -28,6 +33,7 @@ interface HeaderProps {
   presentationState: PresentationState;
   audienceStatus: AudienceWindowStatus;
   stageStatus?: StageWindowStatus;
+  remoteServerStatus?: RemoteServerStatus;
   activeView: OperatorActiveView;
   onChangeView: (view: OperatorActiveView) => void;
   onOpenDisplayModal: () => void;
@@ -48,6 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
   presentationState,
   audienceStatus,
   stageStatus,
+  remoteServerStatus,
   activeView,
   onChangeView,
   onOpenDisplayModal,
@@ -283,6 +290,37 @@ export const Header: React.FC<HeaderProps> = ({
             }}
           >
             STANDBY
+          </div>
+        )}
+
+        {/* Remote Server Status Badge */}
+        {remoteServerStatus?.isRunning && (
+          <div
+            data-testid="remote-status-badge"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              backgroundColor: 'rgba(34, 197, 94, 0.15)',
+              border: '1px solid #22c55e',
+              color: '#4ade80',
+              fontSize: '11px',
+              fontWeight: 700,
+              letterSpacing: '0.05em',
+            }}
+          >
+            <div
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                backgroundColor: '#22c55e',
+                boxShadow: '0 0 6px #22c55e',
+              }}
+            />
+            REMOTE IS ON {remoteServerStatus.pairingPin ? `(PIN: ${remoteServerStatus.pairingPin})` : ''}
           </div>
         )}
 

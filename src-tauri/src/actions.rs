@@ -13,8 +13,7 @@ static LAST_ACTION_NAME: Mutex<Option<String>> = Mutex::new(None);
 pub struct ActionDispatcher;
 
 impl ActionDispatcher {
-    pub fn dispatch(
-        app: &AppHandle,
+    pub fn dispatch_core(
         db: &DbManager,
         pres_mgr: &PresentationManager,
         action_name: &str,
@@ -35,24 +34,23 @@ impl ActionDispatcher {
         LAST_ACTION_TIMESTAMP_MS.store(now_ms, Ordering::SeqCst);
 
         let result_state = match action_name {
-            "next_slide" => pres_mgr.next_slide(app, db),
-            "prev_slide" => pres_mgr.previous_slide(app, db),
-            "next_item" => Self::navigate_service_item(app, db, pres_mgr, true)?,
-            "prev_item" => Self::navigate_service_item(app, db, pres_mgr, false)?,
+            "next_slide" => pres_mgr.next_slide_core(db),
+            "prev_slide" => pres_mgr.previous_slide_core(db),
+            "next_item" => Self::navigate_service_item_core(db, pres_mgr, true)?,
+            "prev_item" => Self::navigate_service_item_core(db, pres_mgr, false)?,
             "toggle_blackout" => {
-                pres_mgr.toggle_blackout(app);
+                pres_mgr.toggle_blackout_core();
                 pres_mgr.get_state()
             }
             "toggle_live" => {
                 let state = pres_mgr.get_state();
                 if state.is_live {
-                    pres_mgr.clear_live(app)
+                    pres_mgr.clear_live_core()
                 } else if state.current_slide_id.is_some() {
-                    // Re-activate live
                     if let Some(ref service_id) = state.current_service_id {
                         if let Some(ref item_id) = state.current_item_id {
                             if let Some(ref slide_id) = state.current_slide_id {
-                                pres_mgr.set_live_service_item_slide(app, db, service_id, item_id, slide_id)
+                                pres_mgr.set_live_service_item_slide_core(db, service_id, item_id, slide_id)
                             } else {
                                 state
                             }
@@ -61,7 +59,7 @@ impl ActionDispatcher {
                         }
                     } else if let Some(ref pres_id) = state.current_presentation_id {
                         if let Some(ref slide_id) = state.current_slide_id {
-                            pres_mgr.set_live_slide(app, db, pres_id, slide_id)
+                            pres_mgr.set_live_slide_core(db, pres_id, slide_id)
                         } else {
                             state
                         }
@@ -78,14 +76,14 @@ impl ActionDispatcher {
                 t_state.is_running = true;
                 t_state.start_time_epoch_ms = Some(Utc::now().timestamp_millis());
                 t_state.is_expired = false;
-                state = pres_mgr.set_timer_state(app, Some(t_state));
+                state = pres_mgr.set_timer_state_core(Some(t_state));
                 state
             }
             "stop_timer" => {
                 let mut state = pres_mgr.get_state();
                 if let Some(mut t_state) = state.timer_state {
                     t_state.is_running = false;
-                    state = pres_mgr.set_timer_state(app, Some(t_state));
+                    state = pres_mgr.set_timer_state_core(Some(t_state));
                 }
                 state
             }
@@ -96,19 +94,32 @@ impl ActionDispatcher {
                     t_state.accumulated_seconds = 0.0;
                     t_state.start_time_epoch_ms = None;
                     t_state.is_expired = false;
-                    state = pres_mgr.set_timer_state(app, Some(t_state));
+                    state = pres_mgr.set_timer_state_core(Some(t_state));
                 }
                 state
             }
             "clear_overlay" => {
                 let current_overlay = db.get_overlay_config().unwrap_or_default();
                 let new_cleared = !current_overlay.is_cleared;
-                db.set_overlay_cleared(new_cleared).ok();
-                app.emit("overlay:cleared", new_cleared).ok();
+                let _ = db.set_overlay_cleared(new_cleared);
                 pres_mgr.get_state()
             }
             unknown => return Err(format!("Unsupported action '{}'", unknown)),
         };
+
+        Ok(result_state)
+    }
+
+    pub fn dispatch(
+        app: &AppHandle,
+        db: &DbManager,
+        pres_mgr: &PresentationManager,
+        action_name: &str,
+    ) -> Result<PresentationState, String> {
+        let result_state = Self::dispatch_core(db, pres_mgr, action_name)?;
+
+        // Broadcast updated presentation state across all windows
+        app.emit("presentation:state-changed", &result_state).ok();
 
         // Emit action event for UI monitor / diagnostics
         app.emit(
@@ -123,8 +134,7 @@ impl ActionDispatcher {
         Ok(result_state)
     }
 
-    fn navigate_service_item(
-        app: &AppHandle,
+    fn navigate_service_item_core(
         db: &DbManager,
         pres_mgr: &PresentationManager,
         is_next: bool,
@@ -171,19 +181,49 @@ impl ActionDispatcher {
             .unwrap_or_default();
 
         if let Some(first_slide) = slides.first() {
-            Ok(pres_mgr.set_live_service_item_slide(
-                app,
+            Ok(pres_mgr.set_live_service_item_slide_core(
                 db,
                 service_id,
                 &target_item.id,
                 &first_slide.id,
             ))
         } else {
-            Ok(pres_mgr.set_selected_service_item(
-                app,
-                Some(service_id.clone()),
-                Some(target_item.id.clone()),
-            ))
+            Ok(state)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_action_dispatch_core() {
+        let db = DbManager::new_in_memory().unwrap();
+        let pres_mgr = PresentationManager::new();
+        pres_mgr.init_pointers(&db);
+
+        // Test blackout toggle
+        let res = ActionDispatcher::dispatch_core(&db, &pres_mgr, "toggle_blackout").unwrap();
+        assert_eq!(res.is_blackout, true);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let res2 = ActionDispatcher::dispatch_core(&db, &pres_mgr, "toggle_blackout").unwrap();
+        assert_eq!(res2.is_blackout, false);
+
+        // Test next slide
+        let res3 = ActionDispatcher::dispatch_core(&db, &pres_mgr, "next_slide").unwrap();
+        assert!(res3.is_live);
+
+        // Test timers
+        let t_res = ActionDispatcher::dispatch_core(&db, &pres_mgr, "start_timer").unwrap();
+        assert!(t_res.timer_state.is_some());
+        assert!(t_res.timer_state.unwrap().is_running);
+
+        let t_stop = ActionDispatcher::dispatch_core(&db, &pres_mgr, "stop_timer").unwrap();
+        assert!(!t_stop.timer_state.unwrap().is_running);
+
+        // Test invalid action
+        let err = ActionDispatcher::dispatch_core(&db, &pres_mgr, "non_existent_action");
+        assert!(err.is_err());
     }
 }

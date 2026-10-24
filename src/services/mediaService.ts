@@ -1,4 +1,5 @@
 import { MediaAsset, MediaPlaybackState } from '../types';
+import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 
 export const SUPPORTED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
 export const SUPPORTED_VIDEO_EXTENSIONS = ['mp4', 'webm'];
@@ -46,6 +47,7 @@ export class MediaService {
   private static instance: MediaService;
   private preloadedMedia: Set<string> = new Set();
   private failedMedia: Set<string> = new Set();
+  private appDataDir: string | null = null;
 
   private constructor() {}
 
@@ -54,6 +56,14 @@ export class MediaService {
       MediaService.instance = new MediaService();
     }
     return MediaService.instance;
+  }
+
+  public setAppDataDir(dir: string): void {
+    this.appDataDir = dir;
+  }
+
+  public getAppDataDir(): string | null {
+    return this.appDataDir;
   }
 
   /**
@@ -67,12 +77,27 @@ export class MediaService {
     if (pathOrRelative.startsWith('data:')) {
       return pathOrRelative;
     }
-    if (pathOrRelative.startsWith('asset://') || pathOrRelative.startsWith('tauri://')) {
+    if (
+      pathOrRelative.startsWith('asset://') ||
+      pathOrRelative.startsWith('tauri://') ||
+      pathOrRelative.startsWith('http://asset.localhost') ||
+      pathOrRelative.startsWith('https://asset.localhost')
+    ) {
       return pathOrRelative;
     }
 
+    // In native Tauri desktop app runtime, resolve relative media to asset:// protocol
+    if (typeof window !== 'undefined' && isTauri()) {
+      const cleaned = pathOrRelative.replace(/^(\/|\\)+/, '');
+      const fullPath = this.appDataDir ? `${this.appDataDir}/${cleaned}` : cleaned;
+      try {
+        return convertFileSrc(fullPath);
+      } catch {
+        return fullPath;
+      }
+    }
+
     // In browser/test or local webview mode:
-    // If running in Tauri, asset protocol can be used, but for relative public paths or tests:
     return pathOrRelative.startsWith('/') ? pathOrRelative : `/${pathOrRelative}`;
   }
 

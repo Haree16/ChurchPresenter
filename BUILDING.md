@@ -27,7 +27,7 @@ This guide details the prerequisites, platform dependencies, build steps, and pa
 
 ### Linux (Arch Linux & EndeavourOS)
 
-Run the following command to install required compilation tools and GTK/WebKit libraries:
+Run the following command to install required compilation tools, GTK/WebKit libraries, and GStreamer multimedia plugins:
 
 ```bash
 sudo pacman -S --needed \
@@ -36,7 +36,13 @@ sudo pacman -S --needed \
   openssl \
   libxdo \
   libappindicator-gtk3 \
-  librsvg
+  librsvg \
+  gstreamer \
+  gst-plugins-base \
+  gst-plugins-good \
+  gst-plugins-bad \
+  gst-plugins-ugly \
+  gst-libav
 ```
 
 ### Linux (Ubuntu / Debian)
@@ -52,8 +58,15 @@ sudo apt install -y \
   libxdo-dev \
   libssl-dev \
   libayatana-appindicator3-dev \
-  librsvg2-dev
+  librsvg2-dev \
+  gstreamer1.0-plugins-base \
+  gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-bad \
+  gstreamer1.0-plugins-ugly \
+  gstreamer1.0-libav
 ```
+
+> **Note on Video Playback**: WebKitGTK relies on GStreamer plugins to decode H.264, MP4, and WebM video backgrounds. The `gst-plugins-good`, `gst-plugins-bad`, `gst-plugins-ugly`, and `gst-libav` packages ensure seamless video playback on Linux presenter and audience windows.
 
 ### Windows (Windows 10 / 11)
 

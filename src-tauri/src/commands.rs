@@ -468,7 +468,7 @@ pub async fn import_media_asset(
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .unwrap_or_else(|_| std::env::current_dir().unwrap().join(".data"));
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(".data"));
 
     let media_dir = app_data_dir.join("media");
     fs::create_dir_all(&media_dir).map_err(|e| format!("Failed to create media directory: {}", e))?;
@@ -1379,7 +1379,7 @@ pub async fn get_app_info(
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .unwrap_or_else(|_| std::env::current_dir().unwrap().join(".data"));
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(".data"));
     let media_dir = app_data_dir.join("media");
     let db_path = db.get_db_path().unwrap_or_else(|| app_data_dir.join("church_presenter.db"));
 
@@ -1414,6 +1414,52 @@ pub async fn open_devtools(app: AppHandle) -> Result<(), String> {
         window.open_devtools();
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_app_data_dir(app: AppHandle) -> Result<String, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(".data"));
+    Ok(app_data_dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn resolve_media_url(
+    app: AppHandle,
+    relative_path: String,
+) -> Result<String, String> {
+    if relative_path.starts_with("http://")
+        || relative_path.starts_with("https://")
+        || relative_path.starts_with("data:")
+        || relative_path.starts_with("asset://")
+        || relative_path.starts_with("tauri://")
+    {
+        return Ok(relative_path);
+    }
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(".data"));
+    let cleaned = relative_path.trim_start_matches('/').trim_start_matches('\\');
+    let full_path = app_data_dir.join(cleaned);
+    Ok(full_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn parse_bible_reference(
+    reference: String,
+) -> Result<Option<BiblePassageQuery>, String> {
+    Ok(crate::db::parse_bible_reference(&reference))
+}
+
+#[tauri::command]
+pub async fn import_bible_verses(
+    verses: Vec<crate::models::BibleVerse>,
+    db: State<'_, DbManager>,
+) -> Result<usize, String> {
+    db.import_bible_verses(&verses).map_err(|e| e.to_string())
 }
 
 

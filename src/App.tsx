@@ -1,10 +1,20 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { OperatorView } from './components/OperatorView';
 import { AudienceView } from './components/AudienceView';
 import { StageDisplayView } from './components/Stage/StageDisplayView';
 import { LivestreamOverlayView } from './components/Overlay/LivestreamOverlayView';
+import { api } from './services/api';
+import { mediaService } from './services/mediaService';
 
 export function App() {
+  useEffect(() => {
+    api.getAppDataDir().then((dir) => {
+      if (dir) {
+        mediaService.setAppDataDir(dir);
+      }
+    }).catch(() => {});
+  }, []);
+
   const windowMode = useMemo(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);

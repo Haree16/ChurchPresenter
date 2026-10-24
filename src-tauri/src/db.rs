@@ -47,7 +47,6 @@ impl DbManager {
         Ok(manager)
     }
 
-    #[cfg(test)]
     pub fn new_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(
@@ -3965,19 +3964,187 @@ impl DbManager {
 
         self.add_service_item(&item, Some(slides))
     }
+}
+
+pub fn resolve_book_number(input: &str) -> Option<u32> {
+    let lower = input.trim().to_lowercase();
+    match lower.as_str() {
+        // Old Testament (1..=39)
+        "genesis" | "gen" | "ge" | "gn" | "ஆதியாகமம்" | "ஆதி" => Some(1),
+        "exodus" | "exod" | "ex" | "exo" | "யாத்திராகமம்" | "யாத்" => Some(2),
+        "leviticus" | "lev" | "le" | "lv" | "லேவியராகமம்" | "லேவி" => Some(3),
+        "numbers" | "num" | "nu" | "nm" | "எண்ணாகமம்" | "எண்" => Some(4),
+        "deuteronomy" | "deut" | "dt" | "உபாகமம்" | "உபா" => Some(5),
+        "joshua" | "josh" | "jos" | "யோசுவா" | "யோசு" => Some(6),
+        "judges" | "judg" | "jdg" | "jg" | "நியாயாதிபதிகள்" | "நியா" => Some(7),
+        "ruth" | "rth" | "ru" | "ரூத்" => Some(8),
+        "1 samuel" | "1 sam" | "1sa" | "1sam" | "1 சாமுவேல்" | "1 சாமு" => Some(9),
+        "2 samuel" | "2 sam" | "2sa" | "2sam" | "2 சாமுவேல்" | "2 சாமு" => Some(10),
+        "1 kings" | "1 kgs" | "1ki" | "1kgs" | "1 இராஜாக்கள்" | "1 இரா" => Some(11),
+        "2 kings" | "2 kgs" | "2ki" | "2kgs" | "2 இராஜாக்கள்" | "2 இரா" => Some(12),
+        "1 chronicles" | "1 chron" | "1ch" | "1chr" | "1 நாளாகமம்" | "1 நாளா" => Some(13),
+        "2 chronicles" | "2 chron" | "2ch" | "2chr" | "2 நாளாகமம்" | "2 நாளா" => Some(14),
+        "ezra" | "ezr" | "எஸ்றா" => Some(15),
+        "nehemiah" | "neh" | "ne" | "நெகேமியா" | "நெகே" => Some(16),
+        "esther" | "esth" | "es" | "எஸ்தர்" => Some(17),
+        "job" | "jb" | "யோபு" => Some(18),
+        "psalms" | "psalm" | "ps" | "psa" | "psm" | "சங்கீதம்" | "சங்" => Some(19),
+        "proverbs" | "prov" | "pro" | "pr" | "prv" | "நீதிமொழிகள்" | "நீதி" => Some(20),
+        "ecclesiastes" | "eccles" | "ecc" | "ec" | "பிரசங்கி" | "பிர" => Some(21),
+        "song of solomon" | "song of songs" | "song" | "உன்னதப்பாட்டு" | "உன்" => Some(22),
+        "isaiah" | "isa" | "is" | "ஏசாயா" | "ஏசா" => Some(23),
+        "jeremiah" | "jer" | "je" | "jr" | "எரேமியா" | "எரே" => Some(24),
+        "lamentations" | "lam" | "la" | "புலம்பல்" | "புலம்" => Some(25),
+        "ezekiel" | "ezek" | "eze" | "ezk" | "எசேக்கியேல்" | "எசேக்" => Some(26),
+        "daniel" | "dan" | "da" | "dn" | "தானியேல்" | "தானி" => Some(27),
+        "hosea" | "hos" | "ho" | "ஓசியா" | "ஓசி" => Some(28),
+        "joel" | "joe" | "jl" | "யோவேல்" | "யோவே" => Some(29),
+        "amos" | "amo" | "am" | "ஆமோஸ்" | "ஆமோ" => Some(30),
+        "obadiah" | "obad" | "ob" | "ஒபதியா" | "ஒப" => Some(31),
+        "jonah" | "jon" | "jnh" | "யோனா" => Some(32),
+        "micah" | "mic" | "mc" | "மீகா" => Some(33),
+        "nahum" | "nah" | "na" | "நாகூம்" => Some(34),
+        "habakkuk" | "hab" | "hb" | "ஆபகூக்" | "ஆப" => Some(35),
+        "zephaniah" | "zeph" | "zep" | "zp" | "செப்பனியா" | "செப்" => Some(36),
+        "haggai" | "hag" | "hg" | "ஆகாய்" | "ஆகா" => Some(37),
+        "zechariah" | "zech" | "zec" | "zc" | "சகரியா" | "சக" => Some(38),
+        "malachi" | "mal" | "ml" | "மல்கியா" | "மல்" => Some(39),
+
+        // New Testament (40..=66)
+        "matthew" | "matt" | "mt" | "மத்தேயு" | "மத்" => Some(40),
+        "mark" | "mk" | "mrk" | "மாற்கு" | "மாற்" => Some(41),
+        "luke" | "lk" | "luk" | "லூக்கா" | "லூக்" => Some(42),
+        "john" | "jn" | "jhn" | "st john" | "யோவான்" | "யோவா" => Some(43),
+        "acts" | "act" | "ac" | "அப்போஸ்தலர்" | "அப்" => Some(44),
+        "romans" | "roman" | "rom" | "ro" | "rm" | "ரோமர்" | "ரோம" => Some(45),
+        "1 corinthians" | "1 cor" | "1co" | "1cor" | "1 கொரிந்தியர்" | "1 கொரி" => Some(46),
+        "2 corinthians" | "2 cor" | "2co" | "2cor" | "2 கொரிந்தியர்" | "2 கொரி" => Some(47),
+        "galatians" | "gal" | "ga" | "கலாத்தியர்" | "கலா" => Some(48),
+        "ephesians" | "eph" | "ep" | "எபேசியர்" | "எபே" => Some(49),
+        "philippians" | "phil" | "php" | "pp" | "பிலிப்பியர்" | "பிலி" => Some(50),
+        "colossians" | "col" | "co" | "கொலோசெயர்" | "கொலோ" => Some(51),
+        "1 thessalonians" | "1 thess" | "1th" | "1thess" | "1 தெசலோனிக்கேயர்" | "1 தெச" => Some(52),
+        "2 thessalonians" | "2 thess" | "2th" | "2thess" | "2 தெசலோனிக்கேயர்" | "2 தெச" => Some(53),
+        "1 timothy" | "1 tim" | "1ti" | "1tim" | "1 தீமோத்தேயு" | "1 தீமோ" => Some(54),
+        "2 timothy" | "2 tim" | "2ti" | "2tim" | "2 தீமோத்தேயு" | "2 தீமோ" => Some(55),
+        "titus" | "tit" | "ti" | "தீத்து" => Some(56),
+        "philemon" | "philem" | "phm" | "pm" | "பிலேமோன்" | "பிலே" => Some(57),
+        "hebrews" | "heb" | "he" | "எபிரெயர்" | "எபி" => Some(58),
+        "james" | "jas" | "jm" | "யாக்கோபு" | "யாக்" => Some(59),
+        "1 peter" | "1 pet" | "1pe" | "1pt" | "1pet" | "1 பேதுரு" | "1 பேது" => Some(60),
+        "2 peter" | "2 pet" | "2pe" | "2pt" | "2pet" | "2 பேதுரு" | "2 பேது" => Some(61),
+        "1 john" | "1 jn" | "1jn" | "1 jhn" | "1 யோவான்" | "1 யோவா" => Some(62),
+        "2 john" | "2 jn" | "2jn" | "2 jhn" | "2 யோவான்" | "2 யோவா" => Some(63),
+        "3 john" | "3 jn" | "3jn" | "3 jhn" | "3 யோவான்" | "3 யோவா" => Some(64),
+        "jude" | "jud" | "jd" | "யூதா" => Some(65),
+        "revelation" | "rev" | "re" | "rv" | "வெளிப்படுத்தின விசேஷம்" | "வெளி" => Some(66),
+        _ => None,
+    }
+}
+
+pub fn parse_bible_reference(input: &str) -> Option<BiblePassageQuery> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let (clean_input, translation) = if let Some(idx) = trimmed.rfind('(') {
+        if let Some(end_idx) = trimmed[idx..].find(')') {
+            let tr = trimmed[idx + 1..idx + end_idx].trim().to_string();
+            (trimmed[..idx].trim(), tr)
+        } else {
+            (trimmed, "KJV".to_string())
+        }
+    } else {
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.len() > 1 && matches!(parts.last().copied().unwrap_or("").to_uppercase().as_str(), "KJV" | "WEB" | "TAMIL" | "ESV" | "NIV") {
+            let tr = parts.last().unwrap().to_string();
+            let rest = parts[..parts.len() - 1].join(" ");
+            let has_tamil = rest.chars().any(|c| ('\u{0B80}'..='\u{0BFF}').contains(&c));
+            let resolved_tr = if tr.eq_ignore_ascii_case("tamil") || (has_tamil && tr.eq_ignore_ascii_case("kjv")) {
+                "Tamil".to_string()
+            } else {
+                tr
+            };
+            return parse_bible_reference_core(&rest, &resolved_tr);
+        }
+        (trimmed, if trimmed.chars().any(|c| ('\u{0B80}'..='\u{0BFF}').contains(&c)) { "Tamil".to_string() } else { "KJV".to_string() })
+    };
+
+    parse_bible_reference_core(clean_input, &translation)
+}
+
+fn parse_bible_reference_core(input: &str, translation: &str) -> Option<BiblePassageQuery> {
+    let s = input.trim();
+    let chars: Vec<(usize, char)> = s.char_indices().collect();
+    let mut split_pos = None;
+
+    for i in (0..chars.len()).rev() {
+        if chars[i].1.is_alphabetic() || ('\u{0B80}'..='\u{0BFF}').contains(&chars[i].1) {
+            split_pos = Some(chars[i].0 + chars[i].1.len_utf8());
+            break;
+        }
+    }
+
+    let (book_part, chap_verse_part) = match split_pos {
+        Some(pos) => (s[..pos].trim(), s[pos..].trim()),
+        None => return None,
+    };
+
+    if book_part.is_empty() || chap_verse_part.is_empty() {
+        return None;
+    }
+
+    let chap_verse_cleaned = chap_verse_part.replace('.', ":").replace('–', "-").replace('—', "-");
+    let parts: Vec<&str> = chap_verse_cleaned.split(':').collect();
+
+    let (chapter, start_verse, end_verse) = if parts.len() >= 2 {
+        let ch: i32 = parts[0].trim().parse().ok()?;
+        let verse_str = parts[1].trim();
+        if let Some(dash_idx) = verse_str.find('-') {
+            let sv: i32 = verse_str[..dash_idx].trim().parse().ok()?;
+            let ev: i32 = verse_str[dash_idx + 1..].trim().parse().ok()?;
+            (ch, sv, Some(ev))
+        } else {
+            let sv: i32 = verse_str.parse().ok()?;
+            (ch, sv, Some(sv))
+        }
+    } else {
+        let ch: i32 = parts[0].trim().parse().ok()?;
+        (ch, 1, None)
+    };
+
+    Some(BiblePassageQuery {
+        translation: translation.to_string(),
+        book: book_part.to_string(),
+        chapter,
+        start_verse,
+        end_verse,
+    })
+}
+
+impl DbManager {
+    pub fn import_bible_verses(&self, verses: &[BibleVerse]) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction()?;
+        let mut count = 0;
+        for v in verses {
+            tx.execute(
+                "INSERT OR REPLACE INTO bible_verses (id, translation, book, book_number, chapter, verse, text)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);",
+                params![v.id, v.translation, v.book, v.book_number, v.chapter, v.verse, v.text],
+            )?;
+            count += 1;
+        }
+        tx.commit()?;
+        Ok(count)
+    }
 
     pub fn query_bible_passage(&self, query: &BiblePassageQuery) -> Result<BiblePassageResult> {
         let conn = self.conn.lock().unwrap();
         let end_v = query.end_verse.unwrap_or(query.start_verse);
 
-        let lower = query.book.trim().to_lowercase();
-        let book_num = match lower.as_str() {
-            "john" | "jn" | "jhn" | "st john" | "யோவான்" => Some(43),
-            "psalms" | "psalm" | "ps" | "psa" | "சங்கீதம்" => Some(19),
-            "romans" | "roman" | "rom" | "ரோமர்" => Some(45),
-            "matthew" | "matt" | "mt" | "மத்தேயு" => Some(40),
-            _ => None,
-        };
+        let book_num = resolve_book_number(&query.book);
 
         let mut verses = Vec::new();
 
@@ -6078,6 +6245,56 @@ mod tests {
         };
         let res_web = db.query_bible_passage(&q_web).unwrap();
         assert_eq!(res_web.verses.len(), 5);
+
+        // 4. Test parse_bible_reference
+        let parsed1 = parse_bible_reference("John 3:16-18").unwrap();
+        assert_eq!(parsed1.book, "John");
+        assert_eq!(parsed1.chapter, 3);
+        assert_eq!(parsed1.start_verse, 16);
+        assert_eq!(parsed1.end_verse, Some(18));
+
+        let parsed2 = parse_bible_reference("Psalm 23").unwrap();
+        assert_eq!(parsed2.book, "Psalm");
+        assert_eq!(parsed2.chapter, 23);
+        assert_eq!(parsed2.start_verse, 1);
+        assert_eq!(parsed2.end_verse, None);
+
+        let parsed3 = parse_bible_reference("மத்தேயு 6:9-13").unwrap();
+        assert_eq!(parsed3.book, "மத்தேயு");
+        assert_eq!(parsed3.chapter, 6);
+        assert_eq!(parsed3.start_verse, 9);
+        assert_eq!(parsed3.end_verse, Some(13));
+        assert_eq!(parsed3.translation, "Tamil");
+
+        // 5. Test resolve_book_number across 66 books
+        assert_eq!(resolve_book_number("Genesis"), Some(1));
+        assert_eq!(resolve_book_number("gen"), Some(1));
+        assert_eq!(resolve_book_number("ஆதியாகமம்"), Some(1));
+        assert_eq!(resolve_book_number("Rev"), Some(66));
+        assert_eq!(resolve_book_number("வெளிப்படுத்தின விசேஷம்"), Some(66));
+
+        // 6. Test import_bible_verses
+        let custom_verse = BibleVerse {
+            id: "bv-custom-gen-1-1".to_string(),
+            translation: "WEB".to_string(),
+            book: "Genesis".to_string(),
+            book_number: 1,
+            chapter: 1,
+            verse: 1,
+            text: "In the beginning, God created the heavens and the earth.".to_string(),
+        };
+        let imported = db.import_bible_verses(&[custom_verse]).unwrap();
+        assert_eq!(imported, 1);
+        let q_custom = BiblePassageQuery {
+            translation: "WEB".to_string(),
+            book: "Genesis".to_string(),
+            chapter: 1,
+            start_verse: 1,
+            end_verse: Some(1),
+        };
+        let res_custom = db.query_bible_passage(&q_custom).unwrap();
+        assert_eq!(res_custom.verses.len(), 1);
+        assert!(res_custom.verses[0].text.contains("In the beginning"));
     }
 
     #[test]

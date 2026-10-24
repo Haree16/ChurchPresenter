@@ -19,8 +19,7 @@
         "minWidth": 960,
         "minHeight": 600,
         "resizable": true,
-        "fullscreen": false,
-        "devtools": true
+        "fullscreen": false
       },
       {
         "title": "Church Presenter - Audience Display",
@@ -32,8 +31,7 @@
         "fullscreen": false,
         "visible": false,
         "decorations": false,
-        "skipTaskbar": true,
-        "devtools": true
+        "skipTaskbar": true
       },
       {
         "title": "Church Presenter - Stage Confidence Display",
@@ -45,8 +43,7 @@
         "fullscreen": false,
         "visible": false,
         "decorations": false,
-        "skipTaskbar": true,
-        "devtools": true
+        "skipTaskbar": true
       },
       {
         "title": "Church Presenter - Livestream Overlay",
@@ -60,12 +57,15 @@
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "devtools": true
+        "skipTaskbar": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost data: blob:; media-src 'self' asset: https://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ws: http:; script-src 'self'"
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/media/**", "$APPDATA/**"]
+      },
+      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost http://asset.localhost data: blob:; media-src 'self' asset: https://asset.localhost http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ws: http:; script-src 'self'"
     }
   },
   "bundle": {

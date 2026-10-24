@@ -2,7 +2,7 @@ use crate::db::DbManager;
 use crate::models::{PresentationState, Slide};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OverlayRenderPayload {
     pub is_live: bool,

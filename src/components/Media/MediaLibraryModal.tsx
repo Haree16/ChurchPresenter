@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Film,
@@ -9,15 +9,17 @@ import {
   Search,
   Play,
   AlertTriangle,
+  FolderOpen,
 } from 'lucide-react';
 import { MediaAsset } from '../../types';
-import { api } from '../../services/api';
+import { api, isTauri } from '../../services/api';
 import {
   formatFileSize,
   formatMediaDuration,
   mediaService,
   ALL_SUPPORTED_EXTENSIONS,
 } from '../../services/mediaService';
+import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 
 interface MediaLibraryModalProps {
   isOpen: boolean;
@@ -37,6 +39,8 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
   const [isImporting, setIsImporting] = useState(false);
   const [importPath, setImportPath] = useState('');
   const [notification, setNotification] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [warningModal, setWarningModal] = useState<{
     assetId: string;
     usageCount: number;
@@ -57,6 +61,89 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
       refreshAssets();
     }
   }, [isOpen]);
+
+  const handleBrowseFiles = async () => {
+    try {
+      if (typeof window !== 'undefined' && isTauri()) {
+        const selected = await openFileDialog({
+          multiple: false,
+          filters: [
+            {
+              name: 'Media Files',
+              extensions: ALL_SUPPORTED_EXTENSIONS,
+            },
+            {
+              name: 'Images',
+              extensions: ['jpg', 'jpeg', 'png', 'webp'],
+            },
+            {
+              name: 'Videos',
+              extensions: ['mp4', 'webm'],
+            },
+            {
+              name: 'Audio',
+              extensions: ['mp3', 'wav', 'ogg'],
+            },
+          ],
+        });
+        if (selected && typeof selected === 'string') {
+          setIsImporting(true);
+          try {
+            const newAsset = await api.importMediaAsset(selected);
+            await refreshAssets();
+            setSelectedAssetId(newAsset.id);
+            showNotification(`Imported ${newAsset.originalFilename}`);
+          } catch (err: any) {
+            alert(err?.message || 'Failed to import media file');
+          } finally {
+            setIsImporting(false);
+          }
+        }
+      } else {
+        fileInputRef.current?.click();
+      }
+    } catch (err: any) {
+      console.error('File dialog error:', err);
+    }
+  };
+
+  const handleFallbackFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const path = (file as any).path || file.name;
+    setIsImporting(true);
+    try {
+      const newAsset = await api.importMediaAsset(path);
+      await refreshAssets();
+      setSelectedAssetId(newAsset.id);
+      showNotification(`Imported ${newAsset.originalFilename}`);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to import media file');
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    const path = (file as any).path || file.name;
+    setIsImporting(true);
+    try {
+      const newAsset = await api.importMediaAsset(path);
+      await refreshAssets();
+      setSelectedAssetId(newAsset.id);
+      showNotification(`Imported ${newAsset.originalFilename}`);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to import media file');
+    } finally {
+      setIsImporting(false);
+    }
+  };
 
   const handleImportAsset = async () => {
     if (!importPath.trim()) return;
@@ -297,8 +384,37 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
           {/* Import Controls */}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFallbackFileInput}
+              style={{ display: 'none' }}
+              accept="image/*,video/*,audio/*"
+            />
+            <button
+              data-testid="browse-media-btn"
+              onClick={handleBrowseFiles}
+              disabled={isImporting}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 14px',
+                backgroundColor: '#2563eb',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <FolderOpen size={14} />
+              Browse...
+            </button>
+            <input
+              data-testid="import-media-input"
               type="text"
-              placeholder="Absolute path or filename..."
+              placeholder="Or enter path..."
               value={importPath}
               onChange={(e) => setImportPath(e.target.value)}
               style={{
@@ -308,7 +424,7 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
                 padding: '6px 10px',
                 borderRadius: '6px',
                 fontSize: '0.85rem',
-                width: '220px',
+                width: '180px',
               }}
             />
             <button
@@ -337,7 +453,46 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
         </div>
 
         {/* Content Area: Grid on Left, Preview Pane on Right */}
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+          }}
+          onDrop={handleDrop}
+          style={{
+            display: 'flex',
+            flex: 1,
+            overflow: 'hidden',
+            position: 'relative',
+            border: isDragging ? '2px dashed #3b82f6' : 'none',
+            backgroundColor: isDragging ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
+          }}
+        >
+          {isDragging && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 50,
+                flexDirection: 'column',
+                gap: '12px',
+                pointerEvents: 'none',
+              }}
+            >
+              <Upload size={48} style={{ color: '#3b82f6' }} />
+              <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f8fafc' }}>
+                Drop image, video, or audio file to import
+              </div>
+            </div>
+          )}
           {/* Media Grid */}
           <div
             style={{
