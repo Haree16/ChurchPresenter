@@ -3207,6 +3207,18 @@ class MockDataStore {
     };
   }
 
+  public async getNetworkBindMode(): Promise<'local' | 'lan'> {
+    return (await this.getSetting('network_bind_mode')) === 'local' ? 'local' : 'lan';
+  }
+
+  public async setNetworkBindMode(mode: string): Promise<'local' | 'lan'> {
+    if (mode !== 'local' && mode !== 'lan') {
+      throw new Error(`Unknown network mode '${mode}'. Use 'local' or 'lan'.`);
+    }
+    await this.setSetting('network_bind_mode', mode);
+    return mode;
+  }
+
   public async getRemoteServerStatus(): Promise<RemoteServerStatus> {
     return JSON.parse(JSON.stringify(this.remoteServerStatus));
   }
@@ -4119,6 +4131,20 @@ export const api = {
       return await invoke<ImportResult>('import_backup', { backup, mode });
     }
     return mockStore.importBackup(backup, mode);
+  },
+
+  getNetworkBindMode: async (): Promise<'local' | 'lan'> => {
+    if (isTauri()) {
+      return (await invoke<string>('get_network_bind_mode')) === 'local' ? 'local' : 'lan';
+    }
+    return mockStore.getNetworkBindMode();
+  },
+
+  setNetworkBindMode: async (mode: 'local' | 'lan'): Promise<'local' | 'lan'> => {
+    if (isTauri()) {
+      return (await invoke<string>('set_network_bind_mode', { mode })) === 'local' ? 'local' : 'lan';
+    }
+    return mockStore.setNetworkBindMode(mode);
   },
 
   getSetting: async (key: string): Promise<string | null> => {

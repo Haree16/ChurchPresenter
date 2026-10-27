@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../services/api';
+import { NetworkExposureControl, BindMode } from './NetworkExposureControl';
 import {
   RemoteServerStatus,
   RemoteDevice,
@@ -38,6 +39,9 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   initialTab = 'remote',
 }) => {
   const [activeTab, setActiveTab] = useState<'remote' | 'midi' | 'osc' | 'actions'>(initialTab);
+
+  // Who may connect to the remote server and OSC listener (applies on next start)
+  const [bindMode, setBindMode] = useState<BindMode>('lan');
 
   // Remote Control state
   const [remoteStatus, setRemoteStatus] = useState<RemoteServerStatus | null>(null);
@@ -82,7 +86,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings] =
+      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode] =
         await Promise.all([
           api.getRemoteServerStatus(),
           api.listRemoteDevices(),
@@ -91,8 +95,10 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
           api.getOscConfig(),
           api.getOscStatus(),
           api.listActionMappings(),
+          api.getNetworkBindMode(),
         ]);
 
+      setBindMode(bMode);
       setRemoteStatus(rStatus);
       setRemotePort(rStatus.port || 8088);
       setRemoteDevices(rDevs);
@@ -136,8 +142,24 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
 
   if (!isOpen) return null;
 
-  const lanIp = remoteStatus?.lanIps?.[0] || '127.0.0.1';
+  const lanIp =
+    remoteStatus?.isRunning && remoteStatus.bindAddress === '127.0.0.1'
+      ? '127.0.0.1'
+      : remoteStatus?.lanIps?.[0] || '127.0.0.1';
   const remoteUrl = `http://${lanIp}:${remotePort}/remote`;
+
+  const handleBindModeChange = async (mode: BindMode) => {
+    try {
+      setBindMode(await api.setNetworkBindMode(mode));
+      setStatusMessage(
+        mode === 'local'
+          ? 'Remote and OSC will accept connections from this computer only.'
+          : 'Remote and OSC will accept connections from your local network.'
+      );
+    } catch (err) {
+      setStatusMessage(`Error: ${err}`);
+    }
+  };
 
   // Remote Handlers
   const handleToggleRemoteServer = async () => {
@@ -628,6 +650,13 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                   </button>
                 </div>
               </div>
+
+              <NetworkExposureControl
+                kind="remote"
+                mode={bindMode}
+                onChange={handleBindModeChange}
+                locked={!!remoteStatus?.isRunning || !!oscStatus?.isRunning}
+              />
 
               {/* Pairing Info & PIN Box */}
               {remoteStatus?.isRunning && (
@@ -1460,6 +1489,13 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                   </button>
                 </div>
               </div>
+
+              <NetworkExposureControl
+                kind="osc"
+                mode={bindMode}
+                onChange={handleBindModeChange}
+                locked={!!remoteStatus?.isRunning || !!oscStatus?.isRunning}
+              />
 
               {/* Live OSC Packet Monitor */}
               <div

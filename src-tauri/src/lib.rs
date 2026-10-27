@@ -264,6 +264,8 @@ pub fn run() {
             commands::get_remote_server_status,
             commands::start_remote_server,
             commands::stop_remote_server,
+            commands::get_network_bind_mode,
+            commands::set_network_bind_mode,
             commands::list_remote_devices,
             commands::approve_remote_device,
             commands::update_remote_device_permissions,

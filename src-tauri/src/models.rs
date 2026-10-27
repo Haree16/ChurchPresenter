@@ -639,6 +639,9 @@ pub struct RemoteServerStatus {
     pub pairing_pin: Option<String>,
     pub connected_clients_count: usize,
     pub error: Option<String>,
+    /// Address the server listens on (127.0.0.1 = this computer only, 0.0.0.0 = local network).
+    #[serde(default)]
+    pub bind_address: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -718,6 +721,8 @@ pub struct OscStatus {
     pub last_received_path: Option<String>,
     pub last_received_time: Option<String>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub bind_address: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

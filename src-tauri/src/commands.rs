@@ -1099,7 +1099,32 @@ pub async fn start_remote_server(
     app: AppHandle,
 ) -> Result<RemoteServerStatus, String> {
     let p = port.unwrap_or(8088);
-    remote_mgr.start_server(app, db.inner().clone(), pres_mgr.inner().clone(), p)
+    let bind = bind_mode(&db);
+    remote_mgr.start_server(app, db.inner().clone(), pres_mgr.inner().clone(), p, bind.bind_ip())
+}
+
+fn bind_mode(db: &DbManager) -> crate::net_guard::BindMode {
+    let stored = db.get_setting(crate::net_guard::BIND_MODE_SETTING).ok().flatten();
+    crate::net_guard::BindMode::from_setting(stored.as_deref())
+}
+
+/// Returns "lan" or "local": who may reach the remote server and OSC listener.
+#[tauri::command]
+pub async fn get_network_bind_mode(db: State<'_, DbManager>) -> Result<String, String> {
+    Ok(bind_mode(&db).as_setting().to_string())
+}
+
+/// Sets the listening scope. Takes effect the next time the remote server / OSC listener starts.
+#[tauri::command]
+pub async fn set_network_bind_mode(mode: String, db: State<'_, DbManager>) -> Result<String, String> {
+    let normalized = match mode.trim().to_lowercase().as_str() {
+        "local" => crate::net_guard::BindMode::Local,
+        "lan" => crate::net_guard::BindMode::Lan,
+        other => return Err(format!("Unknown network mode '{}'. Use 'local' or 'lan'.", other)),
+    };
+    db.set_setting(crate::net_guard::BIND_MODE_SETTING, normalized.as_setting())
+        .map_err(|e| e.to_string())?;
+    Ok(normalized.as_setting().to_string())
 }
 
 #[tauri::command]
@@ -1264,7 +1289,8 @@ pub async fn start_osc_listener(
     app: AppHandle,
 ) -> Result<OscStatus, String> {
     let p = port.unwrap_or(9000);
-    osc_svc.start_listener(app, db.inner().clone(), pres_mgr.inner().clone(), p)
+    let bind = bind_mode(&db);
+    osc_svc.start_listener(app, db.inner().clone(), pres_mgr.inner().clone(), p, bind.bind_ip())
 }
 
 #[tauri::command]

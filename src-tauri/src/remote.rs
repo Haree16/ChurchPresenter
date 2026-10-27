@@ -21,6 +21,7 @@ pub struct RemoteServerManager {
     connected_clients: Arc<Mutex<HashMap<String, Instant>>>,
     failed_attempts: Arc<Mutex<HashMap<String, (u32, Instant)>>>,
     last_error: Arc<Mutex<Option<String>>>,
+    bind_ip: Arc<Mutex<String>>,
     server_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
 }
 
@@ -85,6 +86,7 @@ impl RemoteServerManager {
             connected_clients: Arc::new(Mutex::new(HashMap::new())),
             failed_attempts: Arc::new(Mutex::new(HashMap::new())),
             last_error: Arc::new(Mutex::new(None)),
+            bind_ip: Arc::new(Mutex::new("0.0.0.0".to_string())),
             server_handle: Arc::new(Mutex::new(None)),
         }
     }
@@ -112,6 +114,7 @@ impl RemoteServerManager {
             pairing_pin,
             connected_clients_count: client_count,
             error: err,
+            bind_address: self.bind_ip.lock().unwrap().clone(),
         }
     }
 
@@ -121,6 +124,7 @@ impl RemoteServerManager {
         db: DbManager,
         pres_mgr: PresentationManager,
         port: u16,
+        bind_ip: &str,
     ) -> Result<RemoteServerStatus, String> {
         if self.is_running.load(Ordering::SeqCst) {
             return Ok(self.get_status());
@@ -132,7 +136,8 @@ impl RemoteServerManager {
         *self.port.lock().unwrap() = port;
         *self.last_error.lock().unwrap() = None;
 
-        let addr = format!("0.0.0.0:{}", port);
+        *self.bind_ip.lock().unwrap() = bind_ip.to_string();
+        let addr = format!("{}:{}", bind_ip, port);
         let server = match Server::http(&addr) {
             Ok(s) => s,
             Err(e) => {

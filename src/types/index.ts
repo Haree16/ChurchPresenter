@@ -464,6 +464,8 @@ export interface RemoteServerStatus {
   pairingPin?: string | null;
   connectedClientsCount: number;
   error?: string | null;
+  /** 127.0.0.1 = this computer only, 0.0.0.0 = local network. */
+  bindAddress?: string;
 }
 
 export interface RemotePairRequest {
@@ -521,6 +523,7 @@ export interface OscStatus {
   lastReceivedPath?: string | null;
   lastReceivedTime?: string | null;
   error?: string | null;
+  bindAddress?: string;
 }
 
 export interface ActionMapping {

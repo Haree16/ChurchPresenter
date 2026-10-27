@@ -17,6 +17,7 @@ pub struct OscService {
     last_received_path: Arc<Mutex<Option<String>>>,
     last_received_time: Arc<Mutex<Option<String>>>,
     last_error: Arc<Mutex<Option<String>>>,
+    bind_ip: Arc<Mutex<String>>,
 }
 
 impl OscService {
@@ -27,6 +28,7 @@ impl OscService {
             last_received_path: Arc::new(Mutex::new(None)),
             last_received_time: Arc::new(Mutex::new(None)),
             last_error: Arc::new(Mutex::new(None)),
+            bind_ip: Arc::new(Mutex::new("0.0.0.0".to_string())),
         }
     }
 
@@ -43,6 +45,7 @@ impl OscService {
             last_received_path,
             last_received_time,
             error,
+            bind_address: self.bind_ip.lock().unwrap().clone(),
         }
     }
 
@@ -52,10 +55,11 @@ impl OscService {
         db: DbManager,
         pres_mgr: PresentationManager,
         port: u16,
+        bind_ip: &str,
     ) -> Result<OscStatus, String> {
         self.stop_listener();
 
-        let bind_addr = format!("0.0.0.0:{}", port);
+        let bind_addr = format!("{}:{}", bind_ip, port);
         let socket = UdpSocket::bind(&bind_addr)
             .map_err(|e| format!("Failed to bind OSC UDP socket to {}: {}", bind_addr, e))?;
 
@@ -64,6 +68,7 @@ impl OscService {
             .map_err(|e| format!("Failed to set UDP socket timeout: {}", e))?;
 
         *self.port.lock().unwrap() = port;
+        *self.bind_ip.lock().unwrap() = bind_ip.to_string();
         *self.last_error.lock().unwrap() = None;
         self.is_running.store(true, Ordering::SeqCst);
 
