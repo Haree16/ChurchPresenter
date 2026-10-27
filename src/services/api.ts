@@ -47,6 +47,7 @@ import {
   AppDiagnosticEntry,
   AppDiagnosticFilter,
   AppInfo,
+  BibleTranslationInfo,
 } from '../types';
 
 // Detect whether we are running inside native Tauri runtime
@@ -3524,6 +3525,16 @@ class MockDataStore {
     return verses.length;
   }
 
+  public async listBibleTranslations(): Promise<BibleTranslationInfo[]> {
+    const counts = new Map<string, number>();
+    for (const v of this.bibleVerses) {
+      counts.set(v.translation, (counts.get(v.translation) || 0) + 1);
+    }
+    return Array.from(counts, ([translation, verseCount]) => ({ translation, verseCount })).sort(
+      (a, b) => a.translation.localeCompare(b.translation)
+    );
+  }
+
   public async searchBibleVerses(
     query: string,
     translation?: string,
@@ -4828,6 +4839,32 @@ export const api = {
       return await invoke<number>('import_bible_verses', { verses });
     }
     return mockStore.importBibleVerses(verses);
+  },
+
+  listBibleTranslations: async (): Promise<BibleTranslationInfo[]> => {
+    if (isTauri()) {
+      return await invoke<BibleTranslationInfo[]>('list_bible_translations');
+    }
+    return mockStore.listBibleTranslations();
+  },
+
+  /** Imports pasted Bible text; in the desktop app the Rust parser handles USFM/OSIS/Zefania/JSON. */
+  importBibleText: async (raw: string, translation: string, parsed: BibleVerse[]): Promise<number> => {
+    if (isTauri()) {
+      return await invoke<number>('import_bible_text', { raw, translation });
+    }
+    if (parsed.length === 0) {
+      throw new Error('Unrecognised Bible format. Supported: USFM, OSIS, Zefania XML, JSON.');
+    }
+    return mockStore.importBibleVerses(parsed);
+  },
+
+  /** Imports Bible files from disk (desktop app only). */
+  importBibleFiles: async (paths: string[], translation: string): Promise<number> => {
+    if (!isTauri()) {
+      throw new Error('Importing Bible files requires the desktop app.');
+    }
+    return await invoke<number>('import_bible_files', { paths, translation });
   },
 
   searchBibleVerses: async (

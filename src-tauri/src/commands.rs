@@ -1478,6 +1478,54 @@ pub async fn import_bible_verses(
 }
 
 #[tauri::command]
+pub async fn list_bible_translations(
+    db: State<'_, DbManager>,
+) -> Result<Vec<crate::models::BibleTranslationInfo>, String> {
+    db.list_bible_translations().map_err(|e| e.to_string())
+}
+
+/// Imports Bible text pasted by the user (USFM, OSIS, Zefania, JSON) as `translation`.
+#[tauri::command]
+pub async fn import_bible_text(
+    raw: String,
+    translation: String,
+    db: State<'_, DbManager>,
+) -> Result<usize, String> {
+    let translation = translation.trim().to_string();
+    if translation.is_empty() {
+        return Err("Enter a translation name (e.g. ESV) before importing.".to_string());
+    }
+    let verses = crate::bible_import::parse_bible_text(&raw, &translation)?;
+    db.import_bible_books(&verses).map_err(|e| e.to_string())
+}
+
+/// Reads one or more Bible files (USFM, OSIS, Zefania, JSON) and imports them as `translation`.
+/// Returns the number of verses imported.
+#[tauri::command]
+pub async fn import_bible_files(
+    paths: Vec<String>,
+    translation: String,
+    db: State<'_, DbManager>,
+) -> Result<usize, String> {
+    let translation = translation.trim().to_string();
+    if translation.is_empty() {
+        return Err("Enter a translation name (e.g. ESV) before importing.".to_string());
+    }
+    if paths.is_empty() {
+        return Err("No files selected.".to_string());
+    }
+    let mut all = Vec::new();
+    for path in &paths {
+        let raw = std::fs::read_to_string(path)
+            .map_err(|e| format!("Could not read {}: {}", path, e))?;
+        let verses = crate::bible_import::parse_bible_text(&raw, &translation)
+            .map_err(|e| format!("{}: {}", path, e))?;
+        all.extend(verses);
+    }
+    db.import_bible_books(&all).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn search_bible_verses(
     query: String,
     translation: Option<String>,

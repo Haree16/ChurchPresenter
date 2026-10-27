@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BookOpen, X, Check, Search, Upload, FileText, CheckCircle2 } from 'lucide-react';
 import { BiblePassageQuery, BiblePassageResult, BibleVerse, Theme } from '../../types';
 import { api } from '../../services/api';
+import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 
 interface BiblePassageModalProps {
   isOpen: boolean;
@@ -120,15 +121,24 @@ export function parseBibleImportContent(raw: string, defaultTranslation: string 
   return [];
 }
 
+const TRANSLATION_LABELS: Record<string, string> = {
+  KJV: 'KJV (King James)',
+  WEB: 'WEB (World English)',
+  Tamil: 'Tamil (பரிசுத்த வேதாகமம்)',
+};
+
+const translationLabel = (t: string) => TRANSLATION_LABELS[t] || t;
+
 export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
   isOpen,
   onClose,
   onAddPassage,
 }) => {
   const [activeTab, setActiveTab] = useState<'lookup' | 'import'>('lookup');
-  const [translation, setTranslation] = useState<'KJV' | 'WEB' | 'Tamil'>('KJV');
+  const [translation, setTranslation] = useState<string>('KJV');
+  const [availableTranslations, setAvailableTranslations] = useState<string[]>(['KJV', 'WEB', 'Tamil']);
   const [isDualTranslation, setIsDualTranslation] = useState<boolean>(false);
-  const [secondaryTranslation, setSecondaryTranslation] = useState<'KJV' | 'WEB' | 'Tamil'>('Tamil');
+  const [secondaryTranslation, setSecondaryTranslation] = useState<string>('Tamil');
   const [book, setBook] = useState<string>('John');
   const [chapter, setChapter] = useState<number>(3);
   const [startVerse, setStartVerse] = useState<number>(16);
@@ -200,8 +210,11 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
     try {
       const parsed = await api.parseBibleReference(val);
       if (parsed) {
-        if (parsed.translation === 'Tamil' || parsed.translation === 'WEB' || parsed.translation === 'KJV') {
-          setTranslation(parsed.translation);
+        const known = availableTranslations.find(
+          (t) => t.toLowerCase() === parsed.translation.toLowerCase()
+        );
+        if (known) {
+          setTranslation(known);
         }
         setBook(parsed.book);
         setChapter(parsed.chapter);
@@ -298,16 +311,51 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
   };
 
   const handleRunImport = async () => {
-    if (parsedImportVerses.length === 0) return;
+    if (!importText.trim()) return;
     setIsImporting(true);
     setImportSuccessMsg(null);
     try {
-      const count = await api.importBibleVerses(parsedImportVerses);
+      const count = await api.importBibleText(importText, importTranslation, parsedImportVerses);
       setImportSuccessMsg(`Successfully imported ${count} verses for ${importTranslation} into offline database!`);
       setImportText('');
       setParsedImportVerses([]);
+      await refreshTranslations();
     } catch (err: any) {
-      setError(err?.message || 'Failed to import verses');
+      setError(typeof err === 'string' ? err : err?.message || 'Failed to import verses');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const refreshTranslations = async () => {
+    try {
+      const list = await api.listBibleTranslations();
+      if (list.length > 0) setAvailableTranslations(list.map((t) => t.translation));
+    } catch {
+      // keep the built-in defaults
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) void refreshTranslations();
+  }, [isOpen]);
+
+  const handleChooseFiles = async () => {
+    setError(null);
+    setImportSuccessMsg(null);
+    try {
+      const picked = await openFileDialog({
+        multiple: true,
+        filters: [{ name: 'Bible files', extensions: ['usfm', 'sfm', 'usx', 'xml', 'osis', 'json', 'txt'] }],
+      });
+      if (!picked) return;
+      const paths = Array.isArray(picked) ? picked : [picked];
+      setIsImporting(true);
+      const count = await api.importBibleFiles(paths, importTranslation);
+      setImportSuccessMsg(`Imported ${count} verses for ${importTranslation} from ${paths.length} file(s).`);
+      await refreshTranslations();
+    } catch (err: any) {
+      setError(typeof err === 'string' ? err : err?.message || 'Failed to import Bible files');
     } finally {
       setIsImporting(false);
     }
@@ -581,7 +629,7 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
                 </label>
                 <select
                   value={translation}
-                  onChange={(e) => setTranslation(e.target.value as any)}
+                  onChange={(e) => setTranslation(e.target.value)}
                   style={{
                     width: '100%',
                     padding: '7px 10px',
@@ -592,9 +640,9 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
                     fontSize: '13px',
                   }}
                 >
-                  <option value="KJV">KJV (King James)</option>
-                  <option value="WEB">WEB (World English)</option>
-                  <option value="Tamil">Tamil (பரிசுத்த வேதாகமம்)</option>
+                  {availableTranslations.map((t) => (
+                    <option key={t} value={t}>{translationLabel(t)}</option>
+                  ))}
                 </select>
               </div>
 
@@ -715,7 +763,7 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
                   <select
                     value={secondaryTranslation}
                     data-testid="secondary-translation-select"
-                    onChange={(e) => setSecondaryTranslation(e.target.value as any)}
+                    onChange={(e) => setSecondaryTranslation(e.target.value)}
                     style={{
                       padding: '4px 8px',
                       backgroundColor: '#1e293b',
@@ -725,9 +773,9 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
                       fontSize: '11px',
                     }}
                   >
-                    <option value="Tamil">Tamil (பரிசுத்த வேதாகமம்)</option>
-                    <option value="KJV">KJV (King James)</option>
-                    <option value="WEB">WEB (World English)</option>
+                    {availableTranslations.map((t) => (
+                      <option key={t} value={t}>{translationLabel(t)}</option>
+                    ))}
                   </select>
                 </div>
               )}
@@ -866,7 +914,7 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
                 </h3>
               </div>
               <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#94a3b8', lineHeight: 1.5 }}>
-                Import Bible translations from standard <strong>JSON</strong>, <strong>Zefania XML</strong>, or <strong>USFM</strong> into your local offline SQLite database.
+                Import Bible translations from <strong>USFM</strong>, <strong>OSIS</strong>, <strong>Zefania XML</strong> or <strong>JSON</strong> into your local offline SQLite database.
               </p>
 
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '12px' }}>
@@ -885,6 +933,34 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
                     width: '80px',
                   }}
                 />
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <button
+                  type="button"
+                  data-testid="bible-import-files-btn"
+                  disabled={isImporting}
+                  onClick={handleChooseFiles}
+                  style={{
+                    padding: '8px 14px',
+                    backgroundColor: '#1e293b',
+                    color: '#e2e8f0',
+                    borderRadius: '6px',
+                    border: '1px solid #334155',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <FileText size={14} />
+                  <span>{isImporting ? 'Importing...' : 'Choose Bible files (USFM, OSIS, Zefania, JSON)…'}</span>
+                </button>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                  Importing a book that already exists for this translation replaces it.
+                </div>
               </div>
 
               <textarea
@@ -907,25 +983,27 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
               />
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
-                <span style={{ fontSize: '12px', color: parsedImportVerses.length > 0 ? '#34d399' : '#94a3b8' }}>
-                  {parsedImportVerses.length > 0
-                    ? `Ready to import ${parsedImportVerses.length} verses for ${importTranslation}`
-                    : 'Paste content to parse verses'}
+                <span style={{ fontSize: '12px', color: importText.trim() ? '#34d399' : '#94a3b8' }}>
+                  {importText.trim()
+                    ? parsedImportVerses.length > 0
+                      ? `Ready to import ${parsedImportVerses.length} verses for ${importTranslation}`
+                      : `Ready to import as ${importTranslation} (format is checked on import)`
+                    : 'Paste content to import'}
                 </span>
                 <button
                   type="button"
                   data-testid="run-bible-import-btn"
-                  disabled={isImporting || parsedImportVerses.length === 0}
+                  disabled={isImporting || !importText.trim()}
                   onClick={handleRunImport}
                   style={{
                     padding: '8px 16px',
-                    backgroundColor: parsedImportVerses.length > 0 ? '#0284c7' : '#334155',
+                    backgroundColor: importText.trim() ? '#0284c7' : '#334155',
                     color: '#fff',
                     borderRadius: '6px',
                     border: 'none',
                     fontSize: '12px',
                     fontWeight: 600,
-                    cursor: parsedImportVerses.length > 0 ? 'pointer' : 'not-allowed',
+                    cursor: importText.trim() ? 'pointer' : 'not-allowed',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',

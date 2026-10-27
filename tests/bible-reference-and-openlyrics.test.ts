@@ -251,4 +251,25 @@ describe('Phase 3: Bible Reference Parser & Song Interchange Formats', () => {
       expect(pres.title).toBe('Service Slides');
     });
   });
+
+  describe('Bible translations list and text import', () => {
+    it('lists built-in translations and includes newly imported ones', async () => {
+      const before = (await api.listBibleTranslations()).map((t) => t.translation);
+      expect(before).toEqual(expect.arrayContaining(['KJV', 'WEB', 'Tamil']));
+
+      const verse = {
+        id: 'ESV-43-3-16', translation: 'ESV', book: 'John', bookNumber: 43,
+        chapter: 3, verse: 16, text: 'For God so loved the world',
+      };
+      expect(await api.importBibleText('[...]', 'ESV', [verse])).toBe(1);
+
+      const after = await api.listBibleTranslations();
+      const esv = after.find((t) => t.translation === 'ESV');
+      expect(esv?.verseCount).toBe(1);
+    });
+
+    it('rejects pasted text that no parser recognised', async () => {
+      await expect(api.importBibleText('not a bible', 'XYZ', [])).rejects.toThrow(/Unrecognised/);
+    });
+  });
 });

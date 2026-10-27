@@ -283,6 +283,11 @@ export interface BibleVerse {
   text: string;
 }
 
+export interface BibleTranslationInfo {
+  translation: string;
+  verseCount: number;
+}
+
 export interface BiblePassageQuery {
   translation: string;
   book: string;

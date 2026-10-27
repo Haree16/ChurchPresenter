@@ -378,6 +378,13 @@ pub struct BibleVerse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BibleTranslationInfo {
+    pub translation: String,
+    pub verse_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BiblePassageQuery {
     pub translation: String,
     pub book: String,

@@ -1,4 +1,5 @@
 mod actions;
+mod bible_import;
 mod commands;
 mod db;
 mod display;
@@ -301,6 +302,9 @@ pub fn run() {
             commands::parse_bible_reference,
             commands::import_bible_verses,
             commands::search_bible_verses,
+            commands::list_bible_translations,
+            commands::import_bible_files,
+            commands::import_bible_text,
             commands::get_database_health,
             commands::recover_database_from_backup,
             commands::import_presentation_document,

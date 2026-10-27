@@ -1,6 +1,6 @@
 use crate::models::{
     ActionMapping, AppDiagnosticEntry, AppDiagnosticFilter, BackupData, BiblePassageQuery,
-    BiblePassageResult, BibleVerse, DatabaseHealth, LivestreamOverlayConfig, MediaAsset,
+    BiblePassageResult, BibleTranslationInfo, BibleVerse, DatabaseHealth, LivestreamOverlayConfig, MediaAsset,
     MidiMapping, OscConfig, OutputConfig, PlaylistItem, PlaylistItemWithSlides, Presentation,
     RemoteDevice, Service, ServiceWithItems, Slide, SlideGenerationOptions, Song, SongExportData,
     SongImportOptions, SongImportResult, SongSection, SongWithSections, StageConfig, Theme,
@@ -1144,6 +1144,30 @@ impl DbManager {
             tx.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (6, ?1);",
                 params![now],
+            )?;
+
+            tx.commit()?;
+        }
+
+        // ================= Migration 7: Bible lookup index + FTS5 keyword search =================
+        if current_version < 7 {
+            let tx = conn.unchecked_transaction()?;
+
+            tx.execute(
+                "CREATE INDEX IF NOT EXISTS idx_bible_book_number ON bible_verses(translation, book_number, chapter, verse);",
+                [],
+            )?;
+            tx.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS bible_verses_fts USING fts5(
+                    text, content='bible_verses', content_rowid='rowid'
+                );",
+                [],
+            )?;
+            tx.execute("INSERT INTO bible_verses_fts(bible_verses_fts) VALUES('rebuild');", [])?;
+
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (7, ?1);",
+                params![Utc::now().to_rfc3339()],
             )?;
 
             tx.commit()?;
@@ -4055,7 +4079,35 @@ impl DbManager {
 
 pub fn resolve_book_number(input: &str) -> Option<u32> {
     let lower = input.trim().to_lowercase();
-    match lower.as_str() {
+    if let Some(n) = resolve_book_alias(&lower) {
+        return Some(n);
+    }
+
+    // Normalise: "Jn." -> "jn", "1John" -> "1 john", "First John" / "1st John" -> "1 john"
+    let cleaned: String = lower.replace('.', " ").split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut parts: Vec<String> = cleaned.splitn(2, ' ').map(|p| p.to_string()).collect();
+    if parts.len() == 2 {
+        let ordinal = match parts[0].as_str() {
+            "first" | "1st" | "i" => Some("1"),
+            "second" | "2nd" | "ii" => Some("2"),
+            "third" | "3rd" | "iii" => Some("3"),
+            _ => None,
+        };
+        if let Some(d) = ordinal {
+            parts[0] = d.to_string();
+        }
+    }
+    let mut candidate = parts.join(" ");
+    if let Some(first) = candidate.chars().next() {
+        if first.is_ascii_digit() && candidate.chars().nth(1).map_or(false, |c| c != ' ') {
+            candidate = format!("{} {}", first, candidate[1..].trim_start());
+        }
+    }
+    resolve_book_alias(&candidate)
+}
+
+fn resolve_book_alias(lower: &str) -> Option<u32> {
+    match lower {
         // Old Testament (1..=39)
         "genesis" | "gen" | "ge" | "gn" | "ஆதியாகமம்" | "ஆதி" => Some(1),
         "exodus" | "exod" | "ex" | "exo" | "யாத்திராகமம்" | "யாத்" => Some(2),
@@ -4129,6 +4181,24 @@ pub fn resolve_book_number(input: &str) -> Option<u32> {
     }
 }
 
+/// Builds an FTS5 MATCH expression (every word, prefix-matched) from user input.
+/// Returns None when the input is not plain ASCII words, so callers can fall back.
+fn build_fts_query(input: &str) -> Option<String> {
+    if !input.is_ascii() {
+        return None;
+    }
+    let tokens: Vec<String> = input
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(|t| format!("\"{}\"*", t))
+        .collect();
+    if tokens.is_empty() {
+        None
+    } else {
+        Some(tokens.join(" "))
+    }
+}
+
 pub fn parse_bible_reference(input: &str) -> Option<BiblePassageQuery> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
@@ -4174,7 +4244,8 @@ fn parse_bible_reference_core(input: &str, translation: &str) -> Option<BiblePas
     }
 
     let (book_part, chap_verse_part) = match split_pos {
-        Some(pos) => (s[..pos].trim(), s[pos..].trim()),
+        // a dot right after the book ("Jn. 3:16") is an abbreviation mark, not a separator
+        Some(pos) => (s[..pos].trim(), s[pos..].trim_start_matches(|c: char| c == '.' || c.is_whitespace())),
         None => return None,
     };
 
@@ -4213,19 +4284,74 @@ fn parse_bible_reference_core(input: &str, translation: &str) -> Option<BiblePas
 
 impl DbManager {
     pub fn import_bible_verses(&self, verses: &[BibleVerse]) -> Result<usize> {
-        let conn = self.conn.lock().unwrap();
-        let tx = conn.unchecked_transaction()?;
-        let mut count = 0;
-        for v in verses {
-            tx.execute(
-                "INSERT OR REPLACE INTO bible_verses (id, translation, book, book_number, chapter, verse, text)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);",
-                params![v.id, v.translation, v.book, v.book_number, v.chapter, v.verse, v.text],
-            )?;
-            count += 1;
-        }
-        tx.commit()?;
+        let count = {
+            let conn = self.conn.lock().unwrap();
+            let tx = conn.unchecked_transaction()?;
+            let mut count = 0;
+            for v in verses {
+                tx.execute(
+                    "INSERT OR REPLACE INTO bible_verses (id, translation, book, book_number, chapter, verse, text)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);",
+                    params![v.id, v.translation, v.book, v.book_number, v.chapter, v.verse, v.text],
+                )?;
+                count += 1;
+            }
+            tx.commit()?;
+            count
+        };
+        self.rebuild_bible_index()?;
         Ok(count)
+    }
+
+    /// Rebuilds the FTS5 index from `bible_verses`. Call after bulk changes.
+    pub fn rebuild_bible_index(&self) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("INSERT INTO bible_verses_fts(bible_verses_fts) VALUES('rebuild');", [])?;
+        Ok(())
+    }
+
+    /// Imports parsed verses, replacing any existing rows for the same
+    /// (translation, book) so re-importing a translation never duplicates verses.
+    pub fn import_bible_books(&self, verses: &[BibleVerse]) -> Result<usize> {
+        {
+            let conn = self.conn.lock().unwrap();
+            let tx = conn.unchecked_transaction()?;
+            let mut seen = std::collections::HashSet::new();
+            for v in verses {
+                if seen.insert((v.translation.to_lowercase(), v.book_number)) {
+                    tx.execute(
+                        "DELETE FROM bible_verses WHERE LOWER(translation) = LOWER(?1) AND book_number = ?2;",
+                        params![v.translation, v.book_number],
+                    )?;
+                }
+            }
+            {
+                let mut stmt = tx.prepare(
+                    "INSERT OR REPLACE INTO bible_verses (id, translation, book, book_number, chapter, verse, text)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);",
+                )?;
+                for v in verses {
+                    stmt.execute(params![v.id, v.translation, v.book, v.book_number, v.chapter, v.verse, v.text])?;
+                }
+            }
+            tx.commit()?;
+        }
+        self.rebuild_bible_index()?;
+        Ok(verses.len())
+    }
+
+    pub fn list_bible_translations(&self) -> Result<Vec<BibleTranslationInfo>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT translation, COUNT(*) FROM bible_verses GROUP BY translation ORDER BY translation COLLATE NOCASE;",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(BibleTranslationInfo {
+                translation: row.get(0)?,
+                verse_count: row.get(1)?,
+            })
+        })?;
+        rows.collect()
     }
 
     pub fn search_bible_verses(
@@ -4235,44 +4361,10 @@ impl DbManager {
         limit: Option<usize>,
     ) -> Result<Vec<BibleVerse>> {
         let conn = self.conn.lock().unwrap();
-        let max_results = limit.unwrap_or(50).min(200);
-        let q_pattern = format!("%{}%", query.trim());
+        let max_results = limit.unwrap_or(50).min(200) as i64;
+        let tr_filter = translation.filter(|t| !t.is_empty() && !t.eq_ignore_ascii_case("all"));
 
-        let mut sql = "SELECT id, translation, book, book_number, chapter, verse, text
-                       FROM bible_verses
-                       WHERE text LIKE ?1".to_string();
-
-        if let Some(tr) = translation {
-            if !tr.is_empty() && !tr.eq_ignore_ascii_case("all") {
-                sql.push_str(" AND LOWER(translation) = LOWER(?3)");
-            }
-        }
-        sql.push_str(" ORDER BY book_number ASC, chapter ASC, verse ASC LIMIT ?2");
-
-        let mut results = Vec::new();
-        if let Some(tr) = translation {
-            if !tr.is_empty() && !tr.eq_ignore_ascii_case("all") {
-                let mut stmt = conn.prepare(&sql)?;
-                let rows = stmt.query_map(params![q_pattern, max_results as i64, tr], |row| {
-                    Ok(BibleVerse {
-                        id: row.get(0)?,
-                        translation: row.get(1)?,
-                        book: row.get(2)?,
-                        book_number: row.get(3)?,
-                        chapter: row.get(4)?,
-                        verse: row.get(5)?,
-                        text: row.get(6)?,
-                    })
-                })?;
-                for r in rows {
-                    results.push(r?);
-                }
-                return Ok(results);
-            }
-        }
-
-        let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![q_pattern, max_results as i64], |row| {
+        let map_row = |row: &rusqlite::Row| -> rusqlite::Result<BibleVerse> {
             Ok(BibleVerse {
                 id: row.get(0)?,
                 translation: row.get(1)?,
@@ -4282,11 +4374,39 @@ impl DbManager {
                 verse: row.get(5)?,
                 text: row.get(6)?,
             })
-        })?;
-        for r in rows {
-            results.push(r?);
+        };
+
+        // FTS5's default tokenizer splits Tamil vowel signs, so only plain
+        // ASCII queries use the index; everything else falls back to LIKE.
+        if let Some(fts_query) = build_fts_query(query) {
+            let sql = format!(
+                "SELECT v.id, v.translation, v.book, v.book_number, v.chapter, v.verse, v.text
+                 FROM bible_verses_fts f JOIN bible_verses v ON v.rowid = f.rowid
+                 WHERE bible_verses_fts MATCH ?1 {}
+                 ORDER BY v.book_number ASC, v.chapter ASC, v.verse ASC LIMIT ?2;",
+                if tr_filter.is_some() { "AND LOWER(v.translation) = LOWER(?3)" } else { "" }
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = match tr_filter {
+                Some(tr) => stmt.query_map(params![fts_query, max_results, tr], map_row)?,
+                None => stmt.query_map(params![fts_query, max_results], map_row)?,
+            };
+            return rows.collect();
         }
-        Ok(results)
+
+        let like = format!("%{}%", query.trim());
+        let sql = format!(
+            "SELECT id, translation, book, book_number, chapter, verse, text
+             FROM bible_verses WHERE text LIKE ?1 {}
+             ORDER BY book_number ASC, chapter ASC, verse ASC LIMIT ?2;",
+            if tr_filter.is_some() { "AND LOWER(translation) = LOWER(?3)" } else { "" }
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = match tr_filter {
+            Some(tr) => stmt.query_map(params![like, max_results, tr], map_row)?,
+            None => stmt.query_map(params![like, max_results], map_row)?,
+        };
+        rows.collect()
     }
 
     pub fn query_bible_passage(&self, query: &BiblePassageQuery) -> Result<BiblePassageResult> {
@@ -6676,6 +6796,148 @@ mod tests {
             limit: None,
         }).unwrap();
         assert_eq!(empty_diag.len(), 0);
+    }
+
+    fn test_verse(tr: &str, book: &str, num: i32, ch: i32, v: i32, text: &str) -> BibleVerse {
+        BibleVerse {
+            id: format!("{}-{}-{}-{}", tr, num, ch, v),
+            translation: tr.to_string(),
+            book: book.to_string(),
+            book_number: num,
+            chapter: ch,
+            verse: v,
+            text: text.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_bible_fts_search_matches_words_prefixes_and_translation_filter() {
+        let db = DbManager::new_in_memory().unwrap();
+        let all = db.search_bible_verses("loved", None, None).unwrap();
+        assert!(all.iter().any(|v| v.book == "John" && v.chapter == 3 && v.verse == 16));
+
+        // prefix + multiple words are ANDed
+        let multi = db.search_bible_verses("god lov", Some("KJV"), None).unwrap();
+        assert!(multi.iter().all(|v| v.translation == "KJV"));
+        assert!(multi.iter().any(|v| v.verse == 16));
+
+        // FTS operators typed by the user are treated as plain words, not syntax
+        assert!(db.search_bible_verses("\"loved\" OR NEAR(", None, None).is_ok());
+        assert!(db.search_bible_verses("*", None, None).is_ok());
+
+        assert!(db.search_bible_verses("zzzzqqq", None, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_bible_search_falls_back_to_like_for_tamil() {
+        let db = DbManager::new_in_memory().unwrap();
+        let tamil_verse = db
+            .search_bible_verses("", Some("Tamil"), Some(1))
+            .unwrap();
+        // empty query falls back to LIKE '%%' and still returns rows
+        assert_eq!(tamil_verse.len(), 1);
+        let word: String = tamil_verse[0].text.split_whitespace().next().unwrap().to_string();
+        let found = db.search_bible_verses(&word, Some("Tamil"), None).unwrap();
+        assert!(found.iter().any(|v| v.id == tamil_verse[0].id));
+    }
+
+    #[test]
+    fn test_import_bible_books_replaces_instead_of_duplicating_and_updates_search() {
+        let db = DbManager::new_in_memory().unwrap();
+        let first = vec![
+            test_verse("ESV", "Ruth", 8, 1, 1, "In the days when the judges ruled"),
+            test_verse("ESV", "Ruth", 8, 1, 2, "The name of the man was Elimelech"),
+        ];
+        assert_eq!(db.import_bible_books(&first).unwrap(), 2);
+
+        // Re-import with a corrected id scheme and fewer verses
+        let second = vec![test_verse("ESV", "Ruth", 8, 1, 1, "Corrected opening words")];
+        db.import_bible_books(&second).unwrap();
+
+        let q = BiblePassageQuery {
+            translation: "ESV".into(),
+            book: "Ruth".into(),
+            chapter: 1,
+            start_verse: 1,
+            end_verse: Some(5),
+            secondary_translation: None,
+        };
+        let res = db.query_bible_passage(&q).unwrap();
+        assert_eq!(res.verses.len(), 1);
+        assert_eq!(res.verses[0].text, "Corrected opening words");
+
+        // stale text is gone from the index, new text is searchable
+        assert!(db.search_bible_verses("judges ruled", Some("ESV"), None).unwrap().is_empty());
+        assert_eq!(db.search_bible_verses("corrected", Some("ESV"), None).unwrap().len(), 1);
+
+        // other translations of the same book are untouched
+        let kjv = BiblePassageQuery { translation: "KJV".into(), ..q.clone() };
+        let _ = db.query_bible_passage(&kjv).unwrap();
+    }
+
+    #[test]
+    fn test_list_bible_translations_includes_imported() {
+        let db = DbManager::new_in_memory().unwrap();
+        db.import_bible_books(&[test_verse("ESV", "John", 43, 3, 16, "For God so loved")]).unwrap();
+        let list = db.list_bible_translations().unwrap();
+        let names: Vec<&str> = list.iter().map(|t| t.translation.as_str()).collect();
+        assert!(names.contains(&"KJV") && names.contains(&"WEB") && names.contains(&"Tamil"));
+        let esv = list.iter().find(|t| t.translation == "ESV").unwrap();
+        assert_eq!(esv.verse_count, 1);
+    }
+
+    #[test]
+    fn test_full_bible_import_and_search_performance() {
+        let db = DbManager::new_in_memory().unwrap();
+        // 31,102 verses is the size of a full Protestant Bible
+        let mut verses = Vec::with_capacity(31_102);
+        'outer: for book in 1..=66 {
+            for ch in 1..=50 {
+                for v in 1..=10 {
+                    verses.push(test_verse("BIG", "Genesis", book, ch, v, &format!("verse {} {} {} grace and truth", book, ch, v)));
+                    if verses.len() == 31_102 {
+                        break 'outer;
+                    }
+                }
+            }
+        }
+        let t = std::time::Instant::now();
+        db.import_bible_books(&verses).unwrap();
+        assert!(t.elapsed().as_secs() < 30, "import took {:?}", t.elapsed());
+
+        let t = std::time::Instant::now();
+        let hits = db.search_bible_verses("grace truth", Some("BIG"), Some(50)).unwrap();
+        assert_eq!(hits.len(), 50);
+        assert!(t.elapsed().as_millis() < 500, "search took {:?}", t.elapsed());
+    }
+
+    #[test]
+    fn test_reference_parser_abbreviations_and_forms() {
+        let cases: Vec<(&str, &str, i32, i32, Option<i32>)> = vec![
+            ("ps 23", "ps", 23, 1, None),
+            ("Jn 3:16-18", "Jn", 3, 16, Some(18)),
+            ("1 John 3:16", "1 John", 3, 16, Some(16)),
+            ("1John 4:8", "1John", 4, 8, Some(8)),
+            ("  Romans   8:28  ", "Romans", 8, 28, Some(28)),
+            ("Psalms 23:1–3", "Psalms", 23, 1, Some(3)),
+            ("john 3.16", "john", 3, 16, Some(16)),
+            ("Jn. 3:16", "Jn", 3, 16, Some(16)),
+            ("First John 1:9", "First John", 1, 9, Some(9)),
+            ("2nd Timothy 3:16", "2nd Timothy", 3, 16, Some(16)),
+        ];
+        for (input, book, ch, sv, ev) in cases {
+            let q = parse_bible_reference(input).unwrap_or_else(|| panic!("{input:?} should parse"));
+            assert_eq!(q.book, book, "{input:?}");
+            assert_eq!((q.chapter, q.start_verse, q.end_verse), (ch, sv, ev), "{input:?}");
+            assert!(resolve_book_number(&q.book).is_some(), "{input:?} book must resolve");
+        }
+    }
+
+    #[test]
+    fn test_reference_parser_rejects_garbage() {
+        for input in ["", "   ", "John", "3:16", "John x:y", "John 3:"] {
+            assert!(parse_bible_reference(input).is_none(), "{input:?} should not parse");
+        }
     }
 }
 
