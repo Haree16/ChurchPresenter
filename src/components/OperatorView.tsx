@@ -49,6 +49,8 @@ export const OperatorView: React.FC = () => {
     previousSlide,
     toggleBlackout,
     toggleLogo,
+    clearMedia,
+    clearAll,
     refreshPresentations,
     refreshSlides,
     refreshPresentationState,
@@ -187,6 +189,8 @@ export const OperatorView: React.FC = () => {
     onPrevious: previousSlide,
     onToggleBlackout: toggleBlackout,
     onToggleLogo: toggleLogo,
+    onClearMedia: clearMedia,
+    onClearAll: clearAll,
     onEscape: () => {
       // Dismiss any open modal on Escape
       if (isEditorOpen) setIsEditorOpen(false);
@@ -273,6 +277,8 @@ export const OperatorView: React.FC = () => {
         onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
         onToggleBlackout={toggleBlackout}
         onToggleLogo={toggleLogo}
+        onClearMedia={clearMedia}
+        onClearAll={clearAll}
       />
 
       {/* Live Media Controls Bar (when media is active) */}

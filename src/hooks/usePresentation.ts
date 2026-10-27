@@ -248,6 +248,22 @@ export function usePresentation() {
     }
   };
 
+  const clearMedia = async () => {
+    try {
+      await api.clearMedia();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to clear media');
+    }
+  };
+
+  const clearAll = async () => {
+    try {
+      await api.clearAll();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to clear output');
+    }
+  };
+
   const toggleLogo = async () => {
     try {
       await api.toggleLogo();
@@ -295,6 +311,8 @@ export function usePresentation() {
     previousSlide,
     toggleBlackout,
     toggleLogo,
+    clearMedia,
+    clearAll,
     refreshPresentationState,
   };
 }

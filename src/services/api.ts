@@ -1470,6 +1470,21 @@ class MockDataStore {
     return this.state;
   }
 
+  public async clearMedia(): Promise<PresentationState> {
+    this.state.mediaPlayback = null;
+    this.notify();
+    return this.state;
+  }
+
+  public async clearAll(): Promise<PresentationState> {
+    this.state.isLive = false;
+    this.state.isLogo = false;
+    this.state.isBlackout = false;
+    this.state.mediaPlayback = null;
+    this.notify();
+    return this.state;
+  }
+
   public async toggleLogo(): Promise<boolean> {
     this.state.isLogo = !this.state.isLogo;
     this.notify();
@@ -3368,6 +3383,10 @@ class MockDataStore {
       case 'toggle_logo':
         await this.toggleLogo();
         return this.getPresentationState();
+      case 'clear_media':
+        return this.clearMedia();
+      case 'clear_all':
+        return this.clearAll();
       case 'toggle_live':
         if (this.state.isLive) {
           return this.clearLive();
@@ -3852,6 +3871,20 @@ export const api = {
       });
     }
     return mockStore.setLiveSlide(presentationId, slideId);
+  },
+
+  clearMedia: async (): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('clear_media');
+    }
+    return mockStore.clearMedia();
+  },
+
+  clearAll: async (): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('clear_all');
+    }
+    return mockStore.clearAll();
   },
 
   toggleLogo: async (): Promise<boolean> => {

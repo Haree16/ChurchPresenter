@@ -31,6 +31,16 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
       description: 'Shows the church logo on the audience screen; going live with any slide clears it.',
     },
     {
+      action: 'Clear Media',
+      keys: ['M'],
+      description: 'Stops media on the audience screen; the slide stays as it is.',
+    },
+    {
+      action: 'Clear All',
+      keys: ['C'],
+      description: 'Blanks the output: clears the slide, media, logo and blackout. The selected slide is kept so you can go live again.',
+    },
+    {
       action: 'Direct Slide Jump',
       keys: ['Click on any slide card'],
       description: 'Immediately presents the clicked slide to the audience.',

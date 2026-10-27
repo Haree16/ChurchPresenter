@@ -49,6 +49,8 @@ interface HeaderProps {
   onOpenSettingsModal?: () => void;
   onToggleBlackout: () => void;
   onToggleLogo?: () => void;
+  onClearMedia?: () => void;
+  onClearAll?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -71,6 +73,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettingsModal,
   onToggleBlackout,
   onToggleLogo,
+  onClearMedia,
+  onClearAll,
 }) => {
   const { isLive, isBlackout, isLogo } = presentationState;
 
@@ -350,7 +354,50 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </button>
 
-        {/* Blackout Toggle Button */}
+        {/* Clear Layers */}
+        {onClearMedia && (
+          <button
+            type="button"
+            data-testid="clear-media-btn"
+            onClick={onClearMedia}
+            disabled={!presentationState.mediaPlayback}
+            title="Stop media on the output (Shortcut: M)"
+            style={{
+              padding: '5px 10px',
+              borderRadius: '6px',
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              color: presentationState.mediaPlayback ? '#f8fafc' : '#64748b',
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: presentationState.mediaPlayback ? 'pointer' : 'default',
+            }}
+          >
+            Clear Media (M)
+          </button>
+        )}
+        {onClearAll && (
+          <button
+            type="button"
+            data-testid="clear-all-btn"
+            onClick={onClearAll}
+            title="Clear slide, media, logo and blackout: blank output (Shortcut: C)"
+            style={{
+              padding: '5px 10px',
+              borderRadius: '6px',
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              color: '#f8fafc',
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Clear All (C)
+          </button>
+        )}
+
+        {/* Logo Toggle Button */}
         {onToggleLogo && (
           <button
             type="button"

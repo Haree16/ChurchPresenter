@@ -163,6 +163,8 @@ pub fn run() {
             commands::set_live_slide,
             commands::toggle_blackout,
             commands::toggle_logo,
+            commands::clear_media,
+            commands::clear_all,
             commands::next_slide,
             commands::previous_slide,
             // Display & Audience

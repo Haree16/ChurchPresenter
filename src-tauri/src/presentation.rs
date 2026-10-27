@@ -213,6 +213,36 @@ impl PresentationManager {
         state.is_blackout
     }
 
+    /// Stops background/foreground media on the output without touching the slide.
+    pub fn clear_media_core(&self) -> PresentationState {
+        let mut state = self.state.lock().unwrap();
+        state.media_playback = None;
+        state.clone()
+    }
+
+    pub fn clear_media(&self, app: &AppHandle) -> PresentationState {
+        let cloned = self.clear_media_core();
+        app.emit("presentation:state-changed", &cloned).ok();
+        cloned
+    }
+
+    /// Clears the output completely: no slide, no media, no logo, no blackout toggle left on.
+    /// The audience screen ends up plain black.
+    pub fn clear_all_core(&self) -> PresentationState {
+        let mut state = self.state.lock().unwrap();
+        state.is_live = false;
+        state.is_logo = false;
+        state.is_blackout = false;
+        state.media_playback = None;
+        state.clone()
+    }
+
+    pub fn clear_all(&self, app: &AppHandle) -> PresentationState {
+        let cloned = self.clear_all_core();
+        app.emit("presentation:state-changed", &cloned).ok();
+        cloned
+    }
+
     pub fn toggle_logo_core(&self) -> bool {
         let mut state = self.state.lock().unwrap();
         state.is_logo = !state.is_logo;
@@ -410,6 +440,59 @@ impl PresentationManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn playing_media() -> MediaPlaybackState {
+        MediaPlaybackState {
+            media_id: Some("m1".into()),
+            media_url: Some("file:///clip.mp4".into()),
+            media_type: Some("video".into()),
+            is_playing: true,
+            ..MediaPlaybackState::default()
+        }
+    }
+
+    #[test]
+    fn test_clear_media_stops_media_but_keeps_slide_logo_and_blackout() {
+        let db = DbManager::new_in_memory().unwrap();
+        let pres_mgr = PresentationManager::new();
+        pres_mgr.init_pointers(&db);
+        pres_mgr.next_slide_core(&db);
+        pres_mgr.toggle_logo_core();
+        pres_mgr.toggle_blackout_core();
+        {
+            let mut st = pres_mgr.state.lock().unwrap();
+            st.media_playback = Some(playing_media());
+        }
+
+        let after = pres_mgr.clear_media_core();
+        assert!(after.media_playback.is_none());
+        assert!(after.is_live);
+        assert!(after.is_logo);
+        assert!(after.is_blackout);
+        assert!(after.current_slide_id.is_some());
+    }
+
+    #[test]
+    fn test_clear_all_blanks_everything_but_keeps_the_selected_slide() {
+        let db = DbManager::new_in_memory().unwrap();
+        let pres_mgr = PresentationManager::new();
+        pres_mgr.init_pointers(&db);
+        pres_mgr.next_slide_core(&db);
+        let slide_before = pres_mgr.get_state().current_slide_id.clone();
+        pres_mgr.toggle_logo_core();
+        pres_mgr.toggle_blackout_core();
+        pres_mgr.state.lock().unwrap().media_playback = Some(playing_media());
+
+        let after = pres_mgr.clear_all_core();
+        assert!(!after.is_live && !after.is_logo && !after.is_blackout);
+        assert!(after.media_playback.is_none());
+        // operator can resume from the same place
+        assert_eq!(after.current_slide_id, slide_before);
+
+        // idempotent
+        let again = pres_mgr.clear_all_core();
+        assert!(!again.is_live && !again.is_logo && !again.is_blackout);
+    }
 
     #[test]
     fn test_logo_is_independent_of_blackout_and_clears_on_go_live() {

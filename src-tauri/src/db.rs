@@ -1222,6 +1222,25 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 10: logo / clear-media / clear-all in the action registry =================
+        if current_version < 10 {
+            let tx = conn.unchecked_transaction()?;
+            let now = Utc::now().to_rfc3339();
+            tx.execute(
+                "INSERT OR IGNORE INTO action_mappings (id, action_name, display_label, category, keyboard_shortcut, is_enabled, created_at, updated_at)
+                 VALUES
+                 ('act-toggle-logo', 'toggle_logo', 'Toggle Logo Screen', 'display', 'L', 1, ?1, ?1),
+                 ('act-clear-media', 'clear_media', 'Clear Media', 'display', 'M', 1, ?1, ?1),
+                 ('act-clear-all', 'clear_all', 'Clear All (blank output)', 'display', 'C', 1, ?1, ?1);",
+                params![now],
+            )?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (10, ?1);",
+                params![now],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -6186,7 +6205,10 @@ impl DbManager {
              ('act-start-timer', 'start_timer', 'Start Timer', 'timer', 'Alt+S', 1, ?1, ?1),
              ('act-stop-timer', 'stop_timer', 'Stop / Pause Timer', 'timer', 'Alt+P', 1, ?1, ?1),
              ('act-reset-timer', 'reset_timer', 'Reset Timer', 'timer', 'Alt+R', 1, ?1, ?1),
-             ('act-clear-overlay', 'clear_overlay', 'Clear Livestream Overlay', 'display', 'F8', 1, ?1, ?1);",
+             ('act-clear-overlay', 'clear_overlay', 'Clear Livestream Overlay', 'display', 'F8', 1, ?1, ?1),
+             ('act-toggle-logo', 'toggle_logo', 'Toggle Logo Screen', 'display', 'L', 1, ?1, ?1),
+             ('act-clear-media', 'clear_media', 'Clear Media', 'display', 'M', 1, ?1, ?1),
+             ('act-clear-all', 'clear_all', 'Clear All (blank output)', 'display', 'C', 1, ?1, ?1);",
             params![now],
         )?;
         Ok(())
@@ -7393,6 +7415,19 @@ mod tests {
             .unwrap();
         let slides = db.get_service_item_slides(&item.id).unwrap();
         assert!(slides.iter().all(|s| s.group_label.is_none() && s.group_color.is_none()));
+    }
+
+    #[test]
+    fn test_action_registry_lists_logo_and_clear_actions_after_migration_and_reset() {
+        let db = DbManager::new_in_memory().unwrap();
+        let has = |db: &DbManager, name: &str| db.list_action_mappings().unwrap().iter().any(|a| a.action_name == name);
+        for n in ["toggle_logo", "clear_media", "clear_all"] {
+            assert!(has(&db, n), "{n} missing after migration");
+        }
+        db.reset_action_mappings_to_default().unwrap();
+        for n in ["toggle_logo", "clear_media", "clear_all"] {
+            assert!(has(&db, n), "{n} missing after reset");
+        }
     }
 }
 

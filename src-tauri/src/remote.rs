@@ -61,7 +61,9 @@ pub fn extract_token(request: &tiny_http::Request, query_params: &HashMap<String
 pub fn action_permitted(device: &crate::models::RemoteDevice, action: &str) -> bool {
     match action {
         "next_slide" | "prev_slide" | "next_item" | "prev_item" | "jump_slide" => device.can_navigate,
-        "toggle_blackout" | "toggle_logo" | "clear_screen" | "clear_live" => device.can_blackout,
+        "toggle_blackout" | "toggle_logo" | "clear_screen" | "clear_live" | "clear_media" | "clear_all" => {
+            device.can_blackout
+        }
         "toggle_live" => device.can_take_live,
         "start_timer" | "stop_timer" | "reset_timer" => device.can_control_timer,
         _ => false,
@@ -737,6 +739,7 @@ impl RemoteServerManager {
         <button id="btn-next-item" class="btn-sec">Next Item ⏭</button>
         <button id="btn-clear" class="btn-sec">Clear Screen</button>
         <button id="btn-blackout" class="btn-warn">Blackout</button>
+        <button id="btn-clear-all" class="btn-sec" style="grid-column: span 2;">Clear All (blank output)</button>
         <button id="btn-live" class="btn-danger" style="grid-column: span 2;">Go Live</button>
       </div>
 
@@ -810,6 +813,7 @@ impl RemoteServerManager {
         document.getElementById('btn-next-item').disabled = !data.permissions.canNavigate;
         document.getElementById('btn-blackout').disabled = !data.permissions.canBlackout;
         document.getElementById('btn-clear').disabled = !data.permissions.canBlackout;
+        document.getElementById('btn-clear-all').disabled = !data.permissions.canBlackout;
         document.getElementById('btn-live').disabled = !data.permissions.canTakeLive;
       }
     }
@@ -957,6 +961,7 @@ impl RemoteServerManager {
     document.getElementById('btn-prev-item').onclick = () => sendAction('prev_item');
     document.getElementById('btn-next-item').onclick = () => sendAction('next_item');
     document.getElementById('btn-clear').onclick = () => sendAction('clear_screen');
+    document.getElementById('btn-clear-all').onclick = () => sendAction('clear_all');
     document.getElementById('btn-blackout').onclick = () => sendAction('toggle_blackout');
     document.getElementById('btn-live').onclick = () => sendAction('toggle_live');
 
@@ -1127,6 +1132,16 @@ mod tests {
         let timer = device(false, false, false, true);
         for a in ["start_timer", "stop_timer", "reset_timer"] {
             assert!(action_permitted(&timer, a), "{a}");
+        }
+    }
+
+    #[test]
+    fn test_clear_actions_need_the_blackout_permission() {
+        let black = device(false, true, false, false);
+        let nav = device(true, false, true, true);
+        for a in ["clear_media", "clear_all", "toggle_logo"] {
+            assert!(action_permitted(&black, a), "{a}");
+            assert!(!action_permitted(&nav, a), "{a}");
         }
     }
 

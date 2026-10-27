@@ -191,6 +191,9 @@ fn osc_path_to_action(path: &str) -> Option<&'static str> {
         "/timer/stop" | "/timer/pause" => Some("stop_timer"),
         "/timer/reset" => Some("reset_timer"),
         "/overlay/clear" => Some("clear_overlay"),
+        "/logo" => Some("toggle_logo"),
+        "/clear/media" => Some("clear_media"),
+        "/clear/all" => Some("clear_all"),
         _ => None,
     }
 }
@@ -214,6 +217,18 @@ mod tests {
         assert_eq!(osc_path_to_action("/live"), Some("toggle_live"));
         assert_eq!(osc_path_to_action("/timer/pause"), Some("stop_timer"));
         assert_eq!(osc_path_to_action("/overlay/clear"), Some("clear_overlay"));
+    }
+
+    #[test]
+    fn maps_logo_and_clear_paths() {
+        assert_eq!(osc_path_to_action("/logo"), Some("toggle_logo"));
+        assert_eq!(osc_path_to_action("/clear/media"), Some("clear_media"));
+        assert_eq!(osc_path_to_action("/clear/all"), Some("clear_all"));
+        // new actions are opt-in: not part of the default allowlist
+        let default = "next_slide,prev_slide,next_item,prev_item,toggle_blackout,toggle_live,start_timer,stop_timer,reset_timer,clear_overlay";
+        for a in ["toggle_logo", "clear_media", "clear_all"] {
+            assert!(!is_action_allowed(default, a));
+        }
     }
 
     #[test]

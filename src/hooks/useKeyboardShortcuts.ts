@@ -6,6 +6,8 @@ interface UseKeyboardShortcutsOptions {
   onPrevious: () => void;
   onToggleBlackout: () => void;
   onToggleLogo?: () => void;
+  onClearMedia?: () => void;
+  onClearAll?: () => void;
   onEscape?: () => void;
   enabled?: boolean;
 }
@@ -15,6 +17,8 @@ export function useKeyboardShortcuts({
   onPrevious,
   onToggleBlackout,
   onToggleLogo,
+  onClearMedia,
+  onClearAll,
   onEscape,
   enabled = true,
 }: UseKeyboardShortcutsOptions) {
@@ -33,6 +37,9 @@ export function useKeyboardShortcuts({
       ) {
         return;
       }
+
+      // Letter shortcuts must not fire for Ctrl/Cmd/Alt combos such as Ctrl+C (copy)
+      const hasModifier = e.ctrlKey || e.metaKey || e.altKey;
 
       // Check key codes
       switch (e.key) {
@@ -58,15 +65,32 @@ export function useKeyboardShortcuts({
 
         case 'b':
         case 'B':
+          if (hasModifier) break;
           e.preventDefault();
           onToggleBlackout();
           break;
 
         case 'l':
         case 'L':
-          if (onToggleLogo) {
+          if (onToggleLogo && !hasModifier) {
             e.preventDefault();
             onToggleLogo();
+          }
+          break;
+
+        case 'm':
+        case 'M':
+          if (onClearMedia && !hasModifier) {
+            e.preventDefault();
+            onClearMedia();
+          }
+          break;
+
+        case 'c':
+        case 'C':
+          if (onClearAll && !hasModifier) {
+            e.preventDefault();
+            onClearAll();
           }
           break;
 
@@ -86,7 +110,7 @@ export function useKeyboardShortcuts({
           break;
       }
     },
-    [enabled, onNext, onPrevious, onToggleBlackout, onToggleLogo, onEscape]
+    [enabled, onNext, onPrevious, onToggleBlackout, onToggleLogo, onClearMedia, onClearAll, onEscape]
   );
 
   useEffect(() => {

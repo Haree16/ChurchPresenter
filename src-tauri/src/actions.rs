@@ -43,6 +43,8 @@ impl ActionDispatcher {
                 pres_mgr.toggle_blackout_core();
                 pres_mgr.get_state()
             }
+            "clear_media" => pres_mgr.clear_media_core(),
+            "clear_all" => pres_mgr.clear_all_core(),
             "toggle_logo" => {
                 pres_mgr.toggle_logo_core();
                 pres_mgr.get_state()
@@ -236,5 +238,33 @@ mod tests {
         // Test invalid action
         let err = ActionDispatcher::dispatch_core(&db, &pres_mgr, "non_existent_action");
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_clear_media_and_clear_all_actions() {
+        let db = DbManager::new_in_memory().unwrap();
+        let pres_mgr = PresentationManager::new();
+        pres_mgr.init_pointers(&db);
+        pres_mgr.next_slide_core(&db);
+        pres_mgr.toggle_logo_core();
+
+        let res = ActionDispatcher::dispatch_core(&db, &pres_mgr, "clear_media").unwrap();
+        assert!(res.media_playback.is_none());
+        assert!(res.is_live && res.is_logo);
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let res = ActionDispatcher::dispatch_core(&db, &pres_mgr, "clear_all").unwrap();
+        assert!(!res.is_live && !res.is_logo && !res.is_blackout);
+    }
+
+    #[test]
+    fn test_logo_action_toggles() {
+        let db = DbManager::new_in_memory().unwrap();
+        let pres_mgr = PresentationManager::new();
+        let on = ActionDispatcher::dispatch_core(&db, &pres_mgr, "toggle_logo").unwrap();
+        assert!(on.is_logo);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let off = ActionDispatcher::dispatch_core(&db, &pres_mgr, "toggle_logo").unwrap();
+        assert!(!off.is_logo);
     }
 }

@@ -259,6 +259,22 @@ pub async fn set_live_slide(
 }
 
 #[tauri::command]
+pub async fn clear_media(
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    Ok(pres_mgr.clear_media(&app))
+}
+
+#[tauri::command]
+pub async fn clear_all(
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    Ok(pres_mgr.clear_all(&app))
+}
+
+#[tauri::command]
 pub async fn toggle_logo(
     pres_mgr: State<'_, PresentationManager>,
     app: AppHandle,
