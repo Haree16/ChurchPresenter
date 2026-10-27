@@ -67,6 +67,8 @@ pub struct PresentationState {
     pub media_playback: Option<MediaPlaybackState>,
     #[serde(default)]
     pub timer_state: Option<TimerState>,
+    #[serde(default)]
+    pub stage_message: Option<String>,
 }
 
 impl Default for PresentationState {
@@ -86,6 +88,7 @@ impl Default for PresentationState {
             selected_item_id: None,
             media_playback: None,
             timer_state: None,
+            stage_message: None,
         }
     }
 }
@@ -378,6 +381,8 @@ pub struct BiblePassageQuery {
     pub chapter: i32,
     pub start_verse: i32,
     pub end_verse: Option<i32>,
+    #[serde(default)]
+    pub secondary_translation: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -764,6 +769,16 @@ pub struct AppInfo {
     pub total_services: usize,
     pub total_songs: usize,
     pub total_media: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseHealth {
+    pub is_healthy: bool,
+    pub is_in_memory: bool,
+    pub error: Option<String>,
+    pub db_path: Option<String>,
+    pub available_backups: Vec<String>,
 }
 
 

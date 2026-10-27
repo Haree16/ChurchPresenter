@@ -25,6 +25,7 @@ import {
   BibleVerse,
   BiblePassageQuery,
   BiblePassageResult,
+  DatabaseHealth,
   MediaPlaybackState,
   Timer,
   TimerState,
@@ -1933,11 +1934,23 @@ class MockDataStore {
     } else if (ext === 'webp') {
       mimeType = 'image/webp';
       mediaType = 'image';
+    } else if (ext === 'gif') {
+      mimeType = 'image/gif';
+      mediaType = 'image';
+    } else if (ext === 'svg') {
+      mimeType = 'image/svg+xml';
+      mediaType = 'image';
     } else if (ext === 'mp4') {
       mimeType = 'video/mp4';
       mediaType = 'video';
     } else if (ext === 'webm') {
       mimeType = 'video/webm';
+      mediaType = 'video';
+    } else if (ext === 'mov') {
+      mimeType = 'video/quicktime';
+      mediaType = 'video';
+    } else if (ext === 'mkv') {
+      mimeType = 'video/x-matroska';
       mediaType = 'video';
     } else if (ext === 'mp3') {
       mimeType = 'audio/mpeg';
@@ -1948,6 +1961,19 @@ class MockDataStore {
     } else if (ext === 'ogg') {
       mimeType = 'audio/ogg';
       mediaType = 'audio';
+    } else if (ext === 'aac') {
+      mimeType = 'audio/aac';
+      mediaType = 'audio';
+    } else if (ext === 'm4a') {
+      mimeType = 'audio/mp4';
+      mediaType = 'audio';
+    } else if (ext === 'flac') {
+      mimeType = 'audio/flac';
+      mediaType = 'audio';
+    } else {
+      throw new Error(
+        `Unsupported media format '${ext}'. Supported formats: JPG, PNG, WEBP, GIF, SVG, MP4, WEBM, MOV, MKV, MP3, WAV, OGG, AAC, M4A, FLAC`
+      );
     }
 
     const asset: MediaAsset = {
@@ -2543,16 +2569,40 @@ class MockDataStore {
     const chunkSize = versesPerSlide || 1;
     const slides: Slide[] = [];
 
+    let secResult: BiblePassageResult | null = null;
+    if (query.secondaryTranslation) {
+      try {
+        secResult = await this.queryBiblePassage({
+          ...query,
+          translation: query.secondaryTranslation,
+          secondaryTranslation: undefined,
+        });
+      } catch (_) {}
+    }
+
     for (let i = 0; i < result.verses.length; i += chunkSize) {
       const chunk = result.verses.slice(i, i + chunkSize);
       const title =
         chunk.length === 1
-          ? `${chunk[0].book} ${chunk[0].chapter}:${chunk[0].verse} (${chunk[0].translation})`
-          : `${chunk[0].book} ${chunk[0].chapter}:${chunk[0].verse}-${chunk[chunk.length - 1].verse} (${chunk[0].translation})`;
+          ? `${chunk[0].book} ${chunk[0].chapter}:${chunk[0].verse} (${chunk[0].translation}${query.secondaryTranslation ? ' / ' + query.secondaryTranslation : ''})`
+          : `${chunk[0].book} ${chunk[0].chapter}:${chunk[0].verse}-${chunk[chunk.length - 1].verse} (${chunk[0].translation}${query.secondaryTranslation ? ' / ' + query.secondaryTranslation : ''})`;
 
-      const body = chunk
+      let body = chunk
         .map((v) => (chunkSize > 1 ? `${v.verse}. ${v.text}` : v.text))
         .join('\n\n');
+
+      if (secResult && secResult.verses) {
+        const secLines = chunk.map((v) => {
+          const sv = secResult?.verses.find((x) => x.chapter === v.chapter && x.verse === v.verse);
+          if (sv) {
+            return chunkSize > 1 ? `${sv.verse}. ${sv.text}` : sv.text;
+          }
+          return '';
+        }).filter(Boolean);
+        if (secLines.length > 0) {
+          body = `${body}\n\n${secLines.join('\n\n')}`;
+        }
+      }
 
       slides.push({
         id: 'slide-' + Math.random().toString(36).substring(2, 9),
@@ -3453,6 +3503,103 @@ class MockDataStore {
       }
     }
     return verses.length;
+  }
+
+  public async searchBibleVerses(
+    query: string,
+    translation?: string,
+    limit?: number
+  ): Promise<BibleVerse[]> {
+    const q = query.trim().toLowerCase();
+    const max = limit || 50;
+    return this.bibleVerses
+      .filter((v) => {
+        const matchesQuery =
+          v.text.toLowerCase().includes(q) || v.book.toLowerCase().includes(q);
+        const matchesTranslation =
+          !translation ||
+          translation === 'all' ||
+          v.translation.toLowerCase() === translation.toLowerCase();
+        return matchesQuery && matchesTranslation;
+      })
+      .slice(0, max);
+  }
+
+  public async getDatabaseHealth(): Promise<DatabaseHealth> {
+    return {
+      isHealthy: true,
+      isInMemory: false,
+      error: null,
+      dbPath: '/mock/app_data/church_presenter.db',
+      availableBackups: ['/mock/backups/auto-backup-20261025.json'],
+    };
+  }
+
+  public async setStageMessage(message: string | null): Promise<PresentationState> {
+    if (!this.state) {
+      this.state = {
+        currentPresentationId: null,
+        currentSlideId: null,
+        currentSlideIndex: 0,
+        totalSlides: 0,
+        currentSlide: null,
+        nextSlide: null,
+        isBlackout: false,
+        isLive: false,
+        stageMessage: null,
+      };
+    }
+    this.state.stageMessage = message;
+    return { ...this.state };
+  }
+
+  public async getStageMessage(): Promise<string | null> {
+    return this.state?.stageMessage || null;
+  }
+
+  public async recoverDatabaseFromBackup(_backupFile?: string | null): Promise<boolean> {
+    return true;
+  }
+
+  public async importPresentationDocument(
+    filePath: string,
+    title?: string
+  ): Promise<Presentation> {
+    const presTitle = title || filePath.split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Presentation';
+    const presentation: Presentation = {
+      id: `pres-${Date.now()}`,
+      title: presTitle,
+      category: 'Other',
+      themeName: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      slideCount: 3,
+    };
+    this.presentations.push(presentation);
+    for (let i = 1; i <= 3; i++) {
+      this.slides.push({
+        id: `slide-${presentation.id}-${i}`,
+        presentationId: presentation.id,
+        sortOrder: i - 1,
+        title: `Slide ${i}`,
+        body: '',
+        backgroundColor: '#000000',
+        foregroundColor: '#ffffff',
+        fontSize: 'medium',
+        textAlignment: 'center',
+        themeOverride: null,
+        backgroundImage: `/mock/media/presentations/${presentation.id}/slide-${i}.png`,
+        overlayColor: null,
+        lineSpacing: 1.35,
+        textShadow: null,
+        verticalAlignment: 'center',
+        fontFamily: null,
+        fontWeight: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    return presentation;
   }
 }
 
@@ -4655,6 +4802,52 @@ export const api = {
       return await invoke<number>('import_bible_verses', { verses });
     }
     return mockStore.importBibleVerses(verses);
+  },
+
+  searchBibleVerses: async (
+    query: string,
+    translation?: string,
+    limit?: number
+  ): Promise<BibleVerse[]> => {
+    if (isTauri()) {
+      return await invoke<BibleVerse[]>('search_bible_verses', { query, translation, limit });
+    }
+    return mockStore.searchBibleVerses(query, translation, limit);
+  },
+
+  getDatabaseHealth: async (): Promise<DatabaseHealth> => {
+    if (isTauri()) {
+      return await invoke<DatabaseHealth>('get_database_health');
+    }
+    return mockStore.getDatabaseHealth();
+  },
+
+  recoverDatabaseFromBackup: async (backupFile?: string | null): Promise<boolean> => {
+    if (isTauri()) {
+      return await invoke<boolean>('recover_database_from_backup', { backupFile });
+    }
+    return mockStore.recoverDatabaseFromBackup(backupFile);
+  },
+
+  importPresentationDocument: async (
+    filePath: string,
+    title?: string
+  ): Promise<Presentation> => {
+    if (isTauri()) {
+      return await invoke<Presentation>('import_presentation_document', { filePath, title });
+    }
+    return mockStore.importPresentationDocument(filePath, title);
+  },
+
+  setStageMessage: async (message: string | null): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('set_stage_message', { message });
+    }
+    return mockStore.setStageMessage(message);
+  },
+
+  getStageMessage: async (): Promise<string | null> => {
+    return mockStore.getStageMessage();
   },
 };
 

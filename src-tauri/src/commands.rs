@@ -4,7 +4,7 @@ use crate::display::DisplayManager;
 use crate::midi::MidiService;
 use crate::models::{
     ActionMapping, AppDiagnosticEntry, AppDiagnosticFilter, AppInfo, AudienceWindowStatus,
-    BackupData, BiblePassageQuery, BiblePassageResult, DisplayMonitor, ImportResult,
+    BackupData, BiblePassageQuery, BiblePassageResult, DatabaseHealth, DisplayMonitor, ImportResult,
     LivestreamOverlayConfig, MediaAsset, MediaPlaybackState, MidiMapping, MidiStatus,
     OscConfig, OscStatus, OutputConfig, OverlayWindowStatus, PlaylistItem, PlaylistItemWithSlides,
     Presentation, PresentationState, RemoteDevice, RemoteServerStatus, Service,
@@ -452,14 +452,21 @@ pub async fn import_media_asset(
         "jpg" | "jpeg" => ("image/jpeg", "image"),
         "png" => ("image/png", "image"),
         "webp" => ("image/webp", "image"),
+        "gif" => ("image/gif", "image"),
+        "svg" => ("image/svg+xml", "image"),
         "mp4" => ("video/mp4", "video"),
         "webm" => ("video/webm", "video"),
+        "mov" => ("video/quicktime", "video"),
+        "mkv" => ("video/x-matroska", "video"),
         "mp3" => ("audio/mpeg", "audio"),
         "wav" => ("audio/wav", "audio"),
         "ogg" => ("audio/ogg", "audio"),
+        "aac" => ("audio/aac", "audio"),
+        "m4a" => ("audio/mp4", "audio"),
+        "flac" => ("audio/flac", "audio"),
         other => {
             return Err(format!(
-                "Unsupported media format '{}'. Supported formats: JPG, PNG, WEBP, MP4, WEBM, MP3, WAV, OGG",
+                "Unsupported media format '{}'. Supported formats: JPG, PNG, WEBP, GIF, SVG, MP4, WEBM, MOV, MKV, MP3, WAV, OGG, AAC, M4A, FLAC",
                 other
             ));
         }
@@ -1460,6 +1467,202 @@ pub async fn import_bible_verses(
     db: State<'_, DbManager>,
 ) -> Result<usize, String> {
     db.import_bible_verses(&verses).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn search_bible_verses(
+    query: String,
+    translation: Option<String>,
+    limit: Option<usize>,
+    db: State<'_, DbManager>,
+) -> Result<Vec<crate::models::BibleVerse>, String> {
+    db.search_bible_verses(&query, translation.as_deref(), limit)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_database_health(
+    db: State<'_, DbManager>,
+) -> Result<DatabaseHealth, String> {
+    Ok(db.check_health())
+}
+
+#[tauri::command]
+pub async fn recover_database_from_backup(
+    backup_file: Option<String>,
+    db: State<'_, DbManager>,
+) -> Result<bool, String> {
+    db.recover_from_backup_file(backup_file.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_stage_message(
+    message: Option<String>,
+    app: AppHandle,
+    pres_mgr: State<'_, PresentationManager>,
+) -> Result<PresentationState, String> {
+    Ok(pres_mgr.set_stage_message(&app, message))
+}
+
+#[tauri::command]
+pub async fn import_presentation_document(
+    file_path: String,
+    title: Option<String>,
+    app: AppHandle,
+    db: State<'_, DbManager>,
+) -> Result<Presentation, String> {
+    let path = std::path::Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("File not found: {}", file_path));
+    }
+
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    if ext != "pdf" && ext != "pptx" && ext != "ppt" {
+        return Err("Only PDF and PPTX presentation files are supported.".to_string());
+    }
+
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| crate::resolve_app_data_path());
+
+    let pres_id = Uuid::new_v4().to_string();
+    let slides_dir = app_data_dir.join("media").join("presentations").join(&pres_id);
+    let _ = std::fs::create_dir_all(&slides_dir);
+
+    let pdf_to_process = if ext == "pptx" || ext == "ppt" {
+        let lo_available = std::process::Command::new("libreoffice")
+            .arg("--version")
+            .output()
+            .is_ok()
+            || std::process::Command::new("soffice")
+                .arg("--version")
+                .output()
+                .is_ok();
+
+        if !lo_available {
+            return Err("LibreOffice is required to convert PPTX presentations directly. Please install LibreOffice or export your presentation as PDF and import the PDF.".to_string());
+        }
+
+        let binary = if std::process::Command::new("libreoffice")
+            .arg("--version")
+            .output()
+            .is_ok()
+        {
+            "libreoffice"
+        } else {
+            "soffice"
+        };
+
+        let temp_dir = app_data_dir.join("temp_lo").join(&pres_id);
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let status = std::process::Command::new(binary)
+            .args(&[
+                "--headless",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                temp_dir.to_str().unwrap_or("."),
+                &file_path,
+            ])
+            .status()
+            .map_err(|e| format!("Failed to run LibreOffice conversion: {}", e))?;
+
+        if !status.success() {
+            return Err("LibreOffice failed to convert PPTX presentation to PDF.".to_string());
+        }
+
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("document");
+        let generated_pdf = temp_dir.join(format!("{}.pdf", stem));
+        if !generated_pdf.exists() {
+            return Err("Converted PDF file was not found after LibreOffice processing.".to_string());
+        }
+        generated_pdf
+    } else {
+        path.to_path_buf()
+    };
+
+    let prefix = slides_dir.join("slide");
+    let ppm_status = std::process::Command::new("pdftoppm")
+        .args(&[
+            "-png",
+            "-r",
+            "150",
+            pdf_to_process.to_str().unwrap_or(""),
+            prefix.to_str().unwrap_or(""),
+        ])
+        .status();
+
+    let mut slide_images: Vec<std::path::PathBuf> = Vec::new();
+
+    if let Ok(st) = ppm_status {
+        if st.success() {
+            if let Ok(entries) = std::fs::read_dir(&slides_dir) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.extension().and_then(|e| e.to_str()) == Some("png") {
+                        slide_images.push(p);
+                    }
+                }
+            }
+        }
+    }
+
+    if slide_images.is_empty() {
+        return Err("Failed to extract presentation slides with pdftoppm. Please ensure pdftoppm is installed.".to_string());
+    }
+
+    slide_images.sort();
+
+    let pres_title = title.unwrap_or_else(|| {
+        path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Presentation")
+            .to_string()
+    });
+
+    let presentation = db
+        .create_presentation(&pres_title, "presentation", None)
+        .map_err(|e| e.to_string())?;
+
+    for (idx, img_path) in slide_images.iter().enumerate() {
+        let slide = Slide {
+            id: Uuid::new_v4().to_string(),
+            presentation_id: presentation.id.clone(),
+            sort_order: idx as i32,
+            title: format!("Slide {}", idx + 1),
+            body: String::new(),
+            background_color: "#000000".to_string(),
+            foreground_color: "#ffffff".to_string(),
+            font_size: "medium".to_string(),
+            text_alignment: "center".to_string(),
+            theme_override: None,
+            background_image: Some(img_path.to_string_lossy().to_string()),
+            overlay_color: None,
+            line_spacing: Some(1.35),
+            text_shadow: None,
+            vertical_alignment: Some("center".to_string()),
+            font_family: None,
+            font_weight: None,
+            created_at: Utc::now().to_rfc3339(),
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        let _ = db.create_slide(&slide);
+    }
+
+    let updated_pres = db
+        .get_presentation(&presentation.id)
+        .map_err(|e| e.to_string())?
+        .unwrap_or(presentation);
+
+    Ok(updated_pres)
 }
 
 

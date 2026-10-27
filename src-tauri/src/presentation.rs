@@ -372,6 +372,18 @@ impl PresentationManager {
         app.emit("presentation:state-changed", &cloned).ok();
         cloned
     }
+
+    pub fn set_stage_message_core(&self, message: Option<String>) -> PresentationState {
+        let mut state = self.state.lock().unwrap();
+        state.stage_message = message;
+        state.clone()
+    }
+
+    pub fn set_stage_message(&self, app: &AppHandle, message: Option<String>) -> PresentationState {
+        let cloned = self.set_stage_message_core(message);
+        app.emit("presentation:state-changed", &cloned).ok();
+        cloned
+    }
 }
 
 #[cfg(test)]

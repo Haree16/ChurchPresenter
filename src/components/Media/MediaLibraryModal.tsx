@@ -18,6 +18,10 @@ import {
   formatMediaDuration,
   mediaService,
   ALL_SUPPORTED_EXTENSIONS,
+  SUPPORTED_IMAGE_EXTENSIONS,
+  SUPPORTED_VIDEO_EXTENSIONS,
+  SUPPORTED_AUDIO_EXTENSIONS,
+  isSupportedMedia,
 } from '../../services/mediaService';
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 
@@ -74,19 +78,23 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
             },
             {
               name: 'Images',
-              extensions: ['jpg', 'jpeg', 'png', 'webp'],
+              extensions: SUPPORTED_IMAGE_EXTENSIONS,
             },
             {
               name: 'Videos',
-              extensions: ['mp4', 'webm'],
+              extensions: SUPPORTED_VIDEO_EXTENSIONS,
             },
             {
               name: 'Audio',
-              extensions: ['mp3', 'wav', 'ogg'],
+              extensions: SUPPORTED_AUDIO_EXTENSIONS,
             },
           ],
         });
         if (selected && typeof selected === 'string') {
+          if (!isSupportedMedia(selected)) {
+            alert(`Unsupported media format. Supported formats: ${ALL_SUPPORTED_EXTENSIONS.join(', ').toUpperCase()}`);
+            return;
+          }
           setIsImporting(true);
           try {
             const newAsset = await api.importMediaAsset(selected);
@@ -111,6 +119,11 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     const path = (file as any).path || file.name;
+    if (!isSupportedMedia(path)) {
+      alert(`Cannot import '${path}'. Unsupported media format. Supported formats: ${ALL_SUPPORTED_EXTENSIONS.join(', ').toUpperCase()}`);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
     setIsImporting(true);
     try {
       const newAsset = await api.importMediaAsset(path);
@@ -132,6 +145,10 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
     if (!files || files.length === 0) return;
     const file = files[0];
     const path = (file as any).path || file.name;
+    if (!isSupportedMedia(path)) {
+      alert(`Cannot import '${path}'. Unsupported media format. Supported formats: ${ALL_SUPPORTED_EXTENSIONS.join(', ').toUpperCase()}`);
+      return;
+    }
     setIsImporting(true);
     try {
       const newAsset = await api.importMediaAsset(path);
@@ -146,7 +163,12 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
   };
 
   const handleImportAsset = async () => {
-    if (!importPath.trim()) return;
+    const trimmed = importPath.trim();
+    if (!trimmed) return;
+    if (!isSupportedMedia(trimmed)) {
+      alert(`Cannot import '${trimmed}'. Unsupported media format. Supported formats: ${ALL_SUPPORTED_EXTENSIONS.join(', ').toUpperCase()}`);
+      return;
+    }
     setIsImporting(true);
     try {
       const newAsset = await api.importMediaAsset(importPath.trim());

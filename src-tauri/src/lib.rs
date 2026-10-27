@@ -16,9 +16,72 @@ use presentation::PresentationManager;
 use remote::RemoteServerManager;
 use tauri::Manager;
 
+pub fn resolve_app_data_path() -> std::path::PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            return std::path::PathBuf::from(appdata).join("church-presenter");
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            return std::path::PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+                .join("church-presenter");
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+            return std::path::PathBuf::from(xdg).join("church-presenter");
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            return std::path::PathBuf::from(home)
+                .join(".local")
+                .join("share")
+                .join("church-presenter");
+        }
+    }
+    std::env::current_dir().unwrap_or_default().join(".data")
+}
+
+pub fn perform_rolling_backup(app_data_dir: &std::path::Path, db: &DbManager, max_backups: usize) {
+    let backup_dir = app_data_dir.join("backups");
+    let _ = std::fs::create_dir_all(&backup_dir);
+    let filename = format!(
+        "auto-backup-{}.json",
+        chrono::Utc::now().format("%Y%m%d-%H%M%S")
+    );
+    let backup_file = backup_dir.join(filename);
+    if let Ok(backup) = db.export_backup() {
+        if let Ok(json) = serde_json::to_string_pretty(&backup) {
+            let _ = std::fs::write(backup_file, json);
+        }
+    }
+
+    if let Ok(entries) = std::fs::read_dir(&backup_dir) {
+        let mut auto_backups: Vec<_> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                name.starts_with("auto-backup-") && name.ends_with(".json")
+            })
+            .collect();
+        auto_backups.sort_by_key(|e| e.file_name());
+        if auto_backups.len() > max_backups {
+            let to_remove = auto_backups.len() - max_backups;
+            for entry in auto_backups.iter().take(to_remove) {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Install panic hook that records crash diagnostics to disk
+    // Install panic hook that records crash diagnostics to disk in app data dir
     std::panic::set_hook(Box::new(|info| {
         let location = info
             .location()
@@ -32,18 +95,16 @@ pub fn run() {
             },
         };
         eprintln!("PANIC in Church Presenter at {}: {}", location, msg);
-        if let Ok(current_dir) = std::env::current_dir() {
-            let log_dir = current_dir.join(".data");
-            let _ = std::fs::create_dir_all(&log_dir);
-            let log_file = log_dir.join("panic.log");
-            let timestamp = chrono::Utc::now().to_rfc3339();
-            let log_entry = format!("[{}] PANIC at {}: {}\n", timestamp, location, msg);
-            let _ = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(log_file)
-                .and_then(|mut f| std::io::Write::write_all(&mut f, log_entry.as_bytes()));
-        }
+        let app_dir = resolve_app_data_path();
+        let _ = std::fs::create_dir_all(&app_dir);
+        let log_file = app_dir.join("panic.log");
+        let timestamp = chrono::Utc::now().to_rfc3339();
+        let log_entry = format!("[{}] PANIC at {}: {}\n", timestamp, location, msg);
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_file)
+            .and_then(|mut f| std::io::Write::write_all(&mut f, log_entry.as_bytes()));
     }));
 
     tauri::Builder::default()
@@ -54,20 +115,23 @@ pub fn run() {
             let app_data_dir = app
                 .path()
                 .app_data_dir()
-                .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(".data"));
+                .unwrap_or_else(|_| resolve_app_data_path());
 
             let db_path = app_data_dir.join("church_presenter.db");
             let db_manager = match DbManager::new(&db_path) {
                 Ok(db) => db,
                 Err(err) => {
-                    eprintln!("Database initialization failed at {:?}: {}", db_path, err);
-                    DbManager::new_in_memory()
-                        .expect("Failed to initialize fallback in-memory database")
+                    eprintln!("CRITICAL: Database initialization failed at {:?}: {}", db_path, err);
+                    DbManager::new_with_error(&db_path, err.to_string())
+                        .expect("Failed to initialize fallback database error state")
                 }
             };
 
             let pres_manager = PresentationManager::new();
             pres_manager.init_pointers(&db_manager);
+
+            // Start monitor hotplug resilience watcher
+            display::DisplayManager::start_monitor_hotplug_watcher(app.handle().clone());
 
             app.manage(db_manager);
             app.manage(pres_manager);
@@ -234,26 +298,23 @@ pub fn run() {
             commands::resolve_media_url,
             commands::parse_bible_reference,
             commands::import_bible_verses,
+            commands::search_bible_verses,
+            commands::get_database_health,
+            commands::recover_database_from_backup,
+            commands::import_presentation_document,
+            commands::set_stage_message,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
-                // Auto-backup database on application exit
+                // Perform rolling auto-backup (max 10 backups kept)
                 if let Some(db) = app_handle.try_state::<DbManager>() {
                     let app_data_dir = app_handle
                         .path()
                         .app_data_dir()
-                        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(".data"));
-                    let backup_dir = app_data_dir.join("backups");
-                    let _ = std::fs::create_dir_all(&backup_dir);
-                    let filename = format!("auto-backup-{}.json", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
-                    let backup_file = backup_dir.join(filename);
-                    if let Ok(backup) = db.export_backup() {
-                        if let Ok(json) = serde_json::to_string_pretty(&backup) {
-                            let _ = std::fs::write(backup_file, json);
-                        }
-                    }
+                        .unwrap_or_else(|_| resolve_app_data_path());
+                    perform_rolling_backup(&app_data_dir, &db, 10);
                 }
             }
         });

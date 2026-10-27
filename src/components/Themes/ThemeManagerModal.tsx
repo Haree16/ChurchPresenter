@@ -566,6 +566,89 @@ export const ThemeManagerModal: React.FC<ThemeManagerModalProps> = ({
                   </div>
                 </div>
 
+                {/* Style & Layout Presets */}
+                {!activeTheme.isBuiltIn && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                      Layout & Style Presets
+                    </label>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTheme({
+                            ...activeTheme,
+                            verticalAlignment: 'center',
+                            textAlignment: 'center',
+                            textMargin: 40,
+                            textShadow: '0 2px 8px rgba(0,0,0,0.8)',
+                          });
+                        }}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: '#1e293b',
+                          border: '1px solid #334155',
+                          color: '#cbd5e1',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Full Screen Center
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTheme({
+                            ...activeTheme,
+                            verticalAlignment: 'bottom',
+                            textAlignment: 'center',
+                            textMargin: 24,
+                            textShadow:
+                              '0 2px 4px #000, 0 0 2px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000',
+                            overlayColor: 'rgba(0,0,0,0.6)',
+                          });
+                        }}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: '#1e293b',
+                          border: '1px solid #334155',
+                          color: '#38bdf8',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Lower-Third Preset
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTheme({
+                            ...activeTheme,
+                            textShadow:
+                              '-2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 3px 6px rgba(0,0,0,0.9)',
+                          });
+                        }}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: '#1e293b',
+                          border: '1px solid #334155',
+                          color: '#fbbf24',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Sharp Outline Preset
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Typography Controls */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
                   {/* Font Size */}

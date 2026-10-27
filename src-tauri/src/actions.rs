@@ -38,8 +38,15 @@ impl ActionDispatcher {
             "prev_slide" => pres_mgr.previous_slide_core(db),
             "next_item" => Self::navigate_service_item_core(db, pres_mgr, true)?,
             "prev_item" => Self::navigate_service_item_core(db, pres_mgr, false)?,
+            "clear_screen" | "clear_live" => pres_mgr.clear_live_core(),
             "toggle_blackout" => {
                 pres_mgr.toggle_blackout_core();
+                pres_mgr.get_state()
+            }
+            "clear_blackout" => {
+                if pres_mgr.get_state().is_blackout {
+                    pres_mgr.toggle_blackout_core();
+                }
                 pres_mgr.get_state()
             }
             "toggle_live" => {

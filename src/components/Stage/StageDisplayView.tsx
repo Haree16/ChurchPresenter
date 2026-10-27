@@ -263,6 +263,27 @@ export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
         </div>
       </div>
 
+      {/* High-Visibility Stage Message Alert Banner (Operator / Remote -> Stage Only) */}
+      {presentationState.stageMessage && (
+        <div
+          data-testid="stage-message-banner"
+          style={{
+            backgroundColor: '#dc2626',
+            color: '#ffffff',
+            padding: '14px 24px',
+            textAlign: 'center',
+            fontSize: '1.4rem',
+            fontWeight: 900,
+            letterSpacing: '0.04em',
+            borderBottom: '3px solid #ef4444',
+            boxShadow: '0 8px 20px rgba(220, 38, 38, 0.4)',
+            textTransform: 'uppercase',
+          }}
+        >
+          STAGE ALERT: {presentationState.stageMessage}
+        </div>
+      )}
+
       {/* Main Slide Content Area */}
       <div
         style={{

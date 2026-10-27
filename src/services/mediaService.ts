@@ -1,9 +1,9 @@
 import { MediaAsset, MediaPlaybackState } from '../types';
 import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 
-export const SUPPORTED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
-export const SUPPORTED_VIDEO_EXTENSIONS = ['mp4', 'webm'];
-export const SUPPORTED_AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg'];
+export const SUPPORTED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'];
+export const SUPPORTED_VIDEO_EXTENSIONS = ['mp4', 'webm', 'mov', 'mkv'];
+export const SUPPORTED_AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac'];
 
 export const ALL_SUPPORTED_EXTENSIONS = [
   ...SUPPORTED_IMAGE_EXTENSIONS,

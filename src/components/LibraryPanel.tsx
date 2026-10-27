@@ -12,8 +12,11 @@ import {
   Edit2,
   Check,
   X,
+  Upload,
 } from 'lucide-react';
 import { Presentation } from '../types';
+import { api, isTauri } from '../services/api';
+import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 
 interface LibraryPanelProps {
   presentations: Presentation[];
@@ -76,6 +79,39 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     setIsCreating(true);
   };
 
+  const [isImportingPres, setIsImportingPres] = useState(false);
+  const handleImportPresentation = async () => {
+    try {
+      if (typeof window !== 'undefined' && isTauri()) {
+        const selected = await openFileDialog({
+          multiple: false,
+          filters: [
+            {
+              name: 'Presentations',
+              extensions: ['pdf', 'pptx', 'ppt'],
+            },
+          ],
+        });
+        if (selected && typeof selected === 'string') {
+          setIsImportingPres(true);
+          const pres = await api.importPresentationDocument(selected);
+          onSelectPresentation(pres.id);
+        }
+      } else {
+        const path = prompt('Enter presentation file path (.pdf or .pptx):', '/path/to/slides.pdf');
+        if (path) {
+          setIsImportingPres(true);
+          const pres = await api.importPresentationDocument(path);
+          onSelectPresentation(pres.id);
+        }
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Failed to import presentation');
+    } finally {
+      setIsImportingPres(false);
+    }
+  };
+
   const handleSaveCreate = async () => {
     if (!newTitle.trim()) return;
     await onCreatePresentation(newTitle.trim(), newCategory);
@@ -136,24 +172,48 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
         <div style={{ fontWeight: 700, fontSize: '13px', color: '#cbd5e1', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           Library ({presentations.length})
         </div>
-        <button
-          onClick={handleStartCreate}
-          title="Create New Presentation"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            padding: '4px 8px',
-            backgroundColor: '#2563eb',
-            borderRadius: '4px',
-            color: '#ffffff',
-            fontSize: '12px',
-            fontWeight: 600,
-          }}
-        >
-          <Plus size={14} />
-          <span>New</span>
-        </button>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button
+            onClick={handleImportPresentation}
+            disabled={isImportingPres}
+            data-testid="import-presentation-btn"
+            title="Import Presentation (PDF / PPTX)"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 8px',
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: '4px',
+              color: '#38bdf8',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: isImportingPres ? 'wait' : 'pointer',
+            }}
+          >
+            <Upload size={13} />
+            <span>{isImportingPres ? 'Importing...' : 'Import'}</span>
+          </button>
+          <button
+            onClick={handleStartCreate}
+            title="Create New Presentation"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 8px',
+              backgroundColor: '#2563eb',
+              borderRadius: '4px',
+              color: '#ffffff',
+              fontSize: '12px',
+              fontWeight: 600,
+            }}
+          >
+            <Plus size={14} />
+            <span>New</span>
+          </button>
+        </div>
       </div>
 
       {/* Search Input */}

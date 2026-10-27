@@ -17,6 +17,8 @@ export const AudienceView: React.FC = () => {
   });
 
   const [bgFailed, setBgFailed] = useState<boolean>(false);
+  const [slideOpacity, setSlideOpacity] = useState<number>(1);
+  const prevSlideIdRef = useRef<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -63,6 +65,21 @@ export const AudienceView: React.FC = () => {
   }, []);
 
   const { isLive, isBlackout, currentSlide, mediaPlayback } = presentationState;
+
+  // Slide transition effect (fade under 500ms, no flash)
+  useEffect(() => {
+    if (currentSlide && prevSlideIdRef.current && prevSlideIdRef.current !== currentSlide.id) {
+      setSlideOpacity(0.05);
+      const timer = setTimeout(() => {
+        setSlideOpacity(1);
+      }, 50);
+      prevSlideIdRef.current = currentSlide.id;
+      return () => clearTimeout(timer);
+    }
+    if (currentSlide) {
+      prevSlideIdRef.current = currentSlide.id;
+    }
+  }, [currentSlide?.id]);
 
   // Sync Video playback state with mediaPlayback
   useEffect(() => {
@@ -352,6 +369,8 @@ export const AudienceView: React.FC = () => {
             currentSlide.textShadow !== null && currentSlide.textShadow !== undefined
               ? currentSlide.textShadow
               : '0 2px 12px rgba(0, 0, 0, 0.85)',
+          transition: 'opacity 250ms ease-in-out',
+          opacity: slideOpacity,
         }}
       >
         {currentSlide.body}

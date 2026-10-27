@@ -154,6 +154,61 @@ export function parseOpenSongOrOpenLyrics(xml: string): SongExportData | null {
   return null;
 }
 
+function escapeXml(unsafe: string): string {
+  return (unsafe || '').replace(/[<>&'"]/g, (c) => {
+    switch (c) {
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '&': return '&amp;';
+      case '\'': return '&apos;';
+      case '"': return '&quot;';
+      default: return c;
+    }
+  });
+}
+
+export function exportSongToOpenLyrics(song: Song, sections: SongSection[]): string {
+  const titles = `<titles><title>${escapeXml(song.title)}</title></titles>`;
+  const authors = song.author ? `<authors><author>${escapeXml(song.author)}</author></authors>` : '';
+  const ccli = song.ccliNumber ? `<ccliNo>${escapeXml(song.ccliNumber)}</ccliNo>` : '';
+  const key = song.songKey ? `<key>${escapeXml(song.songKey)}</key>` : '';
+
+  const versesXml = sections
+    .map((sec, idx) => {
+      const prefix = sec.sectionType === 'chorus' ? 'c' : sec.sectionType === 'bridge' ? 'b' : 'v';
+      const verseName = `${prefix}${idx + 1}`;
+      const lines = sec.lyrics
+        .split('\n')
+        .map((line) => escapeXml(line))
+        .join('<br/>');
+      return `    <verse name="${verseName}">\n      <lines>${lines}</lines>\n    </verse>`;
+    })
+    .join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<song xmlns="http://openlyrics.info/namespace/2009/song" version="0.9" createdIn="Church Presenter" modifiedDate="${new Date().toISOString()}">
+  <properties>
+    ${titles}
+    ${authors}
+    ${ccli}
+    ${key}
+  </properties>
+  <lyrics>
+${versesXml}
+  </lyrics>
+</song>`;
+}
+
+export function exportAllSongsToOpenLyrics(data: SongExportData): string {
+  if (data.songs.length === 1) {
+    return exportSongToOpenLyrics(data.songs[0].song, data.songs[0].sections);
+  }
+  const songDocs = data.songs
+    .map((item) => exportSongToOpenLyrics(item.song, item.sections))
+    .join('\n\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<songs xmlns="http://openlyrics.info/namespace/2009/song">\n${songDocs}\n</songs>`;
+}
+
 interface SongImportExportModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -169,6 +224,7 @@ export const SongImportExportModal: React.FC<SongImportExportModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'export' | 'import'>('export');
   const [exportScope, setExportScope] = useState<'current' | 'all'>('all');
+  const [exportFormat, setExportFormat] = useState<'json' | 'openlyrics'>('json');
   const [exportJson, setExportJson] = useState<string>('');
   const [isExporting, setIsExporting] = useState(false);
 
@@ -204,7 +260,13 @@ export const SongImportExportModal: React.FC<SongImportExportModalProps> = ({
       } else {
         data = await api.exportAllSongs();
       }
-      setExportJson(JSON.stringify(data, null, 2));
+
+      if (exportFormat === 'openlyrics') {
+        const xml = exportAllSongsToOpenLyrics(data);
+        setExportJson(xml);
+      } else {
+        setExportJson(JSON.stringify(data, null, 2));
+      }
     } catch (err: any) {
       alert(err?.message || 'Failed to export songs');
     } finally {
@@ -214,14 +276,17 @@ export const SongImportExportModal: React.FC<SongImportExportModalProps> = ({
 
   const handleDownloadExport = () => {
     if (!exportJson) return;
-    const blob = new Blob([exportJson], { type: 'application/json' });
+    const isXml = exportFormat === 'openlyrics';
+    const mime = isXml ? 'application/xml' : 'application/json';
+    const ext = isXml ? 'xml' : 'json';
+    const blob = new Blob([exportJson], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     const filename =
       exportScope === 'current' && currentSong
-        ? `song-${currentSong.title.replace(/[^a-zA-Z0-9\u0B80-\u0BFF]/g, '_')}.json`
-        : `church-presenter-songs-library.json`;
+        ? `song-${currentSong.title.replace(/[^a-zA-Z0-9\u0B80-\u0BFF]/g, '_')}.${ext}`
+        : `church-presenter-songs-library.${ext}`;
     a.download = filename;
     document.body.appendChild(a);
     a.click();
@@ -470,6 +535,71 @@ export const SongImportExportModal: React.FC<SongImportExportModalProps> = ({
                 </div>
               </div>
 
+              {/* Format selection */}
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: '#94a3b8',
+                    textTransform: 'uppercase',
+                    marginBottom: '8px',
+                  }}
+                >
+                  Export Format
+                </label>
+                <div style={{ display: 'flex', gap: '16px' }}>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '13px',
+                      color: '#cbd5e1',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="exportFormat"
+                      value="json"
+                      checked={exportFormat === 'json'}
+                      onChange={() => {
+                        setExportFormat('json');
+                        setExportJson('');
+                      }}
+                      style={{ accentColor: '#3b82f6' }}
+                    />
+                    <span>JSON (Church Presenter full library archive)</span>
+                  </label>
+
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '13px',
+                      color: '#cbd5e1',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="exportFormat"
+                      value="openlyrics"
+                      checked={exportFormat === 'openlyrics'}
+                      onChange={() => {
+                        setExportFormat('openlyrics');
+                        setExportJson('');
+                      }}
+                      style={{ accentColor: '#3b82f6' }}
+                    />
+                    <span>OpenLyrics XML (Universal interchange standard)</span>
+                  </label>
+                </div>
+              </div>
+
               {/* Action */}
               {!exportJson ? (
                 <button
@@ -490,7 +620,11 @@ export const SongImportExportModal: React.FC<SongImportExportModalProps> = ({
                   }}
                 >
                   <Download size={15} />
-                  {isExporting ? 'Generating JSON...' : 'Generate Export JSON'}
+                  {isExporting
+                    ? 'Generating...'
+                    : exportFormat === 'openlyrics'
+                    ? 'Generate OpenLyrics XML'
+                    : 'Generate Export JSON'}
                 </button>
               ) : (
                 <div
@@ -531,7 +665,7 @@ export const SongImportExportModal: React.FC<SongImportExportModalProps> = ({
                         fontWeight: 700,
                       }}
                     >
-                      <Download size={14} /> Download File (.json)
+                      <Download size={14} /> Download File (.{exportFormat === 'openlyrics' ? 'xml' : 'json'})
                     </button>
                   </div>
 

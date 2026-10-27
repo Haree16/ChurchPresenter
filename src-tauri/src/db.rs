@@ -1,9 +1,10 @@
 use crate::models::{
     ActionMapping, AppDiagnosticEntry, AppDiagnosticFilter, BackupData, BiblePassageQuery,
-    BiblePassageResult, BibleVerse, LivestreamOverlayConfig, MediaAsset, MidiMapping, OscConfig,
-    OutputConfig, PlaylistItem, PlaylistItemWithSlides, Presentation, RemoteDevice, Service,
-    ServiceWithItems, Slide, SlideGenerationOptions, Song, SongExportData, SongImportOptions,
-    SongImportResult, SongSection, SongWithSections, StageConfig, Theme, Timer, WorkspaceState,
+    BiblePassageResult, BibleVerse, DatabaseHealth, LivestreamOverlayConfig, MediaAsset,
+    MidiMapping, OscConfig, OutputConfig, PlaylistItem, PlaylistItemWithSlides, Presentation,
+    RemoteDevice, Service, ServiceWithItems, Slide, SlideGenerationOptions, Song, SongExportData,
+    SongImportOptions, SongImportResult, SongSection, SongWithSections, StageConfig, Theme,
+    Timer, WorkspaceState,
 };
 use chrono::Utc;
 use rusqlite::{params, Connection, Result};
@@ -17,6 +18,7 @@ use uuid::Uuid;
 pub struct DbManager {
     conn: Arc<Mutex<Connection>>,
     db_path: Option<std::path::PathBuf>,
+    init_error: Option<String>,
 }
 
 impl DbManager {
@@ -40,10 +42,26 @@ impl DbManager {
         let manager = Self {
             conn: Arc::new(Mutex::new(conn)),
             db_path: Some(db_path.to_path_buf()),
+            init_error: None,
         };
         // Verify database integrity on startup
         let _ = manager.verify_integrity();
         manager.run_migrations()?;
+        Ok(manager)
+    }
+
+    pub fn new_with_error(db_path: &Path, err: String) -> Result<Self> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            "PRAGMA foreign_keys = ON;
+             PRAGMA busy_timeout = 5000;",
+        )?;
+        let manager = Self {
+            conn: Arc::new(Mutex::new(conn)),
+            db_path: Some(db_path.to_path_buf()),
+            init_error: Some(err),
+        };
+        manager.run_migrations().ok();
         Ok(manager)
     }
 
@@ -57,9 +75,78 @@ impl DbManager {
         let manager = Self {
             conn: Arc::new(Mutex::new(conn)),
             db_path: None,
+            init_error: None,
         };
         manager.run_migrations()?;
         Ok(manager)
+    }
+
+    pub fn check_health(&self) -> DatabaseHealth {
+        let mut available_backups = Vec::new();
+        if let Some(ref path) = self.db_path {
+            if let Some(parent) = path.parent() {
+                let backup_dir = parent.join("backups");
+                if let Ok(entries) = fs::read_dir(backup_dir) {
+                    for entry in entries.flatten() {
+                        if let Some(name) = entry.file_name().to_str() {
+                            if name.ends_with(".json") || name.ends_with(".bak") {
+                                available_backups.push(entry.path().to_string_lossy().to_string());
+                            }
+                        }
+                    }
+                }
+                if let Ok(entries) = fs::read_dir(parent) {
+                    for entry in entries.flatten() {
+                        if let Some(name) = entry.file_name().to_str() {
+                            if name.starts_with(".pre-") && name.ends_with(".bak") {
+                                available_backups.push(entry.path().to_string_lossy().to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        available_backups.sort();
+        available_backups.reverse();
+
+        let is_healthy = self.init_error.is_none()
+            && self
+                .verify_integrity()
+                .map(|v| v.len() == 1 && v[0] == "ok")
+                .unwrap_or(false);
+        DatabaseHealth {
+            is_healthy,
+            is_in_memory: self.db_path.is_none(),
+            error: self.init_error.clone(),
+            db_path: self.db_path.as_ref().map(|p| p.to_string_lossy().to_string()),
+            available_backups,
+        }
+    }
+
+    pub fn recover_from_backup_file(&self, backup_file: Option<&str>) -> Result<bool> {
+        let target_file = match backup_file {
+            Some(file) => std::path::PathBuf::from(file),
+            None => {
+                let health = self.check_health();
+                if let Some(first) = health.available_backups.first() {
+                    std::path::PathBuf::from(first)
+                } else {
+                    return Err(rusqlite::Error::InvalidQuery);
+                }
+            }
+        };
+
+        if target_file.extension().and_then(|e| e.to_str()) == Some("bak") {
+            if let Some(ref db_path) = self.db_path {
+                fs::copy(&target_file, db_path).map_err(|_| rusqlite::Error::InvalidQuery)?;
+                return Ok(true);
+            }
+        }
+
+        let content = fs::read_to_string(&target_file).map_err(|_| rusqlite::Error::InvalidQuery)?;
+        let backup: BackupData = serde_json::from_str(&content).map_err(|_| rusqlite::Error::InvalidQuery)?;
+        self.import_backup(&backup, "overwrite")?;
+        Ok(true)
     }
 
     pub fn create_pre_migration_backup(db_path: &Path) {
@@ -4120,6 +4207,7 @@ fn parse_bible_reference_core(input: &str, translation: &str) -> Option<BiblePas
         chapter,
         start_verse,
         end_verse,
+        secondary_translation: None,
     })
 }
 
@@ -4138,6 +4226,67 @@ impl DbManager {
         }
         tx.commit()?;
         Ok(count)
+    }
+
+    pub fn search_bible_verses(
+        &self,
+        query: &str,
+        translation: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<BibleVerse>> {
+        let conn = self.conn.lock().unwrap();
+        let max_results = limit.unwrap_or(50).min(200);
+        let q_pattern = format!("%{}%", query.trim());
+
+        let mut sql = "SELECT id, translation, book, book_number, chapter, verse, text
+                       FROM bible_verses
+                       WHERE text LIKE ?1".to_string();
+
+        if let Some(tr) = translation {
+            if !tr.is_empty() && !tr.eq_ignore_ascii_case("all") {
+                sql.push_str(" AND LOWER(translation) = LOWER(?3)");
+            }
+        }
+        sql.push_str(" ORDER BY book_number ASC, chapter ASC, verse ASC LIMIT ?2");
+
+        let mut results = Vec::new();
+        if let Some(tr) = translation {
+            if !tr.is_empty() && !tr.eq_ignore_ascii_case("all") {
+                let mut stmt = conn.prepare(&sql)?;
+                let rows = stmt.query_map(params![q_pattern, max_results as i64, tr], |row| {
+                    Ok(BibleVerse {
+                        id: row.get(0)?,
+                        translation: row.get(1)?,
+                        book: row.get(2)?,
+                        book_number: row.get(3)?,
+                        chapter: row.get(4)?,
+                        verse: row.get(5)?,
+                        text: row.get(6)?,
+                    })
+                })?;
+                for r in rows {
+                    results.push(r?);
+                }
+                return Ok(results);
+            }
+        }
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![q_pattern, max_results as i64], |row| {
+            Ok(BibleVerse {
+                id: row.get(0)?,
+                translation: row.get(1)?,
+                book: row.get(2)?,
+                book_number: row.get(3)?,
+                chapter: row.get(4)?,
+                verse: row.get(5)?,
+                text: row.get(6)?,
+            })
+        })?;
+        for r in rows {
+            results.push(r?);
+        }
+        Ok(results)
     }
 
     pub fn query_bible_passage(&self, query: &BiblePassageQuery) -> Result<BiblePassageResult> {
@@ -4279,24 +4428,52 @@ impl DbManager {
         let chunk_size = verses_per_slide.unwrap_or(1).max(1) as usize;
         let mut slides = Vec::new();
 
+        let sec_result = if let Some(ref sec_tr) = query.secondary_translation {
+            let mut sec_q = query.clone();
+            sec_q.translation = sec_tr.clone();
+            sec_q.secondary_translation = None;
+            self.query_bible_passage(&sec_q).ok()
+        } else {
+            None
+        };
+
         for chunk in result.verses.chunks(chunk_size) {
             let title = if chunk.len() == 1 {
-                format!(
-                    "{} {}:{} ({})",
-                    chunk[0].book, chunk[0].chapter, chunk[0].verse, chunk[0].translation
-                )
+                if let Some(ref sec_tr) = query.secondary_translation {
+                    format!(
+                        "{} {}:{} ({} / {})",
+                        chunk[0].book, chunk[0].chapter, chunk[0].verse, chunk[0].translation, sec_tr
+                    )
+                } else {
+                    format!(
+                        "{} {}:{} ({})",
+                        chunk[0].book, chunk[0].chapter, chunk[0].verse, chunk[0].translation
+                    )
+                }
             } else {
-                format!(
-                    "{} {}:{}-{} ({})",
-                    chunk[0].book,
-                    chunk[0].chapter,
-                    chunk[0].verse,
-                    chunk[chunk.len() - 1].verse,
-                    chunk[0].translation
-                )
+                if let Some(ref sec_tr) = query.secondary_translation {
+                    format!(
+                        "{} {}:{}-{} ({} / {})",
+                        chunk[0].book,
+                        chunk[0].chapter,
+                        chunk[0].verse,
+                        chunk[chunk.len() - 1].verse,
+                        chunk[0].translation,
+                        sec_tr
+                    )
+                } else {
+                    format!(
+                        "{} {}:{}-{} ({})",
+                        chunk[0].book,
+                        chunk[0].chapter,
+                        chunk[0].verse,
+                        chunk[chunk.len() - 1].verse,
+                        chunk[0].translation
+                    )
+                }
             };
 
-            let body = chunk
+            let mut body = chunk
                 .iter()
                 .map(|v| {
                     if chunk_size > 1 {
@@ -4307,6 +4484,28 @@ impl DbManager {
                 })
                 .collect::<Vec<_>>()
                 .join("\n\n");
+
+            if let Some(ref sec_res) = sec_result {
+                let sec_chunk: Vec<String> = chunk
+                    .iter()
+                    .filter_map(|v| {
+                        sec_res
+                            .verses
+                            .iter()
+                            .find(|sv| sv.chapter == v.chapter && sv.verse == v.verse)
+                            .map(|sv| {
+                                if chunk_size > 1 {
+                                    format!("{}. {}", sv.verse, sv.text)
+                                } else {
+                                    sv.text.clone()
+                                }
+                            })
+                    })
+                    .collect();
+                if !sec_chunk.is_empty() {
+                    body = format!("{}\n\n{}", body, sec_chunk.join("\n\n"));
+                }
+            }
 
             let slide = Slide {
                 id: "".to_string(),
@@ -6183,6 +6382,7 @@ mod tests {
             chapter: 3,
             start_verse: 16,
             end_verse: Some(17),
+            secondary_translation: None,
         };
         let bible_item = db
             .add_bible_passage_to_service(&created.id, &bible_q, None, Some(1))
@@ -6217,6 +6417,7 @@ mod tests {
             chapter: 3,
             start_verse: 16,
             end_verse: Some(17),
+            secondary_translation: None,
         };
         let res_kjv = db.query_bible_passage(&q_kjv).unwrap();
         assert_eq!(res_kjv.verses.len(), 2);
@@ -6230,6 +6431,7 @@ mod tests {
             chapter: 23,
             start_verse: 1,
             end_verse: Some(3),
+            secondary_translation: None,
         };
         let res_tam = db.query_bible_passage(&q_tam).unwrap();
         assert_eq!(res_tam.verses.len(), 3);
@@ -6242,6 +6444,7 @@ mod tests {
             chapter: 100,
             start_verse: 1,
             end_verse: Some(5),
+            secondary_translation: None,
         };
         let res_web = db.query_bible_passage(&q_web).unwrap();
         assert_eq!(res_web.verses.len(), 5);
@@ -6291,6 +6494,7 @@ mod tests {
             chapter: 1,
             start_verse: 1,
             end_verse: Some(1),
+            secondary_translation: None,
         };
         let res_custom = db.query_bible_passage(&q_custom).unwrap();
         assert_eq!(res_custom.verses.len(), 1);

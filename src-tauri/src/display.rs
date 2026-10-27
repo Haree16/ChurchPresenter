@@ -1,5 +1,7 @@
 use crate::models::{AudienceWindowStatus, DisplayMonitor, OverlayWindowStatus, StageWindowStatus};
-use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder,
+};
 
 pub struct DisplayManager;
 
@@ -455,6 +457,57 @@ impl DisplayManager {
                 error: None,
             }
         }
+    }
+
+    pub fn start_monitor_hotplug_watcher(app: AppHandle) {
+        std::thread::spawn(move || {
+            let mut last_monitor_fingerprint = String::new();
+            let mut audience_reconnect_needed = false;
+
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+                if let Ok(monitors) = app.available_monitors() {
+                    let fingerprint: String = monitors
+                        .iter()
+                        .map(|m| {
+                            let pos = m.position();
+                            let size = m.size();
+                            format!(
+                                "{}:{}_{}x{}",
+                                m.name().map(|s| s.as_str()).unwrap_or(""),
+                                pos.x,
+                                pos.y,
+                                size.width
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(";");
+
+                    if fingerprint != last_monitor_fingerprint {
+                        let prev_fingerprint = last_monitor_fingerprint.clone();
+                        last_monitor_fingerprint = fingerprint;
+
+                        // Broadcast monitor change event to UI
+                        let _ = app.emit("display://monitors-changed", ());
+
+                        // Handle audience window resilience:
+                        // If audience was open on an external monitor and projector unplugged
+                        if let Some(aud_win) = app.get_webview_window("audience") {
+                            if aud_win.is_visible().unwrap_or(false) {
+                                if monitors.len() <= 1 && !prev_fingerprint.is_empty() {
+                                    // Projector was unplugged: leave operator window safe, hide or mark audience
+                                    audience_reconnect_needed = true;
+                                } else if audience_reconnect_needed && monitors.len() > 1 {
+                                    // Projector re-plugged: automatically restore output within 3s!
+                                    audience_reconnect_needed = false;
+                                    let _ = Self::open_audience_window(&app, None, true);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
     }
 }
 

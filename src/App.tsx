@@ -1,16 +1,26 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { OperatorView } from './components/OperatorView';
 import { AudienceView } from './components/AudienceView';
 import { StageDisplayView } from './components/Stage/StageDisplayView';
 import { LivestreamOverlayView } from './components/Overlay/LivestreamOverlayView';
+import { DatabaseRecoveryModal } from './components/DatabaseRecoveryModal';
 import { api } from './services/api';
 import { mediaService } from './services/mediaService';
+import { DatabaseHealth } from './types';
 
 export function App() {
+  const [dbHealth, setDbHealth] = useState<DatabaseHealth | null>(null);
+
   useEffect(() => {
     api.getAppDataDir().then((dir) => {
       if (dir) {
         mediaService.setAppDataDir(dir);
+      }
+    }).catch(() => {});
+
+    api.getDatabaseHealth().then((health) => {
+      if (health && !health.isHealthy) {
+        setDbHealth(health);
       }
     }).catch(() => {});
   }, []);
@@ -44,7 +54,17 @@ export function App() {
     return <LivestreamOverlayView />;
   }
 
-  return <OperatorView />;
+  return (
+    <>
+      {dbHealth && !dbHealth.isHealthy && (
+        <DatabaseRecoveryModal
+          health={dbHealth}
+          onRecovered={() => setDbHealth(null)}
+        />
+      )}
+      <OperatorView />
+    </>
+  );
 }
 
 export default App;

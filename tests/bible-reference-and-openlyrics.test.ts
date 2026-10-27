@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { api } from '../src/services/api';
-import { parseOpenSongOrOpenLyrics } from '../src/components/Songs/SongImportExportModal';
+import {
+  parseOpenSongOrOpenLyrics,
+  exportSongToOpenLyrics,
+  exportAllSongsToOpenLyrics,
+} from '../src/components/Songs/SongImportExportModal';
+import { isSupportedMedia } from '../src/services/mediaService';
 
 describe('Phase 3: Bible Reference Parser & Song Interchange Formats', () => {
   describe('Bible Reference Parser', () => {
@@ -103,6 +108,147 @@ describe('Phase 3: Bible Reference Parser & Song Interchange Formats', () => {
       // Chords lines starting with '.' should be stripped for clean presentation lyrics
       expect(result?.songs[0].sections[0].lyrics).not.toContain('.C');
       expect(result?.songs[0].sections[0].lyrics).toContain('My hope is built on nothing less');
+    });
+  });
+
+  describe('OpenLyrics Export', () => {
+    it('exports a song to valid OpenLyrics XML format', () => {
+      const xml = exportSongToOpenLyrics(
+        {
+          id: 'song-1',
+          title: '10,000 Reasons',
+          author: 'Matt Redman',
+          ccliNumber: '6016351',
+          songKey: 'G',
+          tags: [],
+          language: 'English',
+          category: 'Worship',
+          createdAt: '',
+          updatedAt: '',
+        },
+        [
+          {
+            id: 'sec-1',
+            songId: 'song-1',
+            sectionType: 'chorus',
+            label: 'Chorus',
+            sortOrder: 0,
+            lyrics: 'Bless the Lord O my soul\nO my soul\nWorship His Holy name',
+          },
+          {
+            id: 'sec-2',
+            songId: 'song-1',
+            sectionType: 'verse',
+            label: 'Verse 1',
+            sortOrder: 1,
+            lyrics: 'The sun comes up it is a new day dawning',
+          },
+        ]
+      );
+
+      expect(xml).toContain('xmlns="http://openlyrics.info/namespace/2009/song"');
+      expect(xml).toContain('<title>10,000 Reasons</title>');
+      expect(xml).toContain('<author>Matt Redman</author>');
+      expect(xml).toContain('<ccliNo>6016351</ccliNo>');
+      expect(xml).toContain('<verse name="c1">');
+      expect(xml).toContain('Bless the Lord O my soul<br/>O my soul<br/>Worship His Holy name');
+      expect(xml).toContain('<verse name="v2">');
+    });
+
+    it('exports all songs library to OpenLyrics XML document', () => {
+      const xml = exportAllSongsToOpenLyrics({
+        version: '1.0.0',
+        exportedAt: new Date().toISOString(),
+        app: 'Church Presenter',
+        themes: [],
+        songs: [
+          {
+            song: {
+              id: 'song-1',
+              title: 'Song One',
+              author: 'Author One',
+              ccliNumber: '',
+              songKey: 'D',
+              tags: [],
+              language: 'English',
+              category: 'Worship',
+              createdAt: '',
+              updatedAt: '',
+            },
+            sections: [
+              {
+                id: 's1',
+                songId: 'song-1',
+                sectionType: 'verse',
+                label: 'Verse 1',
+                sortOrder: 0,
+                lyrics: 'Line 1\nLine 2',
+              },
+            ],
+          },
+          {
+            song: {
+              id: 'song-2',
+              title: 'Song Two',
+              author: 'Author Two',
+              ccliNumber: '',
+              songKey: 'E',
+              tags: [],
+              language: 'English',
+              category: 'Worship',
+              createdAt: '',
+              updatedAt: '',
+            },
+            sections: [],
+          },
+        ],
+      });
+
+      expect(xml).toContain('<songs xmlns="http://openlyrics.info/namespace/2009/song">');
+      expect(xml).toContain('<title>Song One</title>');
+      expect(xml).toContain('<title>Song Two</title>');
+    });
+  });
+
+  describe('Phase 4: Media Format Breadth & Validation', () => {
+    it('supports modern and church-standard media extensions', () => {
+      expect(isSupportedMedia('background.gif')).toBe(true);
+      expect(isSupportedMedia('logo.svg')).toBe(true);
+      expect(isSupportedMedia('clip.mov')).toBe(true);
+      expect(isSupportedMedia('video.mkv')).toBe(true);
+      expect(isSupportedMedia('track.aac')).toBe(true);
+      expect(isSupportedMedia('audio.m4a')).toBe(true);
+      expect(isSupportedMedia('master.flac')).toBe(true);
+    });
+
+    it('rejects unsupported media formats with descriptive error', async () => {
+      expect(isSupportedMedia('doc.docx')).toBe(false);
+      expect(isSupportedMedia('archive.zip')).toBe(false);
+
+      await expect(api.importMediaAsset('document.pdf')).rejects.toThrow(
+        /Unsupported media format/
+      );
+    });
+  });
+
+  describe('Phase 3: Stage Message & Presentation Import APIs', () => {
+    it('sets and clears stage cue message', async () => {
+      const stateWithMessage = await api.setStageMessage('Wrap up in 2 mins');
+      expect(stateWithMessage.stageMessage).toBe('Wrap up in 2 mins');
+
+      const clearedState = await api.setStageMessage(null);
+      expect(clearedState.stageMessage).toBeNull();
+    });
+
+    it('searches Bible verses with keyword search', async () => {
+      const results = await api.searchBibleVerses('shepherd', 'KJV', 10);
+      expect(Array.isArray(results)).toBe(true);
+    });
+
+    it('imports presentation document mock into presentation slides', async () => {
+      const pres = await api.importPresentationDocument('test-presentation.pdf', 'Service Slides');
+      expect(pres).toBeDefined();
+      expect(pres.title).toBe('Service Slides');
     });
   });
 });

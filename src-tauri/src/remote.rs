@@ -148,177 +148,223 @@ impl RemoteServerManager {
                 // Use a non-blocking timeout so we can exit promptly when stopped
                 match server.recv_timeout(Duration::from_millis(500)) {
                     Ok(Some(mut request)) => {
-                        let url_string = request.url().to_string();
-                        let path = url_string.split('?').next().unwrap_or("").to_string();
-                        let query_str = url_string.split('?').nth(1).unwrap_or("");
-                        let query_params: HashMap<String, String> = query_str
-                            .split('&')
-                            .filter_map(|pair| {
-                                let mut parts = pair.split('=');
-                                Some((parts.next()?.to_string(), parts.next()?.to_string()))
-                            })
-                            .collect();
+                        let app = app.clone();
+                        let db = db.clone();
+                        let pres_mgr = pres_mgr.clone();
+                        let clients_tracker = clients_tracker.clone();
+                        let failed_tracker = failed_tracker.clone();
+                        let expected_pin = expected_pin.clone();
+                        let rate_limiter = rate_limiter.clone();
 
-                        let remote_addr = request.remote_addr().map(|a| a.ip().to_string()).unwrap_or_else(|| "127.0.0.1".to_string());
+                        thread::spawn(move || {
+                            let url_string = request.url().to_string();
+                            let path = url_string.split('?').next().unwrap_or("").to_string();
+                            let query_str = url_string.split('?').nth(1).unwrap_or("");
+                            let query_params: HashMap<String, String> = query_str
+                                .split('&')
+                                .filter_map(|pair| {
+                                    let mut parts = pair.split('=');
+                                    Some((parts.next()?.to_string(), parts.next()?.to_string()))
+                                })
+                                .collect();
 
-                        // Handle routes
-                        match (request.method(), path.as_str()) {
-                            // 1. Mobile Remote HTML Application
-                            (&Method::Get, "/") | (&Method::Get, "/remote") => {
-                                let html = Self::get_remote_html();
-                                let resp = Response::from_string(html)
-                                    .with_header(safe_header("Content-Type", "text/html; charset=utf-8"))
-                                    .with_header(safe_header("Cache-Control", "no-cache"));
-                                request.respond(resp).ok();
-                            }
+                            let remote_addr = request
+                                .remote_addr()
+                                .map(|a| a.ip().to_string())
+                                .unwrap_or_else(|| "127.0.0.1".to_string());
 
-                            // 2. Livestream Overlay HTML for OBS Studio Browser Source
-                            (&Method::Get, "/overlay") => {
-                                let token = extract_token(&request, &query_params);
-                                let config = db.get_overlay_config().unwrap_or_default();
-                                if token != config.auth_token {
-                                    let resp = Response::from_string("Unauthorized OBS Overlay Token")
-                                        .with_status_code(StatusCode(401));
-                                    request.respond(resp).ok();
-                                } else {
-                                    let html = Self::get_overlay_html(&token);
+                            // Handle routes
+                            match (request.method(), path.as_str()) {
+                                // 1. Mobile Remote HTML Application
+                                (&Method::Get, "/") | (&Method::Get, "/remote") => {
+                                    let html = Self::get_remote_html();
                                     let resp = Response::from_string(html)
                                         .with_header(safe_header("Content-Type", "text/html; charset=utf-8"))
                                         .with_header(safe_header("Cache-Control", "no-cache"));
                                     request.respond(resp).ok();
                                 }
-                            }
 
-                            // 3. API: Overlay Render Payload
-                            (&Method::Get, "/api/overlay-data") => {
-                                let token = extract_token(&request, &query_params);
-                                let config = db.get_overlay_config().unwrap_or_default();
-                                if token != config.auth_token {
-                                    let resp = Response::from_string("{\"error\":\"Unauthorized\"}")
-                                        .with_status_code(StatusCode(401))
-                                        .with_header(safe_header("Content-Type", "application/json"));
-                                    request.respond(resp).ok();
-                                } else {
-                                    let state = pres_mgr.get_state();
-                                    let payload = OverlayService::get_render_payload(&db, &state).unwrap_or_default();
-                                    let json = serde_json::to_string(&payload).unwrap_or_default();
-                                    let resp = Response::from_string(json)
-                                        .with_header(safe_header("Content-Type", "application/json"))
-                                        .with_header(safe_header("Access-Control-Allow-Origin", "*"));
-                                    request.respond(resp).ok();
-                                }
-                            }
-
-                            // 4. API: Pair new device
-                            (&Method::Post, "/api/pair") => {
-                                // Check lockout
-                                let is_locked = {
-                                    let fails = failed_tracker.lock().unwrap_or_else(|e| e.into_inner());
-                                    is_ip_locked_out(&fails, &remote_addr)
-                                };
-                                if is_locked {
-                                    let resp = Response::from_string("{\"error\":\"Too many failed attempts. Locked out for 10 minutes.\"}")
-                                        .with_status_code(StatusCode(429))
-                                        .with_header(safe_header("Content-Type", "application/json"));
-                                    request.respond(resp).ok();
-                                    continue;
+                                // 2. Livestream Overlay HTML for OBS Studio Browser Source
+                                (&Method::Get, "/overlay") => {
+                                    let token = extract_token(&request, &query_params);
+                                    let config = db.get_overlay_config().unwrap_or_default();
+                                    if token != config.auth_token {
+                                        let resp = Response::from_string("Unauthorized OBS Overlay Token")
+                                            .with_status_code(StatusCode(401));
+                                        request.respond(resp).ok();
+                                    } else {
+                                        let html = Self::get_overlay_html(&token);
+                                        let resp = Response::from_string(html)
+                                            .with_header(safe_header("Content-Type", "text/html; charset=utf-8"))
+                                            .with_header(safe_header("Cache-Control", "no-cache"));
+                                        request.respond(resp).ok();
+                                    }
                                 }
 
-                                let mut body = String::new();
-                                request.as_reader().read_to_string(&mut body).ok();
-                                let pair_req: Result<RemotePairRequest, _> = serde_json::from_str(&body);
+                                // 3. API: Overlay Render Payload
+                                (&Method::Get, "/api/overlay-data") => {
+                                    let token = extract_token(&request, &query_params);
+                                    let config = db.get_overlay_config().unwrap_or_default();
+                                    if token != config.auth_token {
+                                        let resp = Response::from_string("{\"error\":\"Unauthorized\"}")
+                                            .with_status_code(StatusCode(401))
+                                            .with_header(safe_header("Content-Type", "application/json"));
+                                        request.respond(resp).ok();
+                                    } else {
+                                        let state = pres_mgr.get_state();
+                                        let payload = OverlayService::get_render_payload(&db, &state).unwrap_or_default();
+                                        let json = serde_json::to_string(&payload).unwrap_or_default();
+                                        let resp = Response::from_string(json)
+                                            .with_header(safe_header("Content-Type", "application/json"))
+                                            .with_header(safe_header("Access-Control-Allow-Origin", "*"));
+                                        request.respond(resp).ok();
+                                    }
+                                }
 
-                                match pair_req {
-                                    Ok(req) => {
-                                        if req.pin != expected_pin {
-                                            // Record failure
-                                            {
-                                                let now = Instant::now();
-                                                let mut fails = failed_tracker.lock().unwrap_or_else(|e| e.into_inner());
-                                                let entry = fails.entry(remote_addr.clone()).or_insert((0, now));
-                                                if now.duration_since(entry.1) > Duration::from_secs(600) {
-                                                    *entry = (1, now);
-                                                } else {
-                                                    entry.0 += 1;
-                                                    entry.1 = now;
+                                // 4. API: Pair new device
+                                (&Method::Post, "/api/pair") => {
+                                    let is_locked = {
+                                        let fails = failed_tracker.lock().unwrap_or_else(|e| e.into_inner());
+                                        is_ip_locked_out(&fails, &remote_addr)
+                                    };
+                                    if is_locked {
+                                        let resp = Response::from_string("{\"error\":\"Too many failed attempts. Locked out for 10 minutes.\"}")
+                                            .with_status_code(StatusCode(429))
+                                            .with_header(safe_header("Content-Type", "application/json"));
+                                        request.respond(resp).ok();
+                                        return;
+                                    }
+
+                                    let mut body = String::new();
+                                    request.as_reader().read_to_string(&mut body).ok();
+                                    let pair_req: Result<RemotePairRequest, _> = serde_json::from_str(&body);
+
+                                    match pair_req {
+                                        Ok(req) => {
+                                            if req.pin != expected_pin {
+                                                {
+                                                    let now = Instant::now();
+                                                    let mut fails = failed_tracker.lock().unwrap_or_else(|e| e.into_inner());
+                                                    let entry = fails.entry(remote_addr.clone()).or_insert((0, now));
+                                                    if now.duration_since(entry.1) > Duration::from_secs(600) {
+                                                        *entry = (1, now);
+                                                    } else {
+                                                        entry.0 += 1;
+                                                        entry.1 = now;
+                                                    }
                                                 }
+
+                                                let err_resp = RemotePairResponse {
+                                                    success: false,
+                                                    requires_approval: false,
+                                                    session_token: None,
+                                                    message: "Invalid pairing PIN".to_string(),
+                                                };
+                                                let json = serde_json::to_string(&err_resp).unwrap_or_default();
+                                                let resp = Response::from_string(json)
+                                                    .with_status_code(StatusCode(403))
+                                                    .with_header(safe_header("Content-Type", "application/json"));
+                                                request.respond(resp).ok();
+                                            } else {
+                                                {
+                                                    let mut fails = failed_tracker.lock().unwrap_or_else(|e| e.into_inner());
+                                                    fails.remove(&remote_addr);
+                                                }
+
+                                                let token = Uuid::new_v4().to_string();
+                                                let dev_id = format!("remote-{}", Uuid::new_v4().simple());
+                                                let now = Utc::now().to_rfc3339();
+
+                                                let new_dev = RemoteDevice {
+                                                    id: dev_id.clone(),
+                                                    device_name: req.device_name,
+                                                    ip_address: remote_addr,
+                                                    token_hash: token.clone(),
+                                                    is_approved: false,
+                                                    can_navigate: true,
+                                                    can_blackout: true,
+                                                    can_take_live: false,
+                                                    can_control_timer: true,
+                                                    paired_at: now.clone(),
+                                                    last_seen_at: now,
+                                                };
+
+                                                db.create_or_update_remote_device(&new_dev).ok();
+                                                app.emit("remote:device-requested", &new_dev).ok();
+
+                                                let ok_resp = RemotePairResponse {
+                                                    success: true,
+                                                    requires_approval: true,
+                                                    session_token: Some(token),
+                                                    message: "Pairing request sent. Waiting for desktop operator approval.".to_string(),
+                                                };
+                                                let json = serde_json::to_string(&ok_resp).unwrap_or_default();
+                                                let resp = Response::from_string(json)
+                                                    .with_header(safe_header("Content-Type", "application/json"));
+                                                request.respond(resp).ok();
                                             }
-
-                                            let err_resp = RemotePairResponse {
-                                                success: false,
-                                                requires_approval: false,
-                                                session_token: None,
-                                                message: "Invalid pairing PIN".to_string(),
-                                            };
-                                            let json = serde_json::to_string(&err_resp).unwrap_or_default();
-                                            let resp = Response::from_string(json)
-                                                .with_status_code(StatusCode(403))
-                                                .with_header(safe_header("Content-Type", "application/json"));
-                                            request.respond(resp).ok();
-                                        } else {
-                                            // Reset failed attempts on success
-                                            {
-                                                let mut fails = failed_tracker.lock().unwrap_or_else(|e| e.into_inner());
-                                                fails.remove(&remote_addr);
-                                            }
-
-                                            let token = Uuid::new_v4().to_string();
-                                            let dev_id = format!("remote-{}", Uuid::new_v4().simple());
-                                            let now = Utc::now().to_rfc3339();
-
-                                            let new_dev = RemoteDevice {
-                                                id: dev_id.clone(),
-                                                device_name: req.device_name,
-                                                ip_address: remote_addr,
-                                                token_hash: token.clone(),
-                                                is_approved: false, // operator must approve on desktop
-                                                can_navigate: true,
-                                                can_blackout: true,
-                                                can_take_live: false,
-                                                can_control_timer: true,
-                                                paired_at: now.clone(),
-                                                last_seen_at: now,
-                                            };
-
-                                            db.create_or_update_remote_device(&new_dev).ok();
-                                            app.emit("remote:device-requested", &new_dev).ok();
-
-                                            let ok_resp = RemotePairResponse {
-                                                success: true,
-                                                requires_approval: true,
-                                                session_token: Some(token),
-                                                message: "Pairing request sent. Waiting for desktop operator approval.".to_string(),
-                                            };
-                                            let json = serde_json::to_string(&ok_resp).unwrap_or_default();
-                                            let resp = Response::from_string(json)
+                                        }
+                                        Err(_) => {
+                                            let resp = Response::from_string("{\"error\":\"Invalid request body\"}")
+                                                .with_status_code(StatusCode(400))
                                                 .with_header(safe_header("Content-Type", "application/json"));
                                             request.respond(resp).ok();
                                         }
                                     }
-                                    Err(_) => {
-                                        let resp = Response::from_string("{\"error\":\"Invalid request body\"}")
-                                            .with_status_code(StatusCode(400))
-                                            .with_header(safe_header("Content-Type", "application/json"));
-                                        request.respond(resp).ok();
-                                    }
                                 }
-                            }
 
-                            // 5. API: Remote Presentation State Query
-                            (&Method::Get, "/api/state") => {
-                                let token = extract_token(&request, &query_params);
-                                match db.get_remote_device_by_token(&token) {
-                                    Ok(Some(device)) => {
-                                        if !device.is_approved {
-                                            let resp = Response::from_string("{\"error\":\"Device pending approval\"}")
-                                                .with_status_code(StatusCode(403))
+                                // 5. API: Remote Presentation State Query
+                                (&Method::Get, "/api/state") => {
+                                    let token = extract_token(&request, &query_params);
+                                    match db.get_remote_device_by_token(&token) {
+                                        Ok(Some(device)) => {
+                                            if !device.is_approved {
+                                                let resp = Response::from_string("{\"error\":\"Device pending approval\"}")
+                                                    .with_status_code(StatusCode(403))
+                                                    .with_header(safe_header("Content-Type", "application/json"));
+                                                request.respond(resp).ok();
+                                            } else {
+                                                db.touch_remote_device(&token).ok();
+                                                clients_tracker.lock().unwrap().insert(token, Instant::now());
+
+                                                let state = pres_mgr.get_state();
+                                                let json = serde_json::to_string(&serde_json::json!({
+                                                    "isLive": state.is_live,
+                                                    "isBlackout": state.is_blackout,
+                                                    "currentSlideIndex": state.current_slide_index,
+                                                    "totalSlides": state.total_slides,
+                                                    "currentSlide": state.current_slide,
+                                                    "nextSlide": state.next_slide,
+                                                    "stageMessage": state.stage_message,
+                                                    "timerState": state.timer_state,
+                                                    "permissions": {
+                                                        "canNavigate": device.can_navigate,
+                                                        "canBlackout": device.can_blackout,
+                                                        "canTakeLive": device.can_take_live,
+                                                        "canControlTimer": device.can_control_timer
+                                                    }
+                                                })).unwrap_or_default();
+
+                                                let resp = Response::from_string(json)
+                                                    .with_header(safe_header("Content-Type", "application/json"))
+                                                    .with_header(safe_header("Access-Control-Allow-Origin", "*"));
+                                                request.respond(resp).ok();
+                                            }
+                                        }
+                                        _ => {
+                                            let resp = Response::from_string("{\"error\":\"Unauthorized or device revoked\"}")
+                                                .with_status_code(StatusCode(401))
                                                 .with_header(safe_header("Content-Type", "application/json"));
                                             request.respond(resp).ok();
-                                        } else {
-                                            // Update last seen
-                                            db.touch_remote_device(&token).ok();
-                                            clients_tracker.lock().unwrap().insert(token, Instant::now());
+                                        }
+                                    }
+                                }
 
+                                // 6. API: Real-time State Events (SSE)
+                                (&Method::Get, "/api/events") => {
+                                    let token = extract_token(&request, &query_params);
+                                    match db.get_remote_device_by_token(&token) {
+                                        Ok(Some(device)) if device.is_approved => {
                                             let state = pres_mgr.get_state();
                                             let json = serde_json::to_string(&serde_json::json!({
                                                 "isLive": state.is_live,
@@ -327,120 +373,228 @@ impl RemoteServerManager {
                                                 "totalSlides": state.total_slides,
                                                 "currentSlide": state.current_slide,
                                                 "nextSlide": state.next_slide,
+                                                "stageMessage": state.stage_message,
                                                 "timerState": state.timer_state,
-                                                "permissions": {
-                                                    "canNavigate": device.can_navigate,
-                                                    "canBlackout": device.can_blackout,
-                                                    "canTakeLive": device.can_take_live,
-                                                    "canControlTimer": device.can_control_timer
-                                                }
                                             })).unwrap_or_default();
 
-                                            let resp = Response::from_string(json)
-                                                .with_header(safe_header("Content-Type", "application/json"))
+                                            let sse_payload = format!("event: state\ndata: {}\n\n", json);
+                                            let resp = Response::from_string(sse_payload)
+                                                .with_header(safe_header("Content-Type", "text/event-stream; charset=utf-8"))
+                                                .with_header(safe_header("Cache-Control", "no-cache"))
                                                 .with_header(safe_header("Access-Control-Allow-Origin", "*"));
                                             request.respond(resp).ok();
                                         }
+                                        _ => {
+                                            let resp = Response::from_string("{\"error\":\"Unauthorized\"}")
+                                                .with_status_code(StatusCode(401))
+                                                .with_header(safe_header("Content-Type", "application/json"));
+                                            request.respond(resp).ok();
+                                        }
                                     }
-                                    _ => {
-                                        let resp = Response::from_string("{\"error\":\"Unauthorized or device revoked\"}")
-                                            .with_status_code(StatusCode(401))
-                                            .with_header(safe_header("Content-Type", "application/json"));
+                                }
+
+                                // 7. API: Playlist Query
+                                (&Method::Get, "/api/playlist") => {
+                                    let token = extract_token(&request, &query_params);
+                                    if let Ok(Some(device)) = db.get_remote_device_by_token(&token) {
+                                        if !device.is_approved {
+                                            let resp = Response::from_string("{\"error\":\"Device pending approval\"}")
+                                                .with_status_code(StatusCode(403));
+                                            request.respond(resp).ok();
+                                            return;
+                                        }
+                                        let state = pres_mgr.get_state();
+                                        let items: serde_json::Value = if let Some(ref s_id) = state.current_service_id {
+                                            if let Some(ref it_id) = state.current_item_id {
+                                                let slides = db.get_service_item_slides(it_id).unwrap_or_default();
+                                                serde_json::to_value(&slides).unwrap_or_default()
+                                            } else {
+                                                let s_items = db.get_service_items(s_id).unwrap_or_default();
+                                                serde_json::to_value(&s_items).unwrap_or_default()
+                                            }
+                                        } else if let Some(ref p_id) = state.current_presentation_id {
+                                            let slides = db.get_slides(p_id).unwrap_or_default();
+                                            serde_json::to_value(&slides).unwrap_or_default()
+                                        } else {
+                                            serde_json::json!([])
+                                        };
+                                        let json = serde_json::to_string(&items).unwrap_or_default();
+                                        let resp = Response::from_string(json)
+                                            .with_header(safe_header("Content-Type", "application/json"))
+                                            .with_header(safe_header("Access-Control-Allow-Origin", "*"));
+                                        request.respond(resp).ok();
+                                    } else {
+                                        let resp = Response::from_string("{\"error\":\"Unauthorized\"}")
+                                            .with_status_code(StatusCode(401));
                                         request.respond(resp).ok();
                                     }
                                 }
-                            }
 
-                            // 6. API: Dispatch Action
-                            (&Method::Post, "/api/action") => {
-                                let token = extract_token(&request, &query_params);
-                                match db.get_remote_device_by_token(&token) {
-                                    Ok(Some(device)) => {
+                                // 8. API: Stage Message Management
+                                (&Method::Post, "/api/stage-message") => {
+                                    let token = extract_token(&request, &query_params);
+                                    if let Ok(Some(device)) = db.get_remote_device_by_token(&token) {
                                         if !device.is_approved {
                                             let resp = Response::from_string("{\"error\":\"Device pending approval\"}")
-                                                .with_status_code(StatusCode(403))
-                                                .with_header(safe_header("Content-Type", "application/json"));
+                                                .with_status_code(StatusCode(403));
                                             request.respond(resp).ok();
-                                            continue;
+                                            return;
                                         }
-
-                                        // Rate limiting: max 10 requests / sec per device
-                                        let mut rl = rate_limiter.lock().unwrap();
-                                        let now = Instant::now();
-                                        let entry = rl.entry(token.clone()).or_insert((0, now));
-                                        if now.duration_since(entry.1) > Duration::from_secs(1) {
-                                            *entry = (1, now);
-                                        } else {
-                                            entry.0 += 1;
-                                            if entry.0 > 10 {
-                                                let resp = Response::from_string("{\"error\":\"Rate limit exceeded\"}")
-                                                    .with_status_code(StatusCode(429))
-                                                    .with_header(safe_header("Content-Type", "application/json"));
-                                                request.respond(resp).ok();
-                                                continue;
-                                            }
-                                        }
-                                        drop(rl);
-
                                         let mut body = String::new();
                                         request.as_reader().read_to_string(&mut body).ok();
                                         let json_val: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
-                                        let action = json_val.get("action").and_then(|v| v.as_str()).unwrap_or("");
-
-                                        // Permission check
-                                        let is_permitted = match action {
-                                            "next_slide" | "prev_slide" | "next_item" | "prev_item" => device.can_navigate,
-                                            "toggle_blackout" => device.can_blackout,
-                                            "toggle_live" => device.can_take_live,
-                                            "start_timer" | "stop_timer" | "reset_timer" => device.can_control_timer,
-                                            _ => false,
-                                        };
-
-                                        if !is_permitted {
-                                            let resp = Response::from_string("{\"error\":\"Action not permitted for this remote device\"}")
-                                                .with_status_code(StatusCode(403))
-                                                .with_header(safe_header("Content-Type", "application/json"));
-                                            request.respond(resp).ok();
-                                        } else {
-                                            db.touch_remote_device(&token).ok();
-                                            clients_tracker.lock().unwrap().insert(token, Instant::now());
-
-                                            match ActionDispatcher::dispatch(&app, &db, &pres_mgr, action) {
-                                                Ok(updated_state) => {
-                                                    let resp = Response::from_string(serde_json::to_string(&serde_json::json!({
-                                                        "success": true,
-                                                        "action": action,
-                                                        "isLive": updated_state.is_live,
-                                                        "isBlackout": updated_state.is_blackout,
-                                                    })).unwrap_or_default())
-                                                    .with_header(safe_header("Content-Type", "application/json"))
-                                                    .with_header(safe_header("Access-Control-Allow-Origin", "*"));
-                                                    request.respond(resp).ok();
-                                                }
-                                                Err(e) => {
-                                                    let resp = Response::from_string(format!("{{\"error\":\"{}\"}}", e))
-                                                        .with_status_code(StatusCode(500))
-                                                        .with_header(safe_header("Content-Type", "application/json"));
-                                                    request.respond(resp).ok();
-                                                }
-                                            }
-                                        }
-                                    }
-                                    _ => {
-                                        let resp = Response::from_string("{\"error\":\"Unauthorized or device revoked\"}")
-                                            .with_status_code(StatusCode(401))
-                                            .with_header(safe_header("Content-Type", "application/json"));
+                                        let msg = json_val
+                                            .get("message")
+                                            .and_then(|v| v.as_str())
+                                            .filter(|s| !s.trim().is_empty())
+                                            .map(|s| s.trim().to_string());
+                                        let st = pres_mgr.set_stage_message(&app, msg.clone());
+                                        let resp = Response::from_string(serde_json::to_string(&serde_json::json!({
+                                            "success": true,
+                                            "stageMessage": st.stage_message
+                                        })).unwrap_or_default())
+                                        .with_header(safe_header("Content-Type", "application/json"))
+                                        .with_header(safe_header("Access-Control-Allow-Origin", "*"));
+                                        request.respond(resp).ok();
+                                    } else {
+                                        let resp = Response::from_string("{\"error\":\"Unauthorized\"}")
+                                            .with_status_code(StatusCode(401));
                                         request.respond(resp).ok();
                                     }
                                 }
-                            }
 
-                            _ => {
-                                let resp = Response::from_string("Not Found")
-                                    .with_status_code(StatusCode(404));
-                                request.respond(resp).ok();
+                                (&Method::Get, "/api/stage-message") => {
+                                    let msg = pres_mgr.get_state().stage_message;
+                                    let resp = Response::from_string(serde_json::to_string(&serde_json::json!({
+                                        "stageMessage": msg
+                                    })).unwrap_or_default())
+                                    .with_header(safe_header("Content-Type", "application/json"))
+                                    .with_header(safe_header("Access-Control-Allow-Origin", "*"));
+                                    request.respond(resp).ok();
+                                }
+
+                                // 9. API: Dispatch Action
+                                (&Method::Post, "/api/action") => {
+                                    let token = extract_token(&request, &query_params);
+                                    match db.get_remote_device_by_token(&token) {
+                                        Ok(Some(device)) => {
+                                            if !device.is_approved {
+                                                let resp = Response::from_string("{\"error\":\"Device pending approval\"}")
+                                                    .with_status_code(StatusCode(403))
+                                                    .with_header(safe_header("Content-Type", "application/json"));
+                                                request.respond(resp).ok();
+                                                return;
+                                            }
+
+                                            // Rate limiting: max 10 requests / sec per device
+                                            let mut rl = rate_limiter.lock().unwrap();
+                                            let now = Instant::now();
+                                            let entry = rl.entry(token.clone()).or_insert((0, now));
+                                            if now.duration_since(entry.1) > Duration::from_secs(1) {
+                                                *entry = (1, now);
+                                            } else {
+                                                entry.0 += 1;
+                                                if entry.0 > 10 {
+                                                    let resp = Response::from_string("{\"error\":\"Rate limit exceeded\"}")
+                                                        .with_status_code(StatusCode(429))
+                                                        .with_header(safe_header("Content-Type", "application/json"));
+                                                    request.respond(resp).ok();
+                                                    return;
+                                                }
+                                            }
+                                            drop(rl);
+
+                                            let mut body = String::new();
+                                            request.as_reader().read_to_string(&mut body).ok();
+                                            let json_val: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+                                            let action = json_val.get("action").and_then(|v| v.as_str()).unwrap_or("");
+
+                                            let is_permitted = match action {
+                                                "next_slide" | "prev_slide" | "next_item" | "prev_item" | "jump_slide" => device.can_navigate,
+                                                "toggle_blackout" | "clear_screen" | "clear_live" => device.can_blackout,
+                                                "toggle_live" => device.can_take_live,
+                                                "start_timer" | "stop_timer" | "reset_timer" => device.can_control_timer,
+                                                _ => false,
+                                            };
+
+                                            if !is_permitted {
+                                                let resp = Response::from_string("{\"error\":\"Action not permitted for this remote device\"}")
+                                                    .with_status_code(StatusCode(403))
+                                                    .with_header(safe_header("Content-Type", "application/json"));
+                                                request.respond(resp).ok();
+                                            } else if action == "jump_slide" {
+                                                let idx = json_val.get("slideIndex").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                                                let state = pres_mgr.get_state();
+                                                let updated = if let Some(ref service_id) = state.current_service_id {
+                                                    if let Some(ref item_id) = state.current_item_id {
+                                                        let slides = db.get_service_item_slides(item_id).unwrap_or_default();
+                                                        if let Some(target) = slides.get(idx) {
+                                                            pres_mgr.set_live_service_item_slide(&app, &db, service_id, item_id, &target.id)
+                                                        } else {
+                                                            state
+                                                        }
+                                                    } else {
+                                                        state
+                                                    }
+                                                } else if let Some(ref pres_id) = state.current_presentation_id {
+                                                    let slides = db.get_slides(pres_id).unwrap_or_default();
+                                                    if let Some(target) = slides.get(idx) {
+                                                        pres_mgr.set_live_slide(&app, &db, pres_id, &target.id)
+                                                    } else {
+                                                        state
+                                                    }
+                                                } else {
+                                                    state
+                                                };
+                                                let resp = Response::from_string(serde_json::to_string(&serde_json::json!({
+                                                    "success": true,
+                                                    "action": "jump_slide",
+                                                    "currentSlideIndex": updated.current_slide_index,
+                                                })).unwrap_or_default())
+                                                .with_header(safe_header("Content-Type", "application/json"))
+                                                .with_header(safe_header("Access-Control-Allow-Origin", "*"));
+                                                request.respond(resp).ok();
+                                            } else {
+                                                db.touch_remote_device(&token).ok();
+                                                clients_tracker.lock().unwrap().insert(token, Instant::now());
+
+                                                match ActionDispatcher::dispatch(&app, &db, &pres_mgr, action) {
+                                                    Ok(updated_state) => {
+                                                        let resp = Response::from_string(serde_json::to_string(&serde_json::json!({
+                                                            "success": true,
+                                                            "action": action,
+                                                            "isLive": updated_state.is_live,
+                                                            "isBlackout": updated_state.is_blackout,
+                                                        })).unwrap_or_default())
+                                                        .with_header(safe_header("Content-Type", "application/json"))
+                                                        .with_header(safe_header("Access-Control-Allow-Origin", "*"));
+                                                        request.respond(resp).ok();
+                                                    }
+                                                    Err(e) => {
+                                                        let resp = Response::from_string(format!("{{\"error\":\"{}\"}}", e))
+                                                            .with_status_code(StatusCode(500))
+                                                            .with_header(safe_header("Content-Type", "application/json"));
+                                                        request.respond(resp).ok();
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        _ => {
+                                            let resp = Response::from_string("{\"error\":\"Unauthorized or device revoked\"}")
+                                                .with_status_code(StatusCode(401))
+                                                .with_header(safe_header("Content-Type", "application/json"));
+                                            request.respond(resp).ok();
+                                        }
+                                    }
+                                }
+
+                                _ => {
+                                    let resp = Response::from_string("Not Found")
+                                        .with_status_code(StatusCode(404));
+                                    request.respond(resp).ok();
+                                }
                             }
-                        }
+                        });
                     }
                     Ok(None) => {}
                     Err(e) => {
@@ -526,6 +680,10 @@ impl RemoteServerManager {
   </header>
 
   <main id="app-container">
+    <div style="background: rgba(234, 179, 8, 0.15); border: 1px solid #eab308; color: #fde047; padding: 8px 12px; border-radius: 6px; font-size: 11px; margin-bottom: 4px;">
+      ⚠️ Local Network HTTP: Connect only via secure church Wi-Fi.
+    </div>
+
     <div id="view-pairing" class="card" style="display: none; text-align: center;">
       <h2 style="margin-bottom: 8px;">Pair with Desktop</h2>
       <p style="color: #94a3b8; font-size: 14px; margin-bottom: 20px;">Enter the 6-digit PIN shown on the operator's desktop screen.</p>
@@ -558,8 +716,30 @@ impl RemoteServerManager {
         <button id="btn-next">Next Slide ▶</button>
         <button id="btn-prev-item" class="btn-sec">⏮ Prev Item</button>
         <button id="btn-next-item" class="btn-sec">Next Item ⏭</button>
+        <button id="btn-clear" class="btn-sec">Clear Screen</button>
         <button id="btn-blackout" class="btn-warn">Blackout</button>
-        <button id="btn-live" class="btn-danger">Go Live</button>
+        <button id="btn-live" class="btn-danger" style="grid-column: span 2;">Go Live</button>
+      </div>
+
+      <!-- Quick Stage Message Alert -->
+      <div class="card">
+        <div class="card-title">Stage Display Cue</div>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="input-stage-cue" class="input-text" style="margin-bottom: 0;" placeholder="Message to stage (e.g. Wrap up in 2 mins)...">
+          <button id="btn-send-stage" style="padding: 10px 14px; font-size: 13px; white-space: nowrap;">Send</button>
+          <button id="btn-clear-stage" class="btn-sec" style="padding: 10px 14px; font-size: 13px; white-space: nowrap;">Clear</button>
+        </div>
+      </div>
+
+      <!-- Playlist & Jump Browser -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div class="card-title" style="margin-bottom: 0;">Playlist & Jump</div>
+          <button id="btn-refresh-playlist" class="btn-sec" style="padding: 4px 8px; font-size: 11px;">Refresh</button>
+        </div>
+        <div id="playlist-container" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+          <div style="font-size: 13px; color: #94a3b8;">No items in playlist</div>
+        </div>
       </div>
     </div>
   </main>
@@ -568,11 +748,106 @@ impl RemoteServerManager {
     let sessionToken = localStorage.getItem('church_presenter_remote_token');
     const devName = navigator.userAgent.includes('iPhone') ? 'iPhone' : navigator.userAgent.includes('iPad') ? 'iPad' : navigator.userAgent.includes('Android') ? 'Android Phone' : 'Mobile Controller';
     document.getElementById('dev-name-input').value = devName;
+    let sseActive = false;
 
     function showView(name) {
       document.getElementById('view-pairing').style.display = name === 'pairing' ? 'block' : 'none';
       document.getElementById('view-pending').style.display = name === 'pending' ? 'block' : 'none';
       document.getElementById('view-controls').style.display = name === 'controls' ? 'flex' : 'none';
+    }
+
+    function updateUIWithState(data) {
+      showView('controls');
+      document.getElementById('conn-status').innerText = 'Connected (Live SSE)';
+
+      const liveBadge = document.getElementById('badge-live');
+      if (data.isLive) {
+        liveBadge.className = 'badge badge-live';
+        liveBadge.innerText = 'ON AIR';
+      } else {
+        liveBadge.className = 'badge badge-off';
+        liveBadge.innerText = 'OFF AIR';
+      }
+
+      document.getElementById('badge-blackout').style.display = data.isBlackout ? 'inline-block' : 'none';
+      document.getElementById('slide-index').innerText = `${(data.currentSlideIndex || 0) + 1}/${data.totalSlides || 0}`;
+
+      if (data.currentSlide) {
+        document.getElementById('live-body').innerText = data.currentSlide.body || data.currentSlide.title || '';
+      } else {
+        document.getElementById('live-body').innerText = '(Blank Screen)';
+      }
+
+      if (data.nextSlide) {
+        document.getElementById('next-body').innerText = data.nextSlide.body || data.nextSlide.title || '';
+      } else {
+        document.getElementById('next-body').innerText = '(End of playlist)';
+      }
+
+      if (data.permissions) {
+        document.getElementById('btn-prev').disabled = !data.permissions.canNavigate;
+        document.getElementById('btn-next').disabled = !data.permissions.canNavigate;
+        document.getElementById('btn-prev-item').disabled = !data.permissions.canNavigate;
+        document.getElementById('btn-next-item').disabled = !data.permissions.canNavigate;
+        document.getElementById('btn-blackout').disabled = !data.permissions.canBlackout;
+        document.getElementById('btn-clear').disabled = !data.permissions.canBlackout;
+        document.getElementById('btn-live').disabled = !data.permissions.canTakeLive;
+      }
+    }
+
+    function initSSE() {
+      if (!sessionToken || sseActive) return;
+      try {
+        const sse = new EventSource('/api/events?token=' + encodeURIComponent(sessionToken));
+        sse.onopen = () => { sseActive = true; };
+        sse.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            updateUIWithState(data);
+          } catch (err) {}
+        };
+        sse.onerror = () => {
+          sseActive = false;
+          sse.close();
+          setTimeout(initSSE, 3000);
+        };
+      } catch (err) {}
+    }
+
+    async function loadPlaylist() {
+      if (!sessionToken) return;
+      try {
+        const res = await fetch('/api/playlist?token=' + encodeURIComponent(sessionToken));
+        if (res.ok) {
+          const items = await res.json();
+          const container = document.getElementById('playlist-container');
+          container.innerHTML = '';
+          if (!items || items.length === 0) {
+            container.innerHTML = '<div style="font-size: 13px; color: #94a3b8;">No items in playlist</div>';
+            return;
+          }
+          items.forEach((item, idx) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'padding: 8px 10px; background: #0f172a; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border: 1px solid #334155; font-size: 13px;';
+            const label = item.title || item.name || ('Slide ' + (idx + 1));
+            row.innerHTML = `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;">${idx + 1}. ${label}</span><button class="btn-sec" style="padding: 4px 8px; font-size: 11px;">Jump</button>`;
+            row.onclick = () => jumpToSlide(idx);
+            container.appendChild(row);
+          });
+        }
+      } catch (e) {}
+    }
+
+    async function jumpToSlide(index) {
+      if (!sessionToken) return;
+      try {
+        await fetch('/api/action?token=' + encodeURIComponent(sessionToken), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'jump_slide', slideIndex: index })
+        });
+        checkState();
+      } catch (e) {}
     }
 
     async function checkState() {
@@ -597,41 +872,8 @@ impl RemoteServerManager {
         }
         if (res.ok) {
           const data = await res.json();
-          showView('controls');
-          document.getElementById('conn-status').innerText = 'Connected';
-
-          const liveBadge = document.getElementById('badge-live');
-          if (data.isLive) {
-            liveBadge.className = 'badge badge-live';
-            liveBadge.innerText = 'ON AIR';
-          } else {
-            liveBadge.className = 'badge badge-off';
-            liveBadge.innerText = 'OFF AIR';
-          }
-
-          document.getElementById('badge-blackout').style.display = data.isBlackout ? 'inline-block' : 'none';
-          document.getElementById('slide-index').innerText = `${(data.currentSlideIndex || 0) + 1}/${data.totalSlides || 0}`;
-
-          if (data.currentSlide) {
-            document.getElementById('live-body').innerText = data.currentSlide.body || data.currentSlide.title || '';
-          } else {
-            document.getElementById('live-body').innerText = '(Blank Screen)';
-          }
-
-          if (data.nextSlide) {
-            document.getElementById('next-body').innerText = data.nextSlide.body || data.nextSlide.title || '';
-          } else {
-            document.getElementById('next-body').innerText = '(End of playlist)';
-          }
-
-          if (data.permissions) {
-            document.getElementById('btn-prev').disabled = !data.permissions.canNavigate;
-            document.getElementById('btn-next').disabled = !data.permissions.canNavigate;
-            document.getElementById('btn-prev-item').disabled = !data.permissions.canNavigate;
-            document.getElementById('btn-next-item').disabled = !data.permissions.canNavigate;
-            document.getElementById('btn-blackout').disabled = !data.permissions.canBlackout;
-            document.getElementById('btn-live').disabled = !data.permissions.canTakeLive;
-          }
+          updateUIWithState(data);
+          initSSE();
         }
       } catch (e) {
         document.getElementById('conn-status').innerText = 'Reconnecting...';
@@ -647,6 +889,17 @@ impl RemoteServerManager {
           body: JSON.stringify({ action: actionName })
         });
         checkState();
+      } catch (e) {}
+    }
+
+    async function sendStageMsg(msg) {
+      if (!sessionToken) return;
+      try {
+        await fetch('/api/stage-message?token=' + encodeURIComponent(sessionToken), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg })
+        });
       } catch (e) {}
     }
 
@@ -671,6 +924,7 @@ impl RemoteServerManager {
           sessionToken = data.session_token;
           localStorage.setItem('church_presenter_remote_token', sessionToken);
           checkState();
+          loadPlaylist();
         } else {
           document.getElementById('pair-error').innerText = data.message || 'Pairing failed';
         }
@@ -683,11 +937,26 @@ impl RemoteServerManager {
     document.getElementById('btn-next').onclick = () => sendAction('next_slide');
     document.getElementById('btn-prev-item').onclick = () => sendAction('prev_item');
     document.getElementById('btn-next-item').onclick = () => sendAction('next_item');
+    document.getElementById('btn-clear').onclick = () => sendAction('clear_screen');
     document.getElementById('btn-blackout').onclick = () => sendAction('toggle_blackout');
     document.getElementById('btn-live').onclick = () => sendAction('toggle_live');
 
+    document.getElementById('btn-send-stage').onclick = () => {
+      const cue = document.getElementById('input-stage-cue').value.trim();
+      if (cue) {
+        sendStageMsg(cue);
+      }
+    };
+    document.getElementById('btn-clear-stage').onclick = () => {
+      document.getElementById('input-stage-cue').value = '';
+      sendStageMsg(null);
+    };
+
+    document.getElementById('btn-refresh-playlist').onclick = () => loadPlaylist();
+
     checkState();
-    setInterval(checkState, 1000);
+    loadPlaylist();
+    setInterval(checkState, 2000);
   </script>
 </body>
 </html>"#

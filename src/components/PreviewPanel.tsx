@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -6,8 +6,10 @@ import {
   Radio,
   Tv,
   ArrowRight,
+  MessageSquare,
 } from 'lucide-react';
 import { PresentationState, AudienceWindowStatus } from '../types';
+import { api } from '../services/api';
 
 interface PreviewPanelProps {
   presentationState: PresentationState;
@@ -28,6 +30,20 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
 }) => {
   const { currentSlide, nextSlide, isBlackout, isLive, currentSlideIndex, totalSlides } =
     presentationState;
+
+  const [stageCueText, setStageCueText] = useState<string>('');
+
+  const handleSendStageCue = async () => {
+    const trimmed = stageCueText.trim();
+    if (trimmed) {
+      await api.setStageMessage(trimmed);
+      setStageCueText('');
+    }
+  };
+
+  const handleClearStageCue = async () => {
+    await api.setStageMessage(null);
+  };
 
   const getFontSizePx = (size?: string) => {
     switch (size) {
@@ -378,6 +394,124 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
               {audienceStatus.isOpen ? 'Close Audience Window' : 'Open Audience Window'}
             </span>
           </button>
+
+          {/* Quick Stage Message Cue */}
+          <div
+            data-testid="stage-message-control-card"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              padding: '10px',
+              backgroundColor: '#1e293b',
+              borderRadius: '8px',
+              border: presentationState.stageMessage ? '1px solid #ef4444' : '1px solid #334155',
+              marginTop: '4px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: '#94a3b8',
+                  textTransform: 'uppercase',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <MessageSquare size={12} />
+                Stage Cue
+              </span>
+              {presentationState.stageMessage && (
+                <span
+                  style={{
+                    fontSize: '10px',
+                    color: '#f87171',
+                    fontWeight: 700,
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  LIVE ON STAGE
+                </span>
+              )}
+            </div>
+            {presentationState.stageMessage && (
+              <div
+                style={{
+                  fontSize: '11px',
+                  color: '#fca5a5',
+                  backgroundColor: '#450a0a',
+                  padding: '4px 6px',
+                  borderRadius: '4px',
+                  wordBreak: 'break-word',
+                }}
+              >
+                "{presentationState.stageMessage}"
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <input
+                type="text"
+                value={stageCueText}
+                onChange={(e) => setStageCueText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSendStageCue();
+                }}
+                placeholder="Wrap up in 2 mins..."
+                data-testid="input-stage-cue-operator"
+                style={{
+                  flex: 1,
+                  padding: '6px 8px',
+                  backgroundColor: '#0f172a',
+                  border: '1px solid #334155',
+                  borderRadius: '6px',
+                  color: '#f8fafc',
+                  fontSize: '12px',
+                  minWidth: 0,
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleSendStageCue}
+                data-testid="btn-send-stage-cue"
+                style={{
+                  padding: '6px 10px',
+                  backgroundColor: '#2563eb',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: '#ffffff',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Send
+              </button>
+              {presentationState.stageMessage && (
+                <button
+                  type="button"
+                  onClick={handleClearStageCue}
+                  data-testid="btn-clear-stage-cue"
+                  style={{
+                    padding: '6px 8px',
+                    backgroundColor: '#334155',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#cbd5e1',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

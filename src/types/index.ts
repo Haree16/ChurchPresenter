@@ -57,6 +57,7 @@ export interface PresentationState {
   selectedItemId?: string | null;
   mediaPlayback?: MediaPlaybackState | null;
   timerState?: TimerState | null;
+  stageMessage?: string | null;
 }
 
 export interface DisplayMonitor {
@@ -287,6 +288,7 @@ export interface BiblePassageQuery {
   chapter: number;
   startVerse: number;
   endVerse?: number | null;
+  secondaryTranslation?: string | null;
 }
 
 export interface BiblePassageResult {
@@ -560,6 +562,14 @@ export interface AppInfo {
   totalServices: number;
   totalSongs: number;
   totalMedia: number;
+}
+
+export interface DatabaseHealth {
+  isHealthy: boolean;
+  isInMemory: boolean;
+  error?: string | null;
+  dbPath?: string | null;
+  availableBackups: string[];
 }
 
 

@@ -362,6 +362,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Blackout Toggle Button */}
         <button
           type="button"
+          data-testid="toggle-blackout-btn"
           onClick={onToggleBlackout}
           title="Toggle Black Screen (Shortcut: B)"
           style={{
