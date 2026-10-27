@@ -2033,6 +2033,7 @@ impl DbManager {
             .get_song(id)?
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)?;
         let sections = self.get_song_sections(id)?;
+        let arrangements = self.list_song_arrangements(id)?;
 
         let new_id = Uuid::new_v4().to_string();
         let new_title = format!("{} (Copy)", original_song.title);
@@ -2065,8 +2066,10 @@ impl DbManager {
         )?;
 
         let mut duplicated_sections = Vec::new();
+        let mut id_map: HashMap<String, String> = HashMap::new();
         for sec in sections {
             let new_sec_id = Uuid::new_v4().to_string();
+            id_map.insert(sec.id.clone(), new_sec_id.clone());
             tx.execute(
                 "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at, color)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9);",
@@ -2097,7 +2100,11 @@ impl DbManager {
             });
         }
 
+        insert_arrangements_mapped(&tx, &new_id, &arrangements, &id_map, &now)?;
         tx.commit()?;
+        // release the connection lock before reading back through another locking method
+        drop(conn);
+        let new_arrangements = self.list_song_arrangements(&new_id)?;
 
         Ok(SongWithSections {
             song: Song {
@@ -2119,6 +2126,7 @@ impl DbManager {
                 updated_at: now,
             },
             sections: duplicated_sections,
+            arrangements: new_arrangements,
         })
     }
 
@@ -3190,6 +3198,7 @@ impl DbManager {
             .get_song(song_id)?
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)?;
         let sections = self.get_song_sections(song_id)?;
+        let arrangements = self.list_song_arrangements(song_id)?;
 
         let mut themes = Vec::new();
         if let Some(ref tid) = song.default_theme_id {
@@ -3202,7 +3211,7 @@ impl DbManager {
             version: "1.0.0".to_string(),
             exported_at: Utc::now().to_rfc3339(),
             app: "ChurchPresenter".to_string(),
-            songs: vec![SongWithSections { song, sections }],
+            songs: vec![SongWithSections { song, sections, arrangements }],
             themes,
         })
     }
@@ -3218,7 +3227,8 @@ impl DbManager {
         let mut songs_with_sec = Vec::new();
         for song in selected {
             let sections = self.get_song_sections(&song.id)?;
-            songs_with_sec.push(SongWithSections { song, sections });
+            let arrangements = self.list_song_arrangements(&song.id)?;
+            songs_with_sec.push(SongWithSections { song, sections, arrangements });
         }
 
         let themes = self.list_themes()?;
@@ -3342,8 +3352,10 @@ impl DbManager {
                             ],
                         )?;
 
+                        let mut id_map: HashMap<String, String> = HashMap::new();
                         for (idx, sec) in item.sections.iter().enumerate() {
                             let sec_id = Uuid::new_v4().to_string();
+                            id_map.insert(sec.id.clone(), sec_id.clone());
                             tx.execute(
                                 "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at, color)
                                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9);",
@@ -3360,6 +3372,7 @@ impl DbManager {
                                 ],
                             )?;
                         }
+                        insert_arrangements_mapped(&tx, &new_id, &item.arrangements, &id_map, &now)?;
                         imported += 1;
                     }
                     _ => {
@@ -3392,9 +3405,16 @@ impl DbManager {
                             "DELETE FROM song_sections WHERE song_id = ?1;",
                             params![existing],
                         )?;
+                        // old arrangements point at the sections deleted above
+                        tx.execute(
+                            "DELETE FROM song_arrangements WHERE song_id = ?1;",
+                            params![existing],
+                        )?;
 
+                        let mut id_map: HashMap<String, String> = HashMap::new();
                         for (idx, sec) in item.sections.iter().enumerate() {
                             let sec_id = Uuid::new_v4().to_string();
+                            id_map.insert(sec.id.clone(), sec_id.clone());
                             tx.execute(
                                 "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at, color)
                                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9);",
@@ -3411,6 +3431,7 @@ impl DbManager {
                                 ],
                             )?;
                         }
+                        insert_arrangements_mapped(&tx, &existing, &item.arrangements, &id_map, &now)?;
                         updated += 1;
                     }
                 }
@@ -3443,12 +3464,14 @@ impl DbManager {
                     ],
                 )?;
 
+                let mut id_map: HashMap<String, String> = HashMap::new();
                 for (idx, sec) in item.sections.iter().enumerate() {
                     let sec_id = if sec.id.is_empty() {
                         Uuid::new_v4().to_string()
                     } else {
                         sec.id.clone()
                     };
+                    id_map.insert(sec.id.clone(), sec_id.clone());
                     tx.execute(
                         "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at, color)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9);",
@@ -3465,6 +3488,7 @@ impl DbManager {
                         ],
                     )?;
                 }
+                insert_arrangements_mapped(&tx, &song_id, &item.arrangements, &id_map, &now)?;
                 imported += 1;
             }
         }
@@ -4284,6 +4308,44 @@ impl DbManager {
 
         self.add_service_item(&item, Some(slides))
     }
+}
+
+/// Inserts arrangements for `song_id`, translating their section ids through `id_map`
+/// (old section id -> id of the section as stored). Unknown ids are dropped and arrangements
+/// left empty are skipped. Arrangement ids are always regenerated, so copies never collide.
+fn insert_arrangements_mapped(
+    tx: &rusqlite::Transaction,
+    song_id: &str,
+    arrangements: &[SongArrangement],
+    id_map: &HashMap<String, String>,
+    now: &str,
+) -> Result<()> {
+    let mut default_taken = false;
+    let mut order = 0;
+    for arr in arrangements {
+        let ids: Vec<&String> = arr.section_ids.iter().filter_map(|id| id_map.get(id)).collect();
+        if ids.is_empty() {
+            continue;
+        }
+        let is_default = arr.is_default && !default_taken;
+        default_taken |= is_default;
+        let name = if arr.name.trim().is_empty() { format!("Arrangement {}", order + 1) } else { arr.name.trim().to_string() };
+        tx.execute(
+            "INSERT INTO song_arrangements (id, song_id, name, section_ids, is_default, sort_order, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7);",
+            params![
+                Uuid::new_v4().to_string(),
+                song_id,
+                name,
+                serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string()),
+                is_default as i32,
+                order,
+                now
+            ],
+        )?;
+        order += 1;
+    }
+    Ok(())
 }
 
 /// Colour shown for a song section: its custom colour, else the default for its type.
@@ -7428,6 +7490,158 @@ mod tests {
         for n in ["toggle_logo", "clear_media", "clear_all"] {
             assert!(has(&db, n), "{n} missing after reset");
         }
+    }
+
+    fn make_song_with_arrangement(db: &DbManager, title: &str) -> (String, Vec<SongSection>, Vec<SongArrangement>) {
+        let now = Utc::now().to_rfc3339();
+        let song = db
+            .create_song(&Song {
+                id: String::new(),
+                title: title.to_string(),
+                alternate_title: None,
+                language: "English".into(),
+                author: None,
+                composer: None,
+                copyright: None,
+                ccli_number: None,
+                song_key: None,
+                tempo: None,
+                tags: vec![],
+                category: "Worship".into(),
+                default_theme_id: None,
+                sections_count: 0,
+                created_at: now.clone(),
+                updated_at: now.clone(),
+            })
+            .unwrap();
+        let mk = |label: &str, ty: &str, color: Option<&str>, order: i32| SongSection {
+            id: String::new(),
+            song_id: song.id.clone(),
+            section_type: ty.into(),
+            label: label.into(),
+            lyrics: format!("{} lyrics", label),
+            sort_order: order,
+            notes: None,
+            color: color.map(|c| c.to_string()),
+            created_at: now.clone(),
+            updated_at: now.clone(),
+        };
+        let secs = db
+            .save_song_sections(&song.id, &[mk("Verse 1", "verse", None, 0), mk("Chorus", "chorus", Some("#123456"), 1)])
+            .unwrap();
+        let arrs = db
+            .save_song_arrangements(
+                &song.id,
+                &[arrangement("V C V C", &[secs[0].id.as_str(), secs[1].id.as_str(), secs[0].id.as_str(), secs[1].id.as_str()], true)],
+            )
+            .unwrap();
+        (song.id, secs, arrs)
+    }
+
+    fn arrangement_labels(db: &DbManager, song_id: &str) -> Vec<Vec<String>> {
+        let secs = db.get_song_sections(song_id).unwrap();
+        db.list_song_arrangements(song_id)
+            .unwrap()
+            .iter()
+            .map(|a| {
+                a.section_ids
+                    .iter()
+                    .map(|id| secs.iter().find(|s| &s.id == id).map(|s| s.label.clone()).unwrap_or_else(|| "MISSING".into()))
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_export_includes_arrangements_and_colors_and_imports_into_a_fresh_database() {
+        let src = DbManager::new_in_memory().unwrap();
+        let (song_id, _, _) = make_song_with_arrangement(&src, "Round Trip");
+
+        let exported = src.export_song(&song_id).unwrap();
+        assert_eq!(exported.songs[0].arrangements.len(), 1);
+        assert_eq!(exported.songs[0].sections[1].color.as_deref(), Some("#123456"));
+
+        // survives JSON, like a real export file
+        let json = serde_json::to_string(&exported).unwrap();
+        let reparsed: SongExportData = serde_json::from_str(&json).unwrap();
+
+        let dst = DbManager::new_in_memory().unwrap();
+        let res = dst
+            .import_songs(&reparsed, &SongImportOptions { duplicate_mode: "skip".into() })
+            .unwrap();
+        assert_eq!(res.imported_count, 1);
+        assert_eq!(arrangement_labels(&dst, &song_id), vec![vec!["Verse 1", "Chorus", "Verse 1", "Chorus"]]);
+        assert_eq!(dst.get_song_sections(&song_id).unwrap()[1].color.as_deref(), Some("#123456"));
+        assert!(dst.list_song_arrangements(&song_id).unwrap()[0].is_default);
+    }
+
+    #[test]
+    fn test_older_export_files_without_arrangements_still_import() {
+        let src = DbManager::new_in_memory().unwrap();
+        let (song_id, _, _) = make_song_with_arrangement(&src, "Old Format");
+        let mut value = serde_json::to_value(src.export_song(&song_id).unwrap()).unwrap();
+        value["songs"][0].as_object_mut().unwrap().remove("arrangements");
+        let data: SongExportData = serde_json::from_value(value).unwrap();
+        assert!(data.songs[0].arrangements.is_empty());
+
+        let dst = DbManager::new_in_memory().unwrap();
+        let res = dst
+            .import_songs(&data, &SongImportOptions { duplicate_mode: "skip".into() })
+            .unwrap();
+        assert_eq!(res.imported_count, 1);
+        assert!(dst.list_song_arrangements(&song_id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_import_copy_remaps_arrangements_to_the_copys_own_sections() {
+        let db = DbManager::new_in_memory().unwrap();
+        let (song_id, orig_secs, _) = make_song_with_arrangement(&db, "Copy Me");
+        let exported = db.export_song(&song_id).unwrap();
+
+        db.import_songs(&exported, &SongImportOptions { duplicate_mode: "copy".into() }).unwrap();
+        let copy = db
+            .list_songs(None, None, None)
+            .unwrap()
+            .into_iter()
+            .find(|s| s.title == "Copy Me (Imported Copy)")
+            .unwrap();
+
+        let copy_secs: Vec<String> = db.get_song_sections(&copy.id).unwrap().into_iter().map(|s| s.id).collect();
+        let copy_arr = db.list_song_arrangements(&copy.id).unwrap();
+        assert_eq!(copy_arr.len(), 1);
+        assert!(copy_arr[0].section_ids.iter().all(|id| copy_secs.contains(id)));
+        assert!(copy_arr[0].section_ids.iter().all(|id| !orig_secs.iter().any(|s| &s.id == id)));
+        // the original is untouched
+        assert_eq!(arrangement_labels(&db, &song_id), vec![vec!["Verse 1", "Chorus", "Verse 1", "Chorus"]]);
+    }
+
+    #[test]
+    fn test_import_update_replaces_arrangements_and_leaves_none_dangling() {
+        let db = DbManager::new_in_memory().unwrap();
+        let (song_id, _, _) = make_song_with_arrangement(&db, "Update Me");
+
+        let mut exported = db.export_song(&song_id).unwrap();
+        // incoming file has a shorter arrangement
+        let ids = exported.songs[0].sections.iter().map(|s| s.id.clone()).collect::<Vec<_>>();
+        exported.songs[0].arrangements = vec![arrangement("Short", &[ids[1].as_str()], true)];
+
+        db.import_songs(&exported, &SongImportOptions { duplicate_mode: "update".into() }).unwrap();
+        assert_eq!(arrangement_labels(&db, &song_id), vec![vec!["Chorus"]]);
+
+        // an incoming file with no arrangements clears the old ones rather than leaving them dangling
+        exported.songs[0].arrangements.clear();
+        db.import_songs(&exported, &SongImportOptions { duplicate_mode: "update".into() }).unwrap();
+        assert!(db.list_song_arrangements(&song_id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_duplicate_song_copies_arrangements() {
+        let db = DbManager::new_in_memory().unwrap();
+        let (song_id, _, _) = make_song_with_arrangement(&db, "Dup");
+        let dup = db.duplicate_song(&song_id).unwrap();
+        assert_eq!(dup.arrangements.len(), 1);
+        assert_eq!(arrangement_labels(&db, &dup.song.id), vec![vec!["Verse 1", "Chorus", "Verse 1", "Chorus"]]);
+        assert_ne!(dup.arrangements[0].id, db.list_song_arrangements(&song_id).unwrap()[0].id);
     }
 }
 

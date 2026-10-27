@@ -1786,6 +1786,7 @@ class MockDataStore {
     this.songs.push(dupSong);
 
     const origSections = this.songSections.filter((sec) => sec.songId === id);
+    const idMap = new Map<string, string>();
     const dupSections: SongSection[] = origSections.map((sec) => {
       const s: SongSection = {
         ...sec,
@@ -1794,11 +1795,17 @@ class MockDataStore {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+      idMap.set(sec.id, s.id);
       this.songSections.push(s);
       return s;
     });
+    const arrangements = this.insertMappedArrangements(
+      newSongId,
+      this.songArrangements.filter((a) => a.songId === id),
+      idMap
+    );
 
-    return { song: dupSong, sections: dupSections };
+    return { song: dupSong, sections: dupSections, arrangements };
   }
 
   public async searchSongs(
@@ -1863,6 +1870,33 @@ class MockDataStore {
     });
     this.songArrangements = this.songArrangements.filter((a) => a.songId !== songId).concat(saved);
     return saved;
+  }
+
+  /** Stores copies of `arrangements` for `songId`, translating section ids; empty ones are dropped. */
+  private insertMappedArrangements(
+    songId: string,
+    arrangements: SongArrangement[],
+    idMap: Map<string, string>
+  ): SongArrangement[] {
+    let defaultTaken: boolean = false;
+    const added: SongArrangement[] = [];
+    for (const arr of arrangements) {
+      const sectionIds = arr.sectionIds
+        .map((id) => idMap.get(id))
+        .filter((id): id is string => !!id);
+      if (sectionIds.length === 0) continue;
+      const isDefault: boolean = arr.isDefault && !defaultTaken;
+      defaultTaken = defaultTaken || isDefault;
+      added.push({
+        id: 'arr-' + Math.random().toString(36).substring(2, 9),
+        songId,
+        name: arr.name.trim() || `Arrangement ${added.length + 1}`,
+        sectionIds,
+        isDefault,
+      });
+    }
+    this.songArrangements.push(...added);
+    return added;
   }
 
   /** Sections in playing order: requested arrangement, else the default one, else all. */
@@ -2174,7 +2208,13 @@ class MockDataStore {
       version: '1.0.0',
       exportedAt: new Date().toISOString(),
       app: 'ChurchPresenter',
-      songs: [{ song: { ...song }, sections: sections.map((s) => ({ ...s })) }],
+      songs: [
+        {
+          song: { ...song },
+          sections: sections.map((s) => ({ ...s })),
+          arrangements: this.songArrangements.filter((a) => a.songId === songId).map((a) => ({ ...a })),
+        },
+      ],
       themes: theme ? [theme] : [],
     };
   }
@@ -2189,6 +2229,7 @@ class MockDataStore {
       sections: this.songSections
         .filter((s) => s.songId === song.id)
         .map((s) => ({ ...s })),
+      arrangements: this.songArrangements.filter((a) => a.songId === song.id).map((a) => ({ ...a })),
     }));
 
     return {
@@ -2231,40 +2272,39 @@ class MockDataStore {
             title: `${item.song.title} (Imported)`,
           };
           this.songs.push(copySong);
+          const copyMap = new Map<string, string>();
           item.sections.forEach((sec, idx) => {
-            this.songSections.push({
-              ...sec,
-              id: 'sec-' + Math.random().toString(36).substring(2, 9),
-              songId: newId,
-              sortOrder: idx,
-            });
+            const sid = 'sec-' + Math.random().toString(36).substring(2, 9);
+            copyMap.set(sec.id, sid);
+            this.songSections.push({ ...sec, id: sid, songId: newId, sortOrder: idx });
           });
+          this.insertMappedArrangements(newId, item.arrangements || [], copyMap);
           imported++;
         } else {
           // update
           Object.assign(existing, item.song);
           this.songSections = this.songSections.filter((s) => s.songId !== existing.id);
+          // old arrangements point at the sections removed above
+          this.songArrangements = this.songArrangements.filter((a) => a.songId !== existing.id);
+          const updateMap = new Map<string, string>();
           item.sections.forEach((sec, idx) => {
-            this.songSections.push({
-              ...sec,
-              id: 'sec-' + Math.random().toString(36).substring(2, 9),
-              songId: existing.id,
-              sortOrder: idx,
-            });
+            const sid = 'sec-' + Math.random().toString(36).substring(2, 9);
+            updateMap.set(sec.id, sid);
+            this.songSections.push({ ...sec, id: sid, songId: existing.id, sortOrder: idx });
           });
+          this.insertMappedArrangements(existing.id, item.arrangements || [], updateMap);
           updated++;
         }
       } else {
         const newSong = { ...item.song };
         this.songs.push(newSong);
+        const newMap = new Map<string, string>();
         item.sections.forEach((sec, idx) => {
-          this.songSections.push({
-            ...sec,
-            id: sec.id || 'sec-' + Math.random().toString(36).substring(2, 9),
-            songId: newSong.id,
-            sortOrder: idx,
-          });
+          const sid = sec.id || 'sec-' + Math.random().toString(36).substring(2, 9);
+          newMap.set(sec.id, sid);
+          this.songSections.push({ ...sec, id: sid, songId: newSong.id, sortOrder: idx });
         });
+        this.insertMappedArrangements(newSong.id, item.arrangements || [], newMap);
         imported++;
       }
     }

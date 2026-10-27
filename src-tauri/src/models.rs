@@ -184,6 +184,9 @@ pub struct SongArrangement {
 pub struct SongWithSections {
     pub song: Song,
     pub sections: Vec<SongSection>,
+    /// Arrangements of the song; they reference `sections` by id.
+    #[serde(default)]
+    pub arrangements: Vec<SongArrangement>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

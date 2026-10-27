@@ -129,6 +129,8 @@ export interface SongArrangement {
 export interface SongWithSections {
   song: Song;
   sections: SongSection[];
+  /** Arrangements reference `sections` by id. Absent in files exported by older versions. */
+  arrangements?: SongArrangement[];
 }
 
 export interface Theme {

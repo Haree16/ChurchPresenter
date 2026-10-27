@@ -10,6 +10,7 @@ import {
 import {
   Song,
   SongSection,
+  SongArrangement,
   SongExportData,
   SongImportOptions,
   SongImportResult,
@@ -32,12 +33,18 @@ export function parseOpenSongOrOpenLyrics(xml: string): SongExportData | null {
       const key = doc.querySelector('key')?.textContent?.trim() || '';
 
       const sections: SongSection[] = [];
+      const verseNames: string[] = [];
       const verses = doc.querySelectorAll('verse');
       verses.forEach((v, idx) => {
         const name = v.getAttribute('name') || `Verse ${idx + 1}`;
+        // <br/> separates lines inside a <lines> element; textContent would drop it
         const lines = Array.from(v.querySelectorAll('lines'))
-          .map((l) => l.textContent || '')
+          .map((l) => {
+            l.querySelectorAll('br').forEach((br) => br.replaceWith('\n'));
+            return l.textContent || '';
+          })
           .join('\n');
+        verseNames.push(name.toLowerCase());
         sections.push({
           id: `sec-${idx + 1}`,
           songId: '',
@@ -51,6 +58,19 @@ export function parseOpenSongOrOpenLyrics(xml: string): SongExportData | null {
           lyrics: lines.trim(),
         });
       });
+
+      // <verseOrder>v1 c1 v2 c1</verseOrder> becomes the song's default arrangement
+      const orderIds = (doc.querySelector('verseOrder')?.textContent || '')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((n) => verseNames.indexOf(n.toLowerCase()))
+        .filter((i) => i >= 0)
+        .map((i) => sections[i].id);
+      const arrangements: SongArrangement[] =
+        orderIds.length > 0
+          ? [{ id: 'arr-1', songId: '', name: 'Verse order', sectionIds: orderIds, isDefault: true }]
+          : [];
 
       return {
         version: '1.0.0',
@@ -72,6 +92,7 @@ export function parseOpenSongOrOpenLyrics(xml: string): SongExportData | null {
               updatedAt: new Date().toISOString(),
             },
             sections,
+            arrangements,
           },
         ],
       };
@@ -167,16 +188,34 @@ function escapeXml(unsafe: string): string {
   });
 }
 
-export function exportSongToOpenLyrics(song: Song, sections: SongSection[]): string {
+export function exportSongToOpenLyrics(
+  song: Song,
+  sections: SongSection[],
+  arrangements: SongArrangement[] = []
+): string {
   const titles = `<titles><title>${escapeXml(song.title)}</title></titles>`;
   const authors = song.author ? `<authors><author>${escapeXml(song.author)}</author></authors>` : '';
   const ccli = song.ccliNumber ? `<ccliNo>${escapeXml(song.ccliNumber)}</ccliNo>` : '';
   const key = song.songKey ? `<key>${escapeXml(song.songKey)}</key>` : '';
 
+  const verseNames = sections.map((sec, idx) => {
+    const prefix = sec.sectionType === 'chorus' ? 'c' : sec.sectionType === 'bridge' ? 'b' : 'v';
+    return `${prefix}${idx + 1}`;
+  });
+
+  // OpenLyrics has a single verse order: use the song's default arrangement
+  const defaultArrangement = arrangements.find((a) => a.isDefault);
+  const order = defaultArrangement
+    ? defaultArrangement.sectionIds
+        .map((id) => sections.findIndex((s) => s.id === id))
+        .filter((i) => i >= 0)
+        .map((i) => verseNames[i])
+    : [];
+  const verseOrder = order.length > 0 ? `<verseOrder>${order.join(' ')}</verseOrder>` : '';
+
   const versesXml = sections
     .map((sec, idx) => {
-      const prefix = sec.sectionType === 'chorus' ? 'c' : sec.sectionType === 'bridge' ? 'b' : 'v';
-      const verseName = `${prefix}${idx + 1}`;
+      const verseName = verseNames[idx];
       const lines = sec.lyrics
         .split('\n')
         .map((line) => escapeXml(line))
@@ -192,6 +231,7 @@ export function exportSongToOpenLyrics(song: Song, sections: SongSection[]): str
     ${authors}
     ${ccli}
     ${key}
+    ${verseOrder}
   </properties>
   <lyrics>
 ${versesXml}
@@ -201,10 +241,10 @@ ${versesXml}
 
 export function exportAllSongsToOpenLyrics(data: SongExportData): string {
   if (data.songs.length === 1) {
-    return exportSongToOpenLyrics(data.songs[0].song, data.songs[0].sections);
+    return exportSongToOpenLyrics(data.songs[0].song, data.songs[0].sections, data.songs[0].arrangements);
   }
   const songDocs = data.songs
-    .map((item) => exportSongToOpenLyrics(item.song, item.sections))
+    .map((item) => exportSongToOpenLyrics(item.song, item.sections, item.arrangements))
     .join('\n\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<songs xmlns="http://openlyrics.info/namespace/2009/song">\n${songDocs}\n</songs>`;
 }
