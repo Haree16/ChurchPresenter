@@ -72,10 +72,12 @@ Done:
 - **Safe margins and text outline**: a `layout` value on slides and themes (migration 13, validated, bad stored values ignored). Slides made from a theme inherit its layout. Drawn on the audience screen, operator preview, slide cards and both editors (slide editor, theme manager). The outline is a ring of shadows sized in `em`, so it matches in previews and on the real screen. The old theme `text_margin` field is left as is (it only affected the theme preview and is now overridden there by the safe margin).
 - Fixed: saving a slide from the editor reset its background image, overlay, line spacing, shadow and font (the editor sent only six fields while the backend wrote them all). `update_slide` now returns the stored slide, so edits no longer drop its group tag either.
 
+- **Portable themes**: export one theme or all custom themes to a `.cptheme` file with the background image embedded; import creates new custom themes (name clashes are renamed, nothing is imported if any theme is invalid, images are checked by content and copied into the app's own folder). Imports list the fonts a theme needs and the app warns about ones not installed on that computer. The theme manager also gained a background image picker (from the media library) and fit mode, which did not exist before.
+
 Not done (design notes):
 - The `layout` value is meant to also carry extra elements and templates later.
+- Fonts are not embedded in theme files (reported instead); only PNG/JPG/GIF/WEBP backgrounds travel with a theme.
 - **Multi-element slides** (extra text boxes, images, shapes positioned in % of the slide) and **templates** (saved layouts).
-- **Portable theme export/import** with the background image embedded, so a theme looks identical on another machine.
 - Props are not drawn in the operator preview panel; phones cannot toggle individual props (only clear them).
 *Done when:* a theme exported from one machine looks identical on another.
 

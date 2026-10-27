@@ -11,6 +11,7 @@ mod osc;
 mod overlay;
 mod presentation;
 mod props;
+mod theme_io;
 mod remote;
 
 use db::DbManager;
@@ -204,6 +205,8 @@ pub fn run() {
             commands::update_theme,
             commands::delete_theme,
             commands::duplicate_theme,
+            commands::export_themes_to_file,
+            commands::import_themes_from_file,
             // Phase 2: Media Assets
             commands::list_media_assets,
             commands::import_media_asset,

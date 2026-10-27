@@ -556,6 +556,40 @@ pub async fn duplicate_theme(id: String, db: State<'_, DbManager>) -> Result<The
     db.duplicate_theme(&id).map_err(|e| e.to_string())
 }
 
+/// Writes the chosen themes, with their background images embedded, to a `.cptheme` file.
+#[tauri::command]
+pub async fn export_themes_to_file(
+    ids: Vec<String>,
+    path: String,
+    app: AppHandle,
+    db: State<'_, DbManager>,
+) -> Result<crate::theme_io::ThemeExportResult, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| crate::resolve_app_data_path());
+    let mut dest = std::path::PathBuf::from(&path);
+    if dest.extension().is_none() {
+        dest.set_extension("cptheme");
+    }
+    crate::theme_io::export_themes_to_file(&db, &ids, &app_data_dir, &dest)
+}
+
+/// Imports the themes in a `.cptheme` file as new custom themes. Nothing is imported if any
+/// theme in the file is invalid.
+#[tauri::command]
+pub async fn import_themes_from_file(
+    path: String,
+    app: AppHandle,
+    db: State<'_, DbManager>,
+) -> Result<crate::theme_io::ThemeImportResult, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| crate::resolve_app_data_path());
+    crate::theme_io::import_themes_from_file(&db, std::path::Path::new(&path), &app_data_dir)
+}
+
 // ================= Phase 2: Media Assets =================
 
 #[tauri::command]

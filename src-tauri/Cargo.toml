@@ -25,6 +25,7 @@ thiserror = "2.0"
 midir = "0.10"
 rosc = "0.10"
 tiny_http = "0.12"
+base64 = "0.22"
 
 
 [features]

@@ -10,6 +10,9 @@ import {
 } from 'lucide-react';
 import { Theme, FontSize, TextAlignment } from '../../types';
 import { api } from '../../services/api';
+import { mediaService } from '../../services/mediaService';
+import { ThemeTransferBar } from './ThemeTransferBar';
+import { ThemeBackgroundControl } from './ThemeBackgroundControl';
 import { LayoutControls, layoutValuesFrom } from '../LayoutControls';
 import { buildLayout, composeTextShadow, layoutPaddingPercent } from '../../services/slideLayout';
 
@@ -261,6 +264,16 @@ export const ThemeManagerModal: React.FC<ThemeManagerModalProps> = ({
               </button>
             </div>
 
+            <ThemeTransferBar
+              selectedTheme={activeTheme}
+              customThemes={themes.filter((t) => !t.isBuiltIn)}
+              onImported={async (imported) => {
+                await refreshThemes();
+                if (imported[0]) handleSelectTheme(imported[0]);
+                if (onThemeUpdated) onThemeUpdated();
+              }}
+            />
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {themes.map((t) => {
                 const isSelected = selectedThemeId === t.id;
@@ -421,9 +434,10 @@ export const ThemeManagerModal: React.FC<ThemeManagerModalProps> = ({
                     aspectRatio: '16 / 9',
                     backgroundColor: activeTheme.backgroundColor,
                     backgroundImage: activeTheme.backgroundImagePath
-                      ? `url("${activeTheme.backgroundImagePath}")`
+                      ? `url("${mediaService.resolveMediaUrl(activeTheme.backgroundImagePath)}")`
                       : undefined,
-                    backgroundSize: activeTheme.backgroundMode || 'cover',
+                    backgroundSize:
+                      activeTheme.backgroundMode === 'stretch' ? '100% 100%' : activeTheme.backgroundMode || 'cover',
                     backgroundPosition: 'center',
                     position: 'relative',
                     borderRadius: '8px',
@@ -522,6 +536,12 @@ export const ThemeManagerModal: React.FC<ThemeManagerModalProps> = ({
                     }
                   />
                 </div>
+
+                {/* Background image from the media library (travels with the theme when exported) */}
+                <ThemeBackgroundControl
+                  theme={activeTheme}
+                  onChange={(patch) => setActiveTheme({ ...activeTheme, ...patch })}
+                />
 
                 {/* Theme Name */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>

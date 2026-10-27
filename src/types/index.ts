@@ -179,6 +179,18 @@ export interface SongWithSections {
   arrangements?: SongArrangement[];
 }
 
+export interface ThemeExportResult {
+  count: number;
+  warnings: string[];
+}
+
+export interface ThemeImportResult {
+  imported: Theme[];
+  warnings: string[];
+  /** Font families the imported themes use (generic ones excluded). */
+  fonts: string[];
+}
+
 export interface Theme {
   id: string;
   name: string;

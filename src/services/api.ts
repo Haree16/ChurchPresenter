@@ -50,6 +50,8 @@ import {
   BibleTranslationInfo,
   SongArrangement,
   Prop,
+  ThemeExportResult,
+  ThemeImportResult,
 } from '../types';
 import { validateProp } from './propLayout';
 import { validateLayout, isEmptyLayout } from './slideLayout';
@@ -4393,6 +4395,22 @@ export const api = {
       return await invoke<ImportResult>('import_backup', { backup, mode });
     }
     return mockStore.importBackup(backup, mode);
+  },
+
+  /** Writes themes (with their background images embedded) to a `.cptheme` file. Desktop app only. */
+  exportThemesToFile: async (ids: string[], path: string): Promise<ThemeExportResult> => {
+    if (!isTauri()) {
+      throw new Error('Exporting themes requires the desktop app.');
+    }
+    return await invoke<ThemeExportResult>('export_themes_to_file', { ids, path });
+  },
+
+  /** Imports the themes in a `.cptheme` file as new custom themes. Desktop app only. */
+  importThemesFromFile: async (path: string): Promise<ThemeImportResult> => {
+    if (!isTauri()) {
+      throw new Error('Importing themes requires the desktop app.');
+    }
+    return await invoke<ThemeImportResult>('import_themes_from_file', { path });
   },
 
   /** Copies an image into the app data folder and uses it for "clear to logo". */
