@@ -929,7 +929,16 @@ impl RemoteServerManager {
             const row = document.createElement('div');
             row.style.cssText = 'padding: 8px 10px; background: #0f172a; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border: 1px solid #334155; font-size: 13px;';
             const label = item.title || item.name || ('Slide ' + (idx + 1));
-            row.innerHTML = `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;">${idx + 1}. ${label}</span><button class="btn-sec" style="padding: 4px 8px; font-size: 11px;">Jump</button>`;
+            // item titles come from the library (and imported files): always plain text, never HTML
+            const title = document.createElement('span');
+            title.style.cssText = 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;';
+            title.textContent = (idx + 1) + '. ' + label;
+            const jump = document.createElement('button');
+            jump.className = 'btn-sec';
+            jump.style.cssText = 'padding: 4px 8px; font-size: 11px;';
+            jump.textContent = 'Jump';
+            row.appendChild(title);
+            row.appendChild(jump);
             row.onclick = () => jumpToSlide(idx);
             container.appendChild(row);
           });
@@ -1085,6 +1094,11 @@ impl RemoteServerManager {
     }
 
     fn get_overlay_html(token: &str) -> String {
+        // The token goes into a JS string literal: serialise it as JSON and keep `<` out of the
+        // output so it can never close the <script> element or break out of the string.
+        let token = serde_json::to_string(token)
+            .unwrap_or_else(|_| "\"\"".to_string())
+            .replace('<', "\\u003c");
         format!(
             r#"<!DOCTYPE html>
 <html>
@@ -1154,7 +1168,7 @@ impl RemoteServerManager {
   </div>
 
   <script>
-    const token = "{token}";
+    const token = {token};
     async function updateOverlay() {{
       try {{
         const res = await fetch('/api/overlay-data?token=' + encodeURIComponent(token));
@@ -1314,5 +1328,39 @@ mod tests {
         for needle in ["id=\"btn-send-alert\"", "id=\"btn-clear-alert\"", "id=\"input-alert\"", "/api/alert?token=", "maxlength=\"200\""] {
             assert!(html.contains(needle), "remote page is missing {needle}");
         }
+    }
+
+    /// Every `innerHTML` assignment in a served page must be static: no `${...}` interpolation.
+    fn assert_no_interpolated_inner_html(html: &str, page: &str) {
+        for line in html.lines().filter(|l| l.contains("innerHTML")) {
+            assert!(!line.contains("${"), "{page} builds HTML from data: {}", line.trim());
+        }
+    }
+
+    #[test]
+    fn test_pages_never_build_html_from_data() {
+        assert_no_interpolated_inner_html(RemoteServerManager::get_remote_html(), "remote page");
+        assert_no_interpolated_inner_html(&RemoteServerManager::get_overlay_html("tok"), "overlay page");
+    }
+
+    #[test]
+    fn test_playlist_rows_use_text_content() {
+        let html = RemoteServerManager::get_remote_html();
+        assert!(html.contains("title.textContent = (idx + 1) + '. ' + label;"));
+        assert!(html.contains("jump.textContent = 'Jump';"));
+    }
+
+    #[test]
+    fn test_overlay_token_cannot_break_out_of_its_script_string() {
+        let html = RemoteServerManager::get_overlay_html("\";alert(1);//</script><img src=x onerror=alert(2)>");
+        // the hostile text appears only inside one JSON string literal, with `<` escaped
+        assert!(!html.contains("</script><img"));
+        assert!(!html.contains("\";alert(1);//\""));
+        let line = html.lines().find(|l| l.trim_start().starts_with("const token = ")).unwrap();
+        let literal = line.trim().trim_start_matches("const token = ").trim_end_matches(';');
+        let parsed: String = serde_json::from_str(literal).expect("token must be a valid JSON string literal");
+        assert_eq!(parsed.replace("\\u003c", "<"), "\";alert(1);//</script><img src=x onerror=alert(2)>");
+        // a normal token still works
+        assert!(RemoteServerManager::get_overlay_html("abc123").contains("const token = \"abc123\";"));
     }
 }
