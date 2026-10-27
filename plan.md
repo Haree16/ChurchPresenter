@@ -50,9 +50,17 @@ Status as of 2026-10-27, after the Phase 0-6 commit plus uncommitted work.
 4. Clear-layer model: ~~logo~~ (done: `L` key, header button, `toggle_logo` action, cleared when a slide goes live; uses `public/logo.png`); clear media / props / all as independent states, Settings override for the logo image. *Pending.*
 *Done when:* CI is green; clear, black and logo work independently.
 
-### B. Songs and Bible
-Slide groups with colors; arrangements; Bible import wizard; FTS5 search; abbreviations (`ps 23`, `Jn 3:16-18`); two translations side by side.
-*Done when:* full KJV imports in under 30s; a song arrangement reorders without editing slides.
+### B. Songs and Bible — mostly done
+Done:
+- Bible: Rust importers for USFM, OSIS, Zefania and JSON (correct book numbers, multi-line verses, footnote stripping); file picker + paste import; re-importing a book replaces it; translation list comes from the database; FTS5 keyword search (ASCII; Tamil falls back to LIKE); book-name normalisation (`1John`, `Jn.`, `First John`); a 31k-verse import and search test (<0.4s in memory).
+- Songs: per-section group colours (type default + custom override); named arrangements with repeats, a default per song, used by "add to service" and the slide generator; included in backup/restore.
+
+Not done:
+- Group colour/label is not shown on slide cards in the service/slide grid (slides do not carry a group reference).
+- Song export (JSON/OpenLyrics) does not include arrangements or colours.
+- Two translations side by side existed already; no layout work was done on it.
+- Bible autocomplete suggestions still come from a short hard-coded passage list (reference parsing itself accepts any book).
+- Real-world import not yet tried against a full public-domain USFM/Zefania file.
 
 ### C. Slide editor and themes
 Multi-element slides, templates, outline and safe margins, props, audience alerts.

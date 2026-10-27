@@ -385,6 +385,24 @@ pub async fn get_song_sections(
 }
 
 #[tauri::command]
+pub async fn get_song_arrangements(
+    song_id: String,
+    db: State<'_, DbManager>,
+) -> Result<Vec<crate::models::SongArrangement>, String> {
+    db.list_song_arrangements(&song_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn save_song_arrangements(
+    song_id: String,
+    arrangements: Vec<crate::models::SongArrangement>,
+    db: State<'_, DbManager>,
+) -> Result<Vec<crate::models::SongArrangement>, String> {
+    db.save_song_arrangements(&song_id, &arrangements)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn save_song_sections(
     song_id: String,
     sections: Vec<SongSection>,
@@ -763,6 +781,7 @@ pub async fn add_song_to_service(
     song_id: String,
     theme_id: Option<String>,
     lines_per_slide: Option<i32>,
+    arrangement_id: Option<String>,
     db: State<'_, DbManager>,
 ) -> Result<PlaylistItem, String> {
     db.add_song_to_service(
@@ -770,6 +789,7 @@ pub async fn add_song_to_service(
         &song_id,
         theme_id.as_deref(),
         lines_per_slide,
+        arrangement_id.as_deref(),
     )
     .map_err(|e| e.to_string())
 }

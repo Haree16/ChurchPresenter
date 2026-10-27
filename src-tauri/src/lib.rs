@@ -220,6 +220,8 @@ pub fn run() {
             commands::get_service_item_slides,
             commands::save_service_item_slides,
             commands::add_song_to_service,
+            commands::get_song_arrangements,
+            commands::save_song_arrangements,
             // Phase 3: Bible Passage Lookup
             commands::query_bible_passage,
             commands::add_bible_passage_to_service,

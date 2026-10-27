@@ -10,9 +10,10 @@ import {
   Check,
   BookOpen,
 } from 'lucide-react';
-import { Song, SongSection, Presentation } from '../../types';
+import { Song, SongSection, SongArrangement, Presentation } from '../../types';
 import { api } from '../../services/api';
 import { LyricsEditor } from './LyricsEditor';
+import { ArrangementEditor } from './ArrangementEditor';
 import { SlideGeneratorModal } from './SlideGeneratorModal';
 import { SongImportExportModal } from './SongImportExportModal';
 
@@ -31,6 +32,7 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
   const [selectedSongId, setSelectedSongId] = useState<string | null>(null);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [sections, setSections] = useState<SongSection[]>([]);
+  const [arrangements, setArrangements] = useState<SongArrangement[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [languageFilter, setLanguageFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'title' | 'updated' | 'language'>('title');
@@ -72,6 +74,7 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
     if (!selectedSongId) {
       setCurrentSong(null);
       setSections([]);
+      setArrangements([]);
       return;
     }
     let isCancelled = false;
@@ -80,6 +83,9 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
         setCurrentSong(data.song);
         setSections(data.sections);
       }
+    });
+    api.getSongArrangements(selectedSongId).then((list) => {
+      if (!isCancelled) setArrangements(list);
     });
     return () => {
       isCancelled = true;
@@ -192,6 +198,8 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
     try {
       const saved = await api.saveSongSections(currentSong.id, sections);
       setSections(saved);
+      // arrangements reference section ids, so they are saved after the sections
+      setArrangements(await api.saveSongArrangements(currentSong.id, arrangements));
       await loadSongs();
       showNotification('Song lyrics saved successfully');
     } catch (err: any) {
@@ -753,6 +761,11 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
               </div>
 
               <LyricsEditor sections={sections} onChange={setSections} />
+              <ArrangementEditor
+                sections={sections}
+                arrangements={arrangements}
+                onChange={setArrangements}
+              />
             </div>
           </>
         ) : (

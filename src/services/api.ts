@@ -48,6 +48,7 @@ import {
   AppDiagnosticFilter,
   AppInfo,
   BibleTranslationInfo,
+  SongArrangement,
 } from '../types';
 
 // Detect whether we are running inside native Tauri runtime
@@ -1819,6 +1820,49 @@ class MockDataStore {
       .sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
+  private songArrangements: SongArrangement[] = [];
+
+  public async getSongArrangements(songId: string): Promise<SongArrangement[]> {
+    return this.songArrangements.filter((a) => a.songId === songId);
+  }
+
+  public async saveSongArrangements(
+    songId: string,
+    arrangements: SongArrangement[]
+  ): Promise<SongArrangement[]> {
+    const valid = new Set(this.songSections.filter((s) => s.songId === songId).map((s) => s.id));
+    let defaultTaken = false;
+    const saved = arrangements.map((a, idx) => {
+      const isDefault = a.isDefault && !defaultTaken;
+      defaultTaken = defaultTaken || isDefault;
+      return {
+        id: a.id || 'arr-' + Math.random().toString(36).substring(2, 9),
+        songId,
+        name: a.name.trim() || `Arrangement ${idx + 1}`,
+        sectionIds: a.sectionIds.filter((id) => valid.has(id)),
+        isDefault,
+      };
+    });
+    this.songArrangements = this.songArrangements.filter((a) => a.songId !== songId).concat(saved);
+    return saved;
+  }
+
+  /** Sections in playing order: requested arrangement, else the default one, else all. */
+  private orderedSongSections(songId: string, arrangementId?: string | null): SongSection[] {
+    const all = this.songSections
+      .filter((s) => s.songId === songId)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const arrs = this.songArrangements.filter((a) => a.songId === songId);
+    const chosen = arrangementId ? arrs.find((a) => a.id === arrangementId) : arrs.find((a) => a.isDefault);
+    if (chosen) {
+      const ordered = chosen.sectionIds
+        .map((id) => all.find((s) => s.id === id))
+        .filter((s): s is SongSection => !!s);
+      if (ordered.length > 0) return ordered;
+    }
+    return all;
+  }
+
   public async saveSongSections(
     songId: string,
     sections: SongSection[]
@@ -2024,8 +2068,10 @@ class MockDataStore {
 
     const targetSecs =
       options.sectionIds.length > 0
-        ? sections.filter((s) => options.sectionIds.includes(s.id))
-        : sections;
+        ? options.sectionIds
+            .map((id) => sections.find((s) => s.id === id))
+            .filter((s): s is SongSection => !!s)
+        : this.orderedSongSections(options.songId, options.arrangementId);
 
     const theme =
       this.themes.find((t) => t.id === options.themeId) ||
@@ -2466,11 +2512,12 @@ class MockDataStore {
     serviceId: string,
     songId: string,
     themeId?: string,
-    linesPerSlide?: number
+    linesPerSlide?: number,
+    arrangementId?: string
   ): Promise<PlaylistItem> {
     const song = await this.getSong(songId);
     if (!song) throw new Error('Song not found');
-    const sections = await this.getSongSections(songId);
+    const sections = this.orderedSongSections(songId, arrangementId);
 
     const effThemeId = themeId || song.defaultThemeId || 'theme-default-dark';
     const theme = (await this.getTheme(effThemeId)) || this.themes[0];
@@ -4236,7 +4283,8 @@ export const api = {
     serviceId: string,
     songId: string,
     themeId?: string,
-    linesPerSlide?: number
+    linesPerSlide?: number,
+    arrangementId?: string
   ): Promise<PlaylistItem> => {
     if (isTauri()) {
       return await invoke<PlaylistItem>('add_song_to_service', {
@@ -4244,9 +4292,27 @@ export const api = {
         songId,
         themeId,
         linesPerSlide,
+        arrangementId,
       });
     }
-    return mockStore.addSongToService(serviceId, songId, themeId, linesPerSlide);
+    return mockStore.addSongToService(serviceId, songId, themeId, linesPerSlide, arrangementId);
+  },
+
+  getSongArrangements: async (songId: string): Promise<SongArrangement[]> => {
+    if (isTauri()) {
+      return await invoke<SongArrangement[]>('get_song_arrangements', { songId });
+    }
+    return mockStore.getSongArrangements(songId);
+  },
+
+  saveSongArrangements: async (
+    songId: string,
+    arrangements: SongArrangement[]
+  ): Promise<SongArrangement[]> => {
+    if (isTauri()) {
+      return await invoke<SongArrangement[]>('save_song_arrangements', { songId, arrangements });
+    }
+    return mockStore.saveSongArrangements(songId, arrangements);
   },
 
   // ================= Phase 3: Bible Passage Lookup =================

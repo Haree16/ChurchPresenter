@@ -108,8 +108,19 @@ export interface SongSection {
   lyrics: string;
   sortOrder: number;
   notes?: string | null;
+  /** Custom group colour (hex); falls back to the section type's default colour. */
+  color?: string | null;
   createdAt?: string;
   updatedAt?: string;
+}
+
+/** A named, ordered list of section ids; sections may repeat. */
+export interface SongArrangement {
+  id: string;
+  songId: string;
+  name: string;
+  sectionIds: string[];
+  isDefault: boolean;
 }
 
 export interface SongWithSections {
@@ -177,6 +188,7 @@ export interface SongImportResult {
 export interface SlideGenerationOptions {
   songId: string;
   sectionIds: string[];
+  arrangementId?: string | null;
   targetPresentationId?: string | null;
   themeId?: string | null;
   linesPerSlide?: number | null;

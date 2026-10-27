@@ -11,6 +11,7 @@ import {
   GripVertical,
 } from 'lucide-react';
 import { SongSection, SectionType } from '../../types';
+import { sectionColor } from './sectionColors';
 
 interface LyricsEditorProps {
   sections: SongSection[];
@@ -82,7 +83,7 @@ export const LyricsEditor: React.FC<LyricsEditorProps> = ({
   const handleUpdateSection = (
     index: number,
     field: keyof SongSection,
-    value: string
+    value: string | null
   ) => {
     const updated = [...sections];
     updated[index] = {
@@ -131,6 +132,7 @@ export const LyricsEditor: React.FC<LyricsEditorProps> = ({
       lyrics: target.lyrics,
       sortOrder: index + 1,
       notes: target.notes,
+      color: target.color,
     };
     const updated = [
       ...sections.slice(0, index + 1),
@@ -283,6 +285,7 @@ export const LyricsEditor: React.FC<LyricsEditorProps> = ({
             const cfg =
               SECTION_TYPE_CONFIG[section.sectionType] ||
               SECTION_TYPE_CONFIG.custom;
+            const groupColor = sectionColor(section);
 
             return (
               <div
@@ -293,8 +296,8 @@ export const LyricsEditor: React.FC<LyricsEditorProps> = ({
                 onDragEnd={handleDragEnd}
                 style={{
                   backgroundColor: '#0f172a',
-                  border: `1px solid ${cfg.borderColor}40`,
-                  borderLeft: `4px solid ${cfg.borderColor}`,
+                  border: `1px solid ${groupColor}40`,
+                  borderLeft: `4px solid ${groupColor}`,
                   borderRadius: '8px',
                   padding: '14px',
                   display: 'flex',
@@ -375,6 +378,19 @@ export const LyricsEditor: React.FC<LyricsEditorProps> = ({
                         </option>
                       ))}
                     </select>
+
+                    {/* Group colour (overrides the section type's default) */}
+                    <input
+                      type="color"
+                      data-testid="section-color-input"
+                      aria-label="Group colour"
+                      title={section.color ? 'Custom group colour (double-click to reset)' : 'Group colour'}
+                      value={groupColor}
+                      disabled={disabled}
+                      onChange={(e) => handleUpdateSection(index, 'color', e.target.value)}
+                      onDoubleClick={() => handleUpdateSection(index, 'color', null)}
+                      style={{ width: '24px', height: '24px', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
+                    />
 
                     {/* Label Input (e.g. "Verse 1") */}
                     <input

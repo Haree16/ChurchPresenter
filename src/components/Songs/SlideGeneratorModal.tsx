@@ -12,6 +12,7 @@ import {
 import {
   Song,
   SongSection,
+  SongArrangement,
   Theme,
   Presentation,
   SlideGenerationOptions,
@@ -40,6 +41,8 @@ export const SlideGeneratorModal: React.FC<SlideGeneratorModalProps> = ({
   const [themes, setThemes] = useState<Theme[]>([]);
   const [selectedThemeId, setSelectedThemeId] = useState<string>('theme-default-dark');
   const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>([]);
+  const [arrangements, setArrangements] = useState<SongArrangement[]>([]);
+  const [arrangementId, setArrangementId] = useState<string>('');
   const [splitMode, setSplitMode] = useState<'stanzas' | 'lines' | 'delimiter'>('stanzas');
   const [linesPerSlide, setLinesPerSlide] = useState<number>(2);
   const [customDelimiter, setCustomDelimiter] = useState<string>('---');
@@ -64,9 +67,21 @@ export const SlideGeneratorModal: React.FC<SlideGeneratorModalProps> = ({
           setSelectedThemeId(thms[0].id);
         }
       });
-      // Preselect all sections of the song by default
+      // Preselect the song's default arrangement, or every section in order
       if (sections.length > 0) {
         setSelectedSectionIds(sections.map((s) => s.id));
+      }
+      setArrangements([]);
+      setArrangementId('');
+      if (song) {
+        api.getSongArrangements(song.id).then((list) => {
+          setArrangements(list);
+          const def = list.find((a) => a.isDefault);
+          if (def) {
+            setArrangementId(def.id);
+            setSelectedSectionIds(def.sectionIds);
+          }
+        });
       }
       if (song) {
         setNewPresentationTitle(song.title);
@@ -89,9 +104,10 @@ export const SlideGeneratorModal: React.FC<SlideGeneratorModalProps> = ({
   // Client-side preview calculation of slides
   const previewSlides = useMemo(() => {
     if (!song || selectedSectionIds.length === 0) return [];
-    const orderedSections = sections.filter((s) =>
-      selectedSectionIds.includes(s.id)
-    );
+    // follow the selection order so arrangements (with repeated sections) preview correctly
+    const orderedSections = selectedSectionIds
+      .map((id) => sections.find((s) => s.id === id))
+      .filter((s): s is SongSection => !!s);
 
     const generated: { title: string; body: string }[] = [];
 
@@ -140,7 +156,14 @@ export const SlideGeneratorModal: React.FC<SlideGeneratorModalProps> = ({
     return generated;
   }, [song, sections, selectedSectionIds, splitMode, linesPerSlide, customDelimiter]);
 
+  const handleArrangementChange = (id: string) => {
+    setArrangementId(id);
+    const arr = arrangements.find((a) => a.id === id);
+    setSelectedSectionIds(arr ? arr.sectionIds : sections.map((s) => s.id));
+  };
+
   const handleToggleSection = (id: string) => {
+    setArrangementId('');
     setSelectedSectionIds((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     );
@@ -162,6 +185,7 @@ export const SlideGeneratorModal: React.FC<SlideGeneratorModalProps> = ({
       const options: SlideGenerationOptions = {
         songId: song.id,
         sectionIds: selectedSectionIds,
+        arrangementId: arrangementId || null,
         targetPresentationId:
           targetMode === 'current' ? targetPresentationId : null,
         themeId: selectedThemeId || null,
@@ -313,6 +337,31 @@ export const SlideGeneratorModal: React.FC<SlideGeneratorModalProps> = ({
                   </button>
                 </div>
               </div>
+
+              {arrangements.length > 0 && (
+                <select
+                  data-testid="generator-arrangement-select"
+                  value={arrangementId}
+                  onChange={(e) => handleArrangementChange(e.target.value)}
+                  style={{
+                    width: '100%',
+                    marginBottom: '6px',
+                    padding: '6px 8px',
+                    backgroundColor: '#1e293b',
+                    border: '1px solid #334155',
+                    borderRadius: '6px',
+                    color: '#f8fafc',
+                    fontSize: '12px',
+                  }}
+                >
+                  <option value="">Custom selection (editor order)</option>
+                  {arrangements.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}{a.isDefault ? ' (default)' : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
 
               <div
                 style={{

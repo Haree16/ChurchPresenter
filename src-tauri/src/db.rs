@@ -1,5 +1,5 @@
 use crate::models::{
-    ActionMapping, AppDiagnosticEntry, AppDiagnosticFilter, BackupData, BiblePassageQuery,
+    ActionMapping, AppDiagnosticEntry, AppDiagnosticFilter, BackupData, BiblePassageQuery, SongArrangement,
     BiblePassageResult, BibleTranslationInfo, BibleVerse, DatabaseHealth, LivestreamOverlayConfig, MediaAsset,
     MidiMapping, OscConfig, OutputConfig, PlaylistItem, PlaylistItemWithSlides, Presentation,
     RemoteDevice, Service, ServiceWithItems, Slide, SlideGenerationOptions, Song, SongExportData,
@@ -1173,6 +1173,38 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 8: Song section colours + arrangements =================
+        if current_version < 8 {
+            let tx = conn.unchecked_transaction()?;
+
+            tx.execute("ALTER TABLE song_sections ADD COLUMN color TEXT;", [])?;
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS song_arrangements (
+                    id TEXT PRIMARY KEY,
+                    song_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    section_ids TEXT NOT NULL DEFAULT '[]',
+                    is_default INTEGER NOT NULL DEFAULT 0,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (song_id) REFERENCES songs(id) ON DELETE CASCADE
+                );",
+                [],
+            )?;
+            tx.execute(
+                "CREATE INDEX IF NOT EXISTS idx_song_arrangements_song ON song_arrangements(song_id, sort_order);",
+                [],
+            )?;
+
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (8, ?1);",
+                params![Utc::now().to_rfc3339()],
+            )?;
+
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -1984,8 +2016,8 @@ impl DbManager {
         for sec in sections {
             let new_sec_id = Uuid::new_v4().to_string();
             tx.execute(
-                "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8);",
+                "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at, color)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9);",
                 params![
                     new_sec_id,
                     new_id,
@@ -1994,7 +2026,8 @@ impl DbManager {
                     sec.lyrics,
                     sec.sort_order,
                     sec.notes,
-                    now
+                    now,
+                    sec.color.clone()
                 ],
             )?;
 
@@ -2006,6 +2039,7 @@ impl DbManager {
                 lyrics: sec.lyrics,
                 sort_order: sec.sort_order,
                 notes: sec.notes,
+                color: sec.color,
                 created_at: now.clone(),
                 updated_at: now.clone(),
             });
@@ -2107,7 +2141,7 @@ impl DbManager {
     pub fn get_song_sections(&self, song_id: &str) -> Result<Vec<SongSection>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at
+            "SELECT id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at, color
              FROM song_sections
              WHERE song_id = ?1
              ORDER BY sort_order ASC;",
@@ -2124,6 +2158,7 @@ impl DbManager {
                 notes: row.get(6)?,
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
+                color: row.get(9)?,
             })
         })?;
 
@@ -2154,8 +2189,8 @@ impl DbManager {
             };
 
             tx.execute(
-                "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8);",
+                "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at, color)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9);",
                 params![
                     sec_id,
                     song_id,
@@ -2164,7 +2199,8 @@ impl DbManager {
                     sec.lyrics,
                     idx as i32,
                     sec.notes,
-                    now
+                    now,
+                    sec.color.clone()
                 ],
             )?;
 
@@ -2176,6 +2212,7 @@ impl DbManager {
                 lyrics: sec.lyrics.clone(),
                 sort_order: idx as i32,
                 notes: sec.notes.clone(),
+                color: sec.color.clone(),
                 created_at: now.clone(),
                 updated_at: now.clone(),
             });
@@ -2189,6 +2226,108 @@ impl DbManager {
 
         tx.commit()?;
         Ok(saved)
+    }
+
+    pub fn list_song_arrangements(&self, song_id: &str) -> Result<Vec<SongArrangement>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, song_id, name, section_ids, is_default
+             FROM song_arrangements WHERE song_id = ?1 ORDER BY sort_order ASC, created_at ASC;",
+        )?;
+        let rows = stmt.query_map(params![song_id], |row| {
+            let ids_json: String = row.get(3)?;
+            Ok(SongArrangement {
+                id: row.get(0)?,
+                song_id: row.get(1)?,
+                name: row.get(2)?,
+                section_ids: serde_json::from_str(&ids_json).unwrap_or_default(),
+                is_default: row.get::<_, i32>(4)? != 0,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Replaces all arrangements of a song. Unknown section ids are dropped, blank
+    /// names get a default, and at most one arrangement stays marked as default.
+    pub fn save_song_arrangements(
+        &self,
+        song_id: &str,
+        arrangements: &[SongArrangement],
+    ) -> Result<Vec<SongArrangement>> {
+        let valid: std::collections::HashSet<String> = self
+            .get_song_sections(song_id)?
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
+
+        let conn = self.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction()?;
+        let now = Utc::now().to_rfc3339();
+        tx.execute("DELETE FROM song_arrangements WHERE song_id = ?1;", params![song_id])?;
+
+        let mut saved = Vec::new();
+        let mut default_taken = false;
+        for (idx, arr) in arrangements.iter().enumerate() {
+            let id = if arr.id.is_empty() { Uuid::new_v4().to_string() } else { arr.id.clone() };
+            let name = if arr.name.trim().is_empty() {
+                format!("Arrangement {}", idx + 1)
+            } else {
+                arr.name.trim().to_string()
+            };
+            let section_ids: Vec<String> =
+                arr.section_ids.iter().filter(|s| valid.contains(*s)).cloned().collect();
+            let is_default = arr.is_default && !default_taken;
+            default_taken |= is_default;
+
+            tx.execute(
+                "INSERT INTO song_arrangements (id, song_id, name, section_ids, is_default, sort_order, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7);",
+                params![
+                    id,
+                    song_id,
+                    name,
+                    serde_json::to_string(&section_ids).unwrap_or_else(|_| "[]".to_string()),
+                    is_default as i32,
+                    idx as i32,
+                    now
+                ],
+            )?;
+            saved.push(SongArrangement {
+                id,
+                song_id: song_id.to_string(),
+                name,
+                section_ids,
+                is_default,
+            });
+        }
+        tx.commit()?;
+        Ok(saved)
+    }
+
+    /// The sections of a song in playing order. Uses `arrangement_id` if given, else the
+    /// song's default arrangement, else every section in editor order. Sections can repeat.
+    pub fn ordered_song_sections(
+        &self,
+        song_id: &str,
+        arrangement_id: Option<&str>,
+    ) -> Result<Vec<SongSection>> {
+        let all = self.get_song_sections(song_id)?;
+        let arrangements = self.list_song_arrangements(song_id)?;
+        let chosen = match arrangement_id {
+            Some(id) => arrangements.iter().find(|a| a.id == id),
+            None => arrangements.iter().find(|a| a.is_default),
+        };
+        if let Some(arr) = chosen {
+            let ordered: Vec<SongSection> = arr
+                .section_ids
+                .iter()
+                .filter_map(|id| all.iter().find(|s| &s.id == id).cloned())
+                .collect();
+            if !ordered.is_empty() {
+                return Ok(ordered);
+            }
+        }
+        Ok(all)
     }
 
     // ================= Themes CRUD =================
@@ -2833,9 +2972,9 @@ impl DbManager {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)?;
         let all_sections = self.get_song_sections(&options.song_id)?;
 
-        // Filter sections if specific section_ids provided, otherwise use all in order
+        // Explicit section_ids win; otherwise use the chosen/default arrangement, else all in order
         let sections_to_use: Vec<SongSection> = if options.section_ids.is_empty() {
-            all_sections
+            self.ordered_song_sections(&options.song_id, options.arrangement_id.as_deref())?
         } else {
             let mut filtered = Vec::new();
             for sec_id in &options.section_ids {
@@ -3152,8 +3291,8 @@ impl DbManager {
                         for (idx, sec) in item.sections.iter().enumerate() {
                             let sec_id = Uuid::new_v4().to_string();
                             tx.execute(
-                                "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at)
-                                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8);",
+                                "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at, color)
+                                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9);",
                                 params![
                                     sec_id,
                                     new_id,
@@ -3162,7 +3301,8 @@ impl DbManager {
                                     sec.lyrics,
                                     idx as i32,
                                     sec.notes,
-                                    now
+                                    now,
+                                    sec.color.clone()
                                 ],
                             )?;
                         }
@@ -3202,8 +3342,8 @@ impl DbManager {
                         for (idx, sec) in item.sections.iter().enumerate() {
                             let sec_id = Uuid::new_v4().to_string();
                             tx.execute(
-                                "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at)
-                                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8);",
+                                "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at, color)
+                                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9);",
                                 params![
                                     sec_id,
                                     existing,
@@ -3212,7 +3352,8 @@ impl DbManager {
                                     sec.lyrics,
                                     idx as i32,
                                     sec.notes,
-                                    now
+                                    now,
+                                    sec.color.clone()
                                 ],
                             )?;
                         }
@@ -3255,8 +3396,8 @@ impl DbManager {
                         sec.id.clone()
                     };
                     tx.execute(
-                        "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8);",
+                        "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at, color)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9);",
                         params![
                             sec_id,
                             song_id,
@@ -3265,7 +3406,8 @@ impl DbManager {
                             sec.lyrics,
                             idx as i32,
                             sec.notes,
-                            now
+                            now,
+                            sec.color.clone()
                         ],
                     )?;
                 }
@@ -3978,10 +4120,11 @@ impl DbManager {
         song_id: &str,
         theme_id: Option<&str>,
         lines_per_slide: Option<i32>,
+        arrangement_id: Option<&str>,
     ) -> Result<PlaylistItem> {
         let song_opt = self.get_song(song_id)?;
         let song = song_opt.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
-        let sections = self.get_song_sections(song_id)?;
+        let sections = self.ordered_song_sections(song_id, arrangement_id)?;
 
         let effective_theme_id = theme_id
             .map(|t| t.to_string())
@@ -4724,9 +4867,11 @@ impl DbManager {
         let media_assets = self.list_media_assets()?;
 
         let mut song_sections = Vec::new();
+        let mut song_arrangements = Vec::new();
         for song in &songs {
             let sections = self.get_song_sections(&song.id)?;
             song_sections.extend(sections);
+            song_arrangements.extend(self.list_song_arrangements(&song.id)?);
         }
 
         let services = self.list_services()?;
@@ -4783,6 +4928,7 @@ impl DbManager {
             slides,
             songs,
             song_sections,
+            song_arrangements,
             themes,
             media_assets,
             services,
@@ -4821,6 +4967,7 @@ impl DbManager {
             tx.execute("DELETE FROM services;", [])?;
             tx.execute("DELETE FROM slides;", [])?;
             tx.execute("DELETE FROM presentations;", [])?;
+            tx.execute("DELETE FROM song_arrangements;", [])?;
             tx.execute("DELETE FROM song_sections;", [])?;
             tx.execute("DELETE FROM songs;", [])?;
             tx.execute("DELETE FROM themes WHERE is_built_in = 0;", [])?;
@@ -4974,8 +5121,8 @@ impl DbManager {
 
             if !exists {
                 tx.execute(
-                    "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9);",
+                    "INSERT INTO song_sections (id, song_id, section_type, label, lyrics, sort_order, notes, created_at, updated_at, color)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10);",
                     params![
                         sec.id,
                         sec.song_id,
@@ -4985,10 +5132,27 @@ impl DbManager {
                         sec.sort_order,
                         sec.notes,
                         sec.created_at,
-                        sec.updated_at
+                        sec.updated_at,
+                        sec.color
                     ],
                 )?;
             }
+        }
+
+        // Restore song arrangements
+        for a in &backup.song_arrangements {
+            tx.execute(
+                "INSERT OR IGNORE INTO song_arrangements (id, song_id, name, section_ids, is_default, sort_order, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?6);",
+                params![
+                    a.id,
+                    a.song_id,
+                    a.name,
+                    serde_json::to_string(&a.section_ids).unwrap_or_else(|_| "[]".to_string()),
+                    a.is_default as i32,
+                    Utc::now().to_rfc3339()
+                ],
+            )?;
         }
 
         // Restore media assets
@@ -6145,6 +6309,7 @@ mod tests {
 
         let sections = vec![
             SongSection {
+                color: None,
                 id: "".to_string(),
                 song_id: created.id.clone(),
                 section_type: "verse".to_string(),
@@ -6156,6 +6321,7 @@ mod tests {
                 updated_at: "".to_string(),
             },
             SongSection {
+                color: None,
                 id: "".to_string(),
                 song_id: created.id.clone(),
                 section_type: "chorus".to_string(),
@@ -6187,6 +6353,7 @@ mod tests {
     fn test_slide_generation_from_song() {
         let db = DbManager::new_in_memory().unwrap();
         let options = SlideGenerationOptions {
+            arrangement_id: None,
             song_id: "song-amazing-grace".to_string(),
             section_ids: vec!["sec-ag-1".to_string(), "sec-ag-2".to_string()],
             target_presentation_id: None,
@@ -6488,7 +6655,7 @@ mod tests {
 
         // 3. Add song snapshot to youth service
         let song_item = db
-            .add_song_to_service(&created.id, "song-amazing-grace", None, Some(2))
+            .add_song_to_service(&created.id, "song-amazing-grace", None, Some(2), None)
             .unwrap();
         assert_eq!(song_item.title, "Amazing Grace");
         assert_eq!(song_item.item_type, "song");
@@ -6629,7 +6796,7 @@ mod tests {
         let services = db.list_services().unwrap();
         let srv = &services[0];
         let item = db
-            .add_song_to_service(&srv.id, "song-amazing-grace", None, Some(4))
+            .add_song_to_service(&srv.id, "song-amazing-grace", None, Some(4), None)
             .unwrap();
         let snapshot_slides = db.get_service_item_slides(&item.id).unwrap();
         assert_eq!(snapshot_slides.len(), 4);
@@ -6938,6 +7105,117 @@ mod tests {
         for input in ["", "   ", "John", "3:16", "John x:y", "John 3:"] {
             assert!(parse_bible_reference(input).is_none(), "{input:?} should not parse");
         }
+    }
+
+    fn arrangement(name: &str, ids: &[&str], default: bool) -> SongArrangement {
+        SongArrangement {
+            id: String::new(),
+            song_id: String::new(),
+            name: name.to_string(),
+            section_ids: ids.iter().map(|s| s.to_string()).collect(),
+            is_default: default,
+        }
+    }
+
+    #[test]
+    fn test_section_color_round_trips_and_survives_duplicate() {
+        let db = DbManager::new_in_memory().unwrap();
+        let mut sections = db.get_song_sections("song-amazing-grace").unwrap();
+        assert!(sections.len() >= 2);
+        assert_eq!(sections[0].color, None);
+        sections[0].color = Some("#ff8800".to_string());
+        db.save_song_sections("song-amazing-grace", &sections).unwrap();
+
+        let reloaded = db.get_song_sections("song-amazing-grace").unwrap();
+        assert_eq!(reloaded[0].color.as_deref(), Some("#ff8800"));
+        assert_eq!(reloaded[1].color, None);
+
+        let dup = db.duplicate_song("song-amazing-grace").unwrap();
+        assert_eq!(dup.sections[0].color.as_deref(), Some("#ff8800"));
+        let dup_db = db.get_song_sections(&dup.song.id).unwrap();
+        assert_eq!(dup_db[0].color.as_deref(), Some("#ff8800"));
+    }
+
+    #[test]
+    fn test_arrangements_save_validates_and_keeps_one_default() {
+        let db = DbManager::new_in_memory().unwrap();
+        let secs = db.get_song_sections("song-amazing-grace").unwrap();
+        let (a, b) = (secs[0].id.as_str(), secs[1].id.as_str());
+
+        let saved = db
+            .save_song_arrangements(
+                "song-amazing-grace",
+                &[
+                    arrangement("  Full  ", &[a, b, "ghost-section", a], true),
+                    arrangement("", &[b], true), // second default must be demoted
+                ],
+            )
+            .unwrap();
+
+        assert_eq!(saved[0].name, "Full");
+        assert_eq!(saved[0].section_ids, vec![a, b, a]); // unknown id dropped, repeat kept
+        assert!(saved[0].is_default && !saved[1].is_default);
+        assert_eq!(saved[1].name, "Arrangement 2");
+
+        let listed = db.list_song_arrangements("song-amazing-grace").unwrap();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].id, saved[0].id);
+
+        // saving an empty list clears them
+        db.save_song_arrangements("song-amazing-grace", &[]).unwrap();
+        assert!(db.list_song_arrangements("song-amazing-grace").unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_ordered_sections_use_requested_then_default_then_all() {
+        let db = DbManager::new_in_memory().unwrap();
+        let secs = db.get_song_sections("song-amazing-grace").unwrap();
+        let (a, b) = (secs[0].id.clone(), secs[1].id.clone());
+
+        // no arrangements: every section in editor order
+        let all = db.ordered_song_sections("song-amazing-grace", None).unwrap();
+        assert_eq!(all.len(), secs.len());
+
+        let saved = db
+            .save_song_arrangements(
+                "song-amazing-grace",
+                &[arrangement("Default", &[b.as_str(), a.as_str(), b.as_str()], true), arrangement("Short", &[a.as_str()], false)],
+            )
+            .unwrap();
+
+        let def: Vec<String> = db.ordered_song_sections("song-amazing-grace", None).unwrap().into_iter().map(|s| s.id).collect();
+        assert_eq!(def, vec![b.clone(), a.clone(), b.clone()]);
+
+        let short: Vec<String> = db.ordered_song_sections("song-amazing-grace", Some(&saved[1].id)).unwrap().into_iter().map(|s| s.id).collect();
+        assert_eq!(short, vec![a.clone()]);
+
+        // unknown arrangement id falls back to all sections, never to nothing
+        assert_eq!(db.ordered_song_sections("song-amazing-grace", Some("nope")).unwrap().len(), secs.len());
+    }
+
+    #[test]
+    fn test_add_song_to_service_follows_default_arrangement_with_repeats() {
+        let db = DbManager::new_in_memory().unwrap();
+        let svc = db.create_service(&Service {
+            id: String::new(),
+            title: "Arr test".into(),
+            service_date: Some("2026-11-01".into()),
+            description: None,
+            category: "Sunday".into(),
+            notes: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            item_count: 0,
+        }).unwrap();
+        let secs = db.get_song_sections("song-amazing-grace").unwrap();
+        let first = secs[0].id.clone();
+
+        // first section played three times
+        db.save_song_arrangements("song-amazing-grace", &[arrangement("Thrice", &[first.as_str(), first.as_str(), first.as_str()], true)]).unwrap();
+        let with = db.add_song_to_service(&svc.id, "song-amazing-grace", None, Some(50), None).unwrap();
+        let slides = db.get_service_item_slides(&with.id).unwrap();
+        assert_eq!(slides.len(), 3);
+        assert_eq!(slides[0].body, slides[1].body);
     }
 }
 

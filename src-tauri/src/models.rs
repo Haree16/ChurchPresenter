@@ -152,8 +152,25 @@ pub struct SongSection {
     pub lyrics: String,
     pub sort_order: i32,
     pub notes: Option<String>,
+    /// Optional group colour (hex). `None` means "use the default for the section type".
+    #[serde(default)]
+    pub color: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// A named, ordered list of a song's sections (e.g. V1 C V2 C B C). Sections may repeat.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SongArrangement {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub song_id: String,
+    pub name: String,
+    pub section_ids: Vec<String>,
+    #[serde(default)]
+    pub is_default: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,6 +262,8 @@ pub struct SongImportResult {
 pub struct SlideGenerationOptions {
     pub song_id: String,
     pub section_ids: Vec<String>,
+    #[serde(default)]
+    pub arrangement_id: Option<String>,
     pub target_presentation_id: Option<String>,
     pub theme_id: Option<String>,
     pub lines_per_slide: Option<i32>,
@@ -265,6 +284,8 @@ pub struct BackupData {
     pub songs: Vec<Song>,
     #[serde(default)]
     pub song_sections: Vec<SongSection>,
+    #[serde(default)]
+    pub song_arrangements: Vec<SongArrangement>,
     #[serde(default)]
     pub themes: Vec<Theme>,
     #[serde(default)]
