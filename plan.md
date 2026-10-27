@@ -84,9 +84,18 @@ Not done (design notes):
 - Props are not drawn in the operator preview panel; phones cannot toggle individual props (only clear them).
 *Done when:* a theme exported from one machine looks identical on another.
 
-### D. Automation
-Auto-advance timing, macros, Looks, stage layout editor.
-*Done when:* a "start service" macro runs in one click.
+### D. Automation — in progress
+Done:
+- **Auto-advance**: advance the live slide every 1-3600 s, optionally looping; starts from the live slide only (never puts something on screen by surprise); pauses while blacked out or blank; stops after the last slide unless looping; Clear All and `stop_auto_advance` (OSC `/autoadvance/stop`, opt-in; phone needs the navigation permission) end it. Operator control with presets and a countdown.
+- **Macros** (migration 16): saved lists of up to 30 steps run with one click: any of 17 listed actions, an alert, show/hide/toggle a prop, wait (up to 10 min, 30 min total), start auto-advance. They run on a background thread with progress shown, can be stopped, only one runs at a time, and cannot run other macros. Steps are validated (unknown actions refused). Included in backup/restore. Manager window to build, reorder and delete steps.
+- Fixed a test-only race: the action repeat-filter (80 ms) was a process-wide static; it now lives in each presentation manager.
+
+Not done:
+- **Looks** (saved screen-state presets) and the **stage layout editor**.
+- Auto-advance timing is one interval for all slides (no per-slide timing).
+- Macros can only be run from the operator panel (not yet from OSC, MIDI or the phone remote).
+- The scheduler and macro runner threads themselves are untested (they need a live app handle); the logic they call is covered.
+*Done when:* a "start service" macro runs in one click. (The macro logic and operator UI are done; not yet tried in the live app.)
 
 ### E. Integrations
 CCLI reporting, SongSelect and ProPresenter song import, Stream Deck via OSC presets, auto-updater.

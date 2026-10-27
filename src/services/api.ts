@@ -53,8 +53,11 @@ import {
   ThemeExportResult,
   ThemeImportResult,
   SlideTemplate,
+  Macro,
+  MacroStep,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
+import { validateMacro, validateStep } from './macroSteps';
 import { validateProp } from './propLayout';
 import { validateLayout, isEmptyLayout } from './slideLayout';
 import { sectionColor } from './sectionColors';
@@ -1485,6 +1488,184 @@ class MockDataStore {
     return this.state;
   }
 
+  // ---- automation (macros and auto-advance)
+  private macros: Macro[] = [];
+  private autoAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
+  private macroRunId: string | null = null;
+
+  public async listMacros(): Promise<Macro[]> {
+    return this.macros.map((m) => JSON.parse(JSON.stringify(m)));
+  }
+
+  public async createMacro(macro: Macro): Promise<Macro> {
+    const problem = validateMacro(macro);
+    if (problem) throw new Error(problem);
+    if (this.macros.length >= 100) throw new Error('You can keep at most 100 macros.');
+    const now = new Date().toISOString();
+    const saved: Macro = {
+      ...JSON.parse(JSON.stringify(macro)),
+      id: 'macro-' + Math.random().toString(36).substring(2, 9),
+      name: macro.name.trim(),
+      sortOrder: this.macros.length,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.macros.push(saved);
+    return JSON.parse(JSON.stringify(saved));
+  }
+
+  public async updateMacro(macro: Macro): Promise<Macro> {
+    const problem = validateMacro(macro);
+    if (problem) throw new Error(problem);
+    const idx = this.macros.findIndex((m) => m.id === macro.id);
+    if (idx < 0) throw new Error('That macro no longer exists.');
+    this.macros[idx] = {
+      ...this.macros[idx],
+      name: macro.name.trim(),
+      steps: JSON.parse(JSON.stringify(macro.steps)),
+      updatedAt: new Date().toISOString(),
+    };
+    return JSON.parse(JSON.stringify(this.macros[idx]));
+  }
+
+  public async deleteMacro(id: string): Promise<void> {
+    this.macros = this.macros.filter((m) => m.id !== id);
+  }
+
+  private async applyMacroStep(step: MacroStep): Promise<void> {
+    const problem = validateStep(step);
+    if (problem) throw new Error(problem);
+    switch (step.type) {
+      case 'action':
+        await this.dispatchAction(step.action);
+        return;
+      case 'alert':
+        await this.sendAlert(step.message, step.seconds ?? undefined);
+        return;
+      case 'prop': {
+        const on = (this.state.activeProps || []).some((p) => p.id === step.propId);
+        const want = step.mode === 'show' ? true : step.mode === 'hide' ? false : !on;
+        if (want !== on) await this.toggleProp(step.propId);
+        return;
+      }
+      case 'autoAdvance':
+        await this.startAutoAdvance(step.intervalSeconds, !!step.loopAtEnd);
+        return;
+      case 'wait':
+        return; // handled by the runner
+    }
+  }
+
+  /** Runs a macro in the background, like the desktop app. Only one runs at a time. */
+  public async runMacro(id: string): Promise<void> {
+    const macro = this.macros.find((m) => m.id === id);
+    if (!macro) throw new Error('That macro no longer exists.');
+    const problem = validateMacro(macro);
+    if (problem) throw new Error(problem);
+    if (this.macroRunId) throw new Error('A macro is already running. Stop it first.');
+    const runId = 'run-' + Math.random().toString(36).substring(2, 9);
+    this.macroRunId = runId;
+
+    void (async () => {
+      const total = macro.steps.length;
+      try {
+        for (let i = 0; i < total; i++) {
+          if (this.macroRunId !== runId) return;
+          const step = macro.steps[i];
+          this.state.runningMacro = { id: macro.id, name: macro.name, step: i + 1, total };
+          this.notify();
+          if (step.type === 'wait') {
+            for (let t = 0; t < step.seconds * 10; t++) {
+              if (this.macroRunId !== runId) return;
+              await new Promise((r) => setTimeout(r, 100));
+            }
+          } else {
+            await this.applyMacroStep(step);
+          }
+        }
+      } catch {
+        // a failing step ends the macro, like the desktop app
+      } finally {
+        if (this.macroRunId === runId) this.macroRunId = null;
+        this.state.runningMacro = null;
+        this.notify();
+      }
+    })();
+  }
+
+  public async stopMacro(): Promise<PresentationState> {
+    this.macroRunId = null;
+    this.state.runningMacro = null;
+    this.notify();
+    return this.state;
+  }
+
+  public async startAutoAdvance(intervalSeconds: number, loopAtEnd: boolean): Promise<PresentationState> {
+    if (!Number.isInteger(intervalSeconds) || intervalSeconds < 1 || intervalSeconds > 3600) {
+      throw new Error('Interval must be between 1 and 3600 seconds.');
+    }
+    if (!this.state.isLive || !this.state.currentSlideId) {
+      throw new Error('Take a slide live first; auto-advance continues from the live slide.');
+    }
+    const runId = 'aa-' + Math.random().toString(36).substring(2, 9);
+    this.state.autoAdvance = { id: runId, intervalSeconds, loopAtEnd, nextAtMs: Date.now() + intervalSeconds * 1000 };
+    this.notify();
+    this.scheduleAutoAdvanceTick(runId);
+    return this.state;
+  }
+
+  public async stopAutoAdvance(): Promise<PresentationState> {
+    this.state.autoAdvance = null;
+    if (this.autoAdvanceTimer) clearTimeout(this.autoAdvanceTimer);
+    this.autoAdvanceTimer = null;
+    this.notify();
+    return this.state;
+  }
+
+  private scheduleAutoAdvanceTick(runId: string): void {
+    if (this.autoAdvanceTimer) clearTimeout(this.autoAdvanceTimer);
+    this.autoAdvanceTimer = setTimeout(() => void this.autoAdvanceTick(runId), 250);
+  }
+
+  private goToFirstSlide(): void {
+    const ctxSlides =
+      this.state.currentServiceId && this.state.currentItemId
+        ? this.serviceItemSlides.filter((s) => s.presentationId === this.state.currentItemId)
+        : this.slides.filter((s) => s.presentationId === this.state.currentPresentationId);
+    const first = [...ctxSlides].sort((a, b) => a.sortOrder - b.sortOrder)[0];
+    if (first) {
+      this.state.currentSlideId = first.id;
+      this.state.isLive = true;
+      this.state.isLogo = false;
+    }
+  }
+
+  private async autoAdvanceTick(runId: string): Promise<void> {
+    const run = this.state.autoAdvance;
+    if (!run || run.id !== runId) return;
+    const now = Date.now();
+    if (now >= run.nextAtMs) {
+      if (!this.state.isLive || this.state.isBlackout) {
+        run.nextAtMs = now + run.intervalSeconds * 1000; // paused while blank or blacked out
+      } else {
+        const before = this.state.currentSlideId;
+        await this.nextSlide();
+        if (this.state.currentSlideId === before) {
+          if (run.loopAtEnd) {
+            this.goToFirstSlide();
+          } else {
+            this.state.autoAdvance = null;
+            this.notify();
+            return;
+          }
+        }
+        run.nextAtMs = now + run.intervalSeconds * 1000;
+        this.notify();
+      }
+    }
+    if (this.state.autoAdvance?.id === runId) this.scheduleAutoAdvanceTick(runId);
+  }
+
   private slideTemplates: SlideTemplate[] = [];
 
   public async listSlideTemplates(): Promise<SlideTemplate[]> {
@@ -1628,6 +1809,9 @@ class MockDataStore {
     this.state.mediaPlayback = null;
     this.state.alert = null;
     this.state.activeProps = [];
+    this.state.autoAdvance = null;
+    if (this.autoAdvanceTimer) clearTimeout(this.autoAdvanceTimer);
+    this.autoAdvanceTimer = null;
     this.notify();
     return this.state;
   }
@@ -3600,6 +3784,8 @@ class MockDataStore {
         return this.clearAlert();
       case 'clear_props':
         return this.clearProps();
+      case 'stop_auto_advance':
+        return this.stopAutoAdvance();
       case 'clear_all':
         return this.clearAll();
       case 'toggle_live':
@@ -4089,6 +4275,66 @@ export const api = {
       });
     }
     return mockStore.setLiveSlide(presentationId, slideId);
+  },
+
+  listMacros: async (): Promise<Macro[]> => {
+    if (isTauri()) {
+      return await invoke<Macro[]>('list_macros');
+    }
+    return mockStore.listMacros();
+  },
+
+  createMacro: async (macro: Macro): Promise<Macro> => {
+    if (isTauri()) {
+      return await invoke<Macro>('create_macro', { macro });
+    }
+    return mockStore.createMacro(macro);
+  },
+
+  updateMacro: async (macro: Macro): Promise<Macro> => {
+    if (isTauri()) {
+      return await invoke<Macro>('update_macro', { macro });
+    }
+    return mockStore.updateMacro(macro);
+  },
+
+  deleteMacro: async (id: string): Promise<void> => {
+    if (isTauri()) {
+      await invoke<void>('delete_macro', { id });
+      return;
+    }
+    return mockStore.deleteMacro(id);
+  },
+
+  /** Starts a macro in the background; progress arrives as `runningMacro` in the presentation state. */
+  runMacro: async (id: string): Promise<void> => {
+    if (isTauri()) {
+      await invoke<void>('run_macro', { id });
+      return;
+    }
+    return mockStore.runMacro(id);
+  },
+
+  stopMacro: async (): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('stop_macro');
+    }
+    return mockStore.stopMacro();
+  },
+
+  /** Advances the live slide every `intervalSeconds` (1-3600). Something must be live already. */
+  startAutoAdvance: async (intervalSeconds: number, loopAtEnd: boolean): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('start_auto_advance', { intervalSeconds, loopAtEnd });
+    }
+    return mockStore.startAutoAdvance(intervalSeconds, loopAtEnd);
+  },
+
+  stopAutoAdvance: async (): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('stop_auto_advance');
+    }
+    return mockStore.stopAutoAdvance();
   },
 
   listSlideTemplates: async (): Promise<SlideTemplate[]> => {

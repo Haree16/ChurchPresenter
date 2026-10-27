@@ -128,6 +128,42 @@ export interface Prop {
   updatedAt?: string;
 }
 
+/** Slides advancing by themselves every `intervalSeconds`. */
+export interface AutoAdvanceStatus {
+  id: string;
+  intervalSeconds: number;
+  /** Go back to the first slide after the last one instead of stopping. */
+  loopAtEnd: boolean;
+  /** Unix ms of the next automatic advance. */
+  nextAtMs: number;
+}
+
+/** A macro that is running right now. */
+export interface RunningMacro {
+  id: string;
+  name: string;
+  /** 1-based number of the step being run. */
+  step: number;
+  total: number;
+}
+
+export type MacroStep =
+  | { type: 'action'; action: string }
+  | { type: 'alert'; message: string; seconds?: number | null }
+  | { type: 'prop'; propId: string; mode: 'show' | 'hide' | 'toggle' }
+  | { type: 'wait'; seconds: number }
+  | { type: 'autoAdvance'; intervalSeconds: number; loopAtEnd?: boolean };
+
+/** A saved list of steps run with one click. */
+export interface Macro {
+  id: string;
+  name: string;
+  steps: MacroStep[];
+  sortOrder?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 /** Short banner over the audience output (e.g. a nursery call). */
 export interface AudienceAlert {
   id: string;
@@ -147,6 +183,8 @@ export interface PresentationState {
   isLogo?: boolean;
   alert?: AudienceAlert | null;
   activeProps?: Prop[];
+  autoAdvance?: AutoAdvanceStatus | null;
+  runningMacro?: RunningMacro | null;
   isLive: boolean;
   currentServiceId?: string | null;
   currentItemId?: string | null;
