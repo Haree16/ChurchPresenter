@@ -1241,6 +1241,22 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 11: clear-alert in the action registry =================
+        if current_version < 11 {
+            let tx = conn.unchecked_transaction()?;
+            let now = Utc::now().to_rfc3339();
+            tx.execute(
+                "INSERT OR IGNORE INTO action_mappings (id, action_name, display_label, category, keyboard_shortcut, is_enabled, created_at, updated_at)
+                 VALUES ('act-clear-alert', 'clear_alert', 'Clear Audience Alert', 'display', NULL, 1, ?1, ?1);",
+                params![now],
+            )?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (11, ?1);",
+                params![now],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -6270,7 +6286,8 @@ impl DbManager {
              ('act-clear-overlay', 'clear_overlay', 'Clear Livestream Overlay', 'display', 'F8', 1, ?1, ?1),
              ('act-toggle-logo', 'toggle_logo', 'Toggle Logo Screen', 'display', 'L', 1, ?1, ?1),
              ('act-clear-media', 'clear_media', 'Clear Media', 'display', 'M', 1, ?1, ?1),
-             ('act-clear-all', 'clear_all', 'Clear All (blank output)', 'display', 'C', 1, ?1, ?1);",
+             ('act-clear-all', 'clear_all', 'Clear All (blank output)', 'display', 'C', 1, ?1, ?1),
+             ('act-clear-alert', 'clear_alert', 'Clear Audience Alert', 'display', NULL, 1, ?1, ?1);",
             params![now],
         )?;
         Ok(())

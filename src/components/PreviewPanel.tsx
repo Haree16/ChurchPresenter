@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AudienceAlertControl } from './AudienceAlertControl';
 import { GroupTag } from './GroupTag';
 import {
   ChevronLeft,
@@ -398,6 +399,8 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
               {audienceStatus.isOpen ? 'Close Audience Window' : 'Open Audience Window'}
             </span>
           </button>
+
+          <AudienceAlertControl alert={presentationState.alert} />
 
           {/* Quick Stage Message Cue */}
           <div

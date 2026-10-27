@@ -258,6 +258,25 @@ pub async fn set_live_slide(
     Ok(pres_mgr.set_live_slide(&app, &db, &presentation_id, &slide_id))
 }
 
+/// Shows a banner on the audience screen. `duration_seconds`: omitted = 30s, 0 = until cleared.
+#[tauri::command]
+pub async fn send_alert(
+    message: String,
+    duration_seconds: Option<u32>,
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    pres_mgr.send_alert(&app, &message, duration_seconds)
+}
+
+#[tauri::command]
+pub async fn clear_alert(
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    Ok(pres_mgr.clear_alert(&app))
+}
+
 #[tauri::command]
 pub async fn clear_media(
     pres_mgr: State<'_, PresentationManager>,

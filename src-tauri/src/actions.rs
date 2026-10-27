@@ -44,6 +44,7 @@ impl ActionDispatcher {
                 pres_mgr.get_state()
             }
             "clear_media" => pres_mgr.clear_media_core(),
+            "clear_alert" => pres_mgr.clear_alert_core(),
             "clear_all" => pres_mgr.clear_all_core(),
             "toggle_logo" => {
                 pres_mgr.toggle_logo_core();
@@ -266,5 +267,14 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(100));
         let off = ActionDispatcher::dispatch_core(&db, &pres_mgr, "toggle_logo").unwrap();
         assert!(!off.is_logo);
+    }
+
+    #[test]
+    fn test_clear_alert_action() {
+        let db = DbManager::new_in_memory().unwrap();
+        let pres_mgr = PresentationManager::new();
+        pres_mgr.send_alert_core("hello", Some(0)).unwrap();
+        let res = ActionDispatcher::dispatch_core(&db, &pres_mgr, "clear_alert").unwrap();
+        assert!(res.alert.is_none());
     }
 }

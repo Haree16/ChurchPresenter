@@ -1470,6 +1470,26 @@ class MockDataStore {
     return this.state;
   }
 
+  public async sendAlert(message: string, durationSeconds?: number): Promise<PresentationState> {
+    const text = message.trim();
+    if (!text) throw new Error('Alert message cannot be empty.');
+    if ([...text].length > 200) throw new Error('Alert message is too long (maximum 200 characters).');
+    const secs = durationSeconds ?? 30;
+    this.state.alert = {
+      id: 'alert-' + Math.random().toString(36).substring(2, 9),
+      message: text,
+      expiresAtMs: secs === 0 ? null : Date.now() + Math.min(secs, 3600) * 1000,
+    };
+    this.notify();
+    return this.state;
+  }
+
+  public async clearAlert(): Promise<PresentationState> {
+    this.state.alert = null;
+    this.notify();
+    return this.state;
+  }
+
   public async clearMedia(): Promise<PresentationState> {
     this.state.mediaPlayback = null;
     this.notify();
@@ -1481,6 +1501,7 @@ class MockDataStore {
     this.state.isLogo = false;
     this.state.isBlackout = false;
     this.state.mediaPlayback = null;
+    this.state.alert = null;
     this.notify();
     return this.state;
   }
@@ -3438,6 +3459,8 @@ class MockDataStore {
         return this.getPresentationState();
       case 'clear_media':
         return this.clearMedia();
+      case 'clear_alert':
+        return this.clearAlert();
       case 'clear_all':
         return this.clearAll();
       case 'toggle_live':
@@ -3924,6 +3947,21 @@ export const api = {
       });
     }
     return mockStore.setLiveSlide(presentationId, slideId);
+  },
+
+  /** Shows a banner on the audience screen. `durationSeconds`: omitted = 30s, 0 = until cleared. */
+  sendAlert: async (message: string, durationSeconds?: number): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('send_alert', { message, durationSeconds });
+    }
+    return mockStore.sendAlert(message, durationSeconds);
+  },
+
+  clearAlert: async (): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('clear_alert');
+    }
+    return mockStore.clearAlert();
   },
 
   clearMedia: async (): Promise<PresentationState> => {

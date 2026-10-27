@@ -1,7 +1,24 @@
 use crate::db::DbManager;
-use crate::models::{MediaPlaybackState, PresentationState, TimerState};
+use crate::models::{AudienceAlert, MediaPlaybackState, PresentationState, TimerState};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
+
+pub const MAX_ALERT_CHARS: usize = 200;
+pub const DEFAULT_ALERT_SECONDS: u32 = 30;
+const MAX_ALERT_SECONDS: u32 = 3600;
+
+fn now_ms() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
+/// Drops the alert from `state` once its expiry time has passed.
+pub fn expire_alert(state: &mut PresentationState, now_ms: i64) {
+    if let Some(alert) = &state.alert {
+        if alert.expires_at_ms.map_or(false, |t| now_ms >= t) {
+            state.alert = None;
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct PresentationManager {
@@ -16,8 +33,64 @@ impl PresentationManager {
     }
 
     pub fn get_state(&self) -> PresentationState {
-        let state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap();
+        expire_alert(&mut state, now_ms());
         state.clone()
+    }
+
+    /// Shows `message` over the audience output. `duration_secs`: `None` uses the default (30s),
+    /// `Some(0)` keeps it up until cleared, anything else is clamped to 1 second..1 hour.
+    pub fn send_alert_at(
+        &self,
+        message: &str,
+        duration_secs: Option<u32>,
+        now_ms: i64,
+    ) -> Result<PresentationState, String> {
+        let message = message.trim();
+        if message.is_empty() {
+            return Err("Alert message cannot be empty.".to_string());
+        }
+        if message.chars().count() > MAX_ALERT_CHARS {
+            return Err(format!("Alert message is too long (maximum {} characters).", MAX_ALERT_CHARS));
+        }
+        let expires_at_ms = match duration_secs.unwrap_or(DEFAULT_ALERT_SECONDS) {
+            0 => None,
+            s => Some(now_ms + i64::from(s.min(MAX_ALERT_SECONDS)) * 1000),
+        };
+        let mut state = self.state.lock().unwrap();
+        state.alert = Some(AudienceAlert {
+            id: uuid::Uuid::new_v4().to_string(),
+            message: message.to_string(),
+            expires_at_ms,
+        });
+        Ok(state.clone())
+    }
+
+    pub fn send_alert_core(&self, message: &str, duration_secs: Option<u32>) -> Result<PresentationState, String> {
+        self.send_alert_at(message, duration_secs, now_ms())
+    }
+
+    pub fn send_alert(
+        &self,
+        app: &AppHandle,
+        message: &str,
+        duration_secs: Option<u32>,
+    ) -> Result<PresentationState, String> {
+        let state = self.send_alert_core(message, duration_secs)?;
+        app.emit("presentation:state-changed", &state).ok();
+        Ok(state)
+    }
+
+    pub fn clear_alert_core(&self) -> PresentationState {
+        let mut state = self.state.lock().unwrap();
+        state.alert = None;
+        state.clone()
+    }
+
+    pub fn clear_alert(&self, app: &AppHandle) -> PresentationState {
+        let cloned = self.clear_alert_core();
+        app.emit("presentation:state-changed", &cloned).ok();
+        cloned
     }
 
     pub fn init_pointers(&self, db: &DbManager) {
@@ -234,6 +307,7 @@ impl PresentationManager {
         state.is_logo = false;
         state.is_blackout = false;
         state.media_playback = None;
+        state.alert = None;
         state.clone()
     }
 
@@ -567,5 +641,84 @@ mod tests {
         let res = pres_mgr.set_timer_state_core(Some(timer));
         assert!(res.timer_state.is_some());
         assert!(res.timer_state.unwrap().is_running);
+    }
+
+    #[test]
+    fn test_alert_trims_validates_and_sets_expiry() {
+        let mgr = PresentationManager::new();
+        let st = mgr.send_alert_at("  Nursery: family 12  ", Some(10), 1_000).unwrap();
+        let alert = st.alert.unwrap();
+        assert_eq!(alert.message, "Nursery: family 12");
+        assert_eq!(alert.expires_at_ms, Some(11_000));
+        assert!(!alert.id.is_empty());
+
+        assert!(mgr.send_alert_at("", Some(10), 0).is_err());
+        assert!(mgr.send_alert_at("   \n ", Some(10), 0).is_err());
+        let too_long = "x".repeat(MAX_ALERT_CHARS + 1);
+        assert!(mgr.send_alert_at(&too_long, None, 0).unwrap_err().contains("too long"));
+        assert!(mgr.send_alert_at(&"x".repeat(MAX_ALERT_CHARS), None, 0).is_ok());
+        // a rejected alert leaves the current one alone
+        mgr.send_alert_at("keep me", Some(0), 0).unwrap();
+        assert!(mgr.send_alert_at("", None, 0).is_err());
+        assert_eq!(mgr.get_state().alert.unwrap().message, "keep me");
+    }
+
+    #[test]
+    fn test_alert_duration_default_zero_and_clamp() {
+        let mgr = PresentationManager::new();
+        let default = mgr.send_alert_at("a", None, 0).unwrap().alert.unwrap();
+        assert_eq!(default.expires_at_ms, Some(i64::from(DEFAULT_ALERT_SECONDS) * 1000));
+        let forever = mgr.send_alert_at("a", Some(0), 0).unwrap().alert.unwrap();
+        assert_eq!(forever.expires_at_ms, None);
+        let huge = mgr.send_alert_at("a", Some(u32::MAX), 0).unwrap().alert.unwrap();
+        assert_eq!(huge.expires_at_ms, Some(3_600_000));
+    }
+
+    #[test]
+    fn test_alert_expires_exactly_at_its_deadline_but_not_before() {
+        let mut state = PresentationState::default();
+        state.alert = Some(AudienceAlert { id: "1".into(), message: "m".into(), expires_at_ms: Some(5_000) });
+        expire_alert(&mut state, 4_999);
+        assert!(state.alert.is_some());
+        expire_alert(&mut state, 5_000);
+        assert!(state.alert.is_none());
+
+        // an alert with no expiry stays until cleared
+        state.alert = Some(AudienceAlert { id: "2".into(), message: "m".into(), expires_at_ms: None });
+        expire_alert(&mut state, i64::MAX);
+        assert!(state.alert.is_some());
+    }
+
+    #[test]
+    fn test_expired_alert_is_gone_when_state_is_read() {
+        let mgr = PresentationManager::new();
+        mgr.send_alert_at("old", Some(1), now_ms() - 10_000).unwrap(); // expired 9s ago
+        assert!(mgr.get_state().alert.is_none());
+        mgr.send_alert_core("fresh", Some(60)).unwrap();
+        assert_eq!(mgr.get_state().alert.unwrap().message, "fresh");
+    }
+
+    #[test]
+    fn test_new_alert_replaces_old_and_gets_a_new_id() {
+        let mgr = PresentationManager::new();
+        let first = mgr.send_alert_at("one", Some(30), 0).unwrap().alert.unwrap();
+        let second = mgr.send_alert_at("two", Some(30), 0).unwrap().alert.unwrap();
+        assert_eq!(second.message, "two");
+        assert_ne!(first.id, second.id);
+    }
+
+    #[test]
+    fn test_clear_alert_and_clear_all_remove_it_but_blackout_and_logo_do_not() {
+        let mgr = PresentationManager::new();
+        mgr.send_alert_at("x", Some(0), 0).unwrap();
+        mgr.toggle_blackout_core();
+        mgr.toggle_logo_core();
+        assert!(mgr.get_state().alert.is_some()); // layers are independent
+
+        assert!(mgr.clear_alert_core().alert.is_none());
+        assert!(mgr.clear_alert_core().alert.is_none()); // idempotent
+
+        mgr.send_alert_at("y", Some(0), 0).unwrap();
+        assert!(mgr.clear_all_core().alert.is_none());
     }
 }

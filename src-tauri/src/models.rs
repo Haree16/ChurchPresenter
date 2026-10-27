@@ -50,6 +50,16 @@ pub struct Presentation {
     pub slide_count: i32,
 }
 
+/// A short text banner shown over the audience output (e.g. a nursery call).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudienceAlert {
+    pub id: String,
+    pub message: String,
+    /// Unix time in milliseconds when the alert goes away; `None` keeps it up until cleared.
+    pub expires_at_ms: Option<i64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PresentationState {
@@ -77,6 +87,8 @@ pub struct PresentationState {
     pub timer_state: Option<TimerState>,
     #[serde(default)]
     pub stage_message: Option<String>,
+    #[serde(default)]
+    pub alert: Option<AudienceAlert>,
 }
 
 impl Default for PresentationState {
@@ -98,6 +110,7 @@ impl Default for PresentationState {
             media_playback: None,
             timer_state: None,
             stage_message: None,
+            alert: None,
         }
     }
 }

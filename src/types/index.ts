@@ -45,6 +45,14 @@ export interface Presentation {
   slideCount?: number;
 }
 
+/** Short banner over the audience output (e.g. a nursery call). */
+export interface AudienceAlert {
+  id: string;
+  message: string;
+  /** Unix ms when it disappears; null/absent keeps it up until cleared. */
+  expiresAtMs?: number | null;
+}
+
 export interface PresentationState {
   currentPresentationId: string | null;
   currentSlideId: string | null;
@@ -54,6 +62,7 @@ export interface PresentationState {
   nextSlide: Slide | null;
   isBlackout: boolean;
   isLogo?: boolean;
+  alert?: AudienceAlert | null;
   isLive: boolean;
   currentServiceId?: string | null;
   currentItemId?: string | null;

@@ -164,6 +164,8 @@ pub fn run() {
             commands::toggle_blackout,
             commands::toggle_logo,
             commands::clear_media,
+            commands::send_alert,
+            commands::clear_alert,
             commands::clear_all,
             commands::next_slide,
             commands::previous_slide,

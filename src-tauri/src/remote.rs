@@ -61,7 +61,7 @@ pub fn extract_token(request: &tiny_http::Request, query_params: &HashMap<String
 pub fn action_permitted(device: &crate::models::RemoteDevice, action: &str) -> bool {
     match action {
         "next_slide" | "prev_slide" | "next_item" | "prev_item" | "jump_slide" => device.can_navigate,
-        "toggle_blackout" | "toggle_logo" | "clear_screen" | "clear_live" | "clear_media" | "clear_all" => {
+        "toggle_blackout" | "toggle_logo" | "clear_screen" | "clear_live" | "clear_media" | "clear_all" | "clear_alert" => {
             device.can_blackout
         }
         "toggle_live" => device.can_take_live,
@@ -363,6 +363,7 @@ impl RemoteServerManager {
                                                     "currentSlide": state.current_slide,
                                                     "nextSlide": state.next_slide,
                                                     "stageMessage": state.stage_message,
+                                                    "alert": state.alert,
                                                     "timerState": state.timer_state,
                                                     "permissions": {
                                                         "canNavigate": device.can_navigate,
@@ -401,6 +402,7 @@ impl RemoteServerManager {
                                                 "currentSlide": state.current_slide,
                                                 "nextSlide": state.next_slide,
                                                 "stageMessage": state.stage_message,
+                                                    "alert": state.alert,
                                                 "timerState": state.timer_state,
                                             })).unwrap_or_default();
 
@@ -454,6 +456,41 @@ impl RemoteServerManager {
                                         let resp = Response::from_string("{\"error\":\"Unauthorized\"}")
                                             .with_status_code(StatusCode(401));
                                         request.respond(resp).ok();
+                                    }
+                                }
+
+                                // 7b. API: Audience alert (banner over the output)
+                                (&Method::Post, "/api/alert") => {
+                                    let token = extract_token(&request, &query_params);
+                                    match db.get_remote_device_by_token(&token) {
+                                        Ok(Some(device)) if device.is_approved && device.can_blackout => {
+                                            let mut body = String::new();
+                                            request.as_reader().read_to_string(&mut body).ok();
+                                            let json_val: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+                                            let duration = json_val.get("durationSeconds").and_then(|v| v.as_u64()).map(|v| v.min(u32::MAX as u64) as u32);
+                                            let result = match json_val.get("message").and_then(|v| v.as_str()) {
+                                                Some(msg) => pres_mgr.send_alert(&app, msg, duration),
+                                                None => Ok(pres_mgr.clear_alert(&app)),
+                                            };
+                                            let (status, payload) = match result {
+                                                Ok(st) => (200, serde_json::json!({ "success": true, "alert": st.alert })),
+                                                Err(e) => (400, serde_json::json!({ "error": e })),
+                                            };
+                                            let resp = Response::from_string(serde_json::to_string(&payload).unwrap_or_default())
+                                                .with_status_code(StatusCode(status))
+                                                .with_header(safe_header("Content-Type", "application/json"));
+                                            request.respond(resp).ok();
+                                        }
+                                        Ok(Some(_)) => {
+                                            let resp = Response::from_string("{\"error\":\"Not permitted for this remote device\"}")
+                                                .with_status_code(StatusCode(403));
+                                            request.respond(resp).ok();
+                                        }
+                                        _ => {
+                                            let resp = Response::from_string("{\"error\":\"Unauthorized\"}")
+                                                .with_status_code(StatusCode(401));
+                                            request.respond(resp).ok();
+                                        }
                                     }
                                 }
 
@@ -746,6 +783,24 @@ impl RemoteServerManager {
         <button id="btn-live" class="btn-danger" style="grid-column: span 2;">Go Live</button>
       </div>
 
+      <!-- Audience alert (banner on the main screen) -->
+      <div class="card">
+        <div class="card-title">Audience Alert (shows on the main screen)</div>
+        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+          <input type="text" id="input-alert" class="input-text" style="margin-bottom: 0;" maxlength="200" placeholder="e.g. Nursery: family 12 please">
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <select id="alert-duration" class="input-text" style="margin-bottom: 0; width: auto;">
+            <option value="10">10 s</option>
+            <option value="30" selected>30 s</option>
+            <option value="60">1 min</option>
+            <option value="0">Until cleared</option>
+          </select>
+          <button id="btn-send-alert" style="padding: 10px 14px; font-size: 13px; white-space: nowrap;">Show Alert</button>
+          <button id="btn-clear-alert" class="btn-sec" style="padding: 10px 14px; font-size: 13px; white-space: nowrap;">Clear</button>
+        </div>
+      </div>
+
       <!-- Quick Stage Message Alert -->
       <div class="card">
         <div class="card-title">Stage Display Cue</div>
@@ -833,6 +888,8 @@ impl RemoteServerManager {
         document.getElementById('btn-blackout').disabled = !data.permissions.canBlackout;
         document.getElementById('btn-clear').disabled = !data.permissions.canBlackout;
         document.getElementById('btn-clear-all').disabled = !data.permissions.canBlackout;
+        document.getElementById('btn-send-alert').disabled = !data.permissions.canBlackout;
+        document.getElementById('btn-clear-alert').disabled = !data.permissions.canBlackout;
         document.getElementById('btn-live').disabled = !data.permissions.canTakeLive;
       }
     }
@@ -934,6 +991,17 @@ impl RemoteServerManager {
       } catch (e) {}
     }
 
+    async function sendAlertMsg(msg, durationSeconds) {
+      if (!sessionToken) return;
+      try {
+        await fetch('/api/alert?token=' + encodeURIComponent(sessionToken), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(msg === null ? {} : { message: msg, durationSeconds: durationSeconds })
+        });
+      } catch (e) {}
+    }
+
     async function sendStageMsg(msg) {
       if (!sessionToken) return;
       try {
@@ -983,6 +1051,17 @@ impl RemoteServerManager {
     document.getElementById('btn-clear-all').onclick = () => sendAction('clear_all');
     document.getElementById('btn-blackout').onclick = () => sendAction('toggle_blackout');
     document.getElementById('btn-live').onclick = () => sendAction('toggle_live');
+
+    document.getElementById('btn-send-alert').onclick = () => {
+      const msg = document.getElementById('input-alert').value.trim();
+      if (msg) {
+        sendAlertMsg(msg, Number(document.getElementById('alert-duration').value));
+      }
+    };
+    document.getElementById('btn-clear-alert').onclick = () => {
+      document.getElementById('input-alert').value = '';
+      sendAlertMsg(null);
+    };
 
     document.getElementById('btn-send-stage').onclick = () => {
       const cue = document.getElementById('input-stage-cue').value.trim();
@@ -1158,7 +1237,7 @@ mod tests {
     fn test_clear_actions_need_the_blackout_permission() {
         let black = device(false, true, false, false);
         let nav = device(true, false, true, true);
-        for a in ["clear_media", "clear_all", "toggle_logo"] {
+        for a in ["clear_media", "clear_all", "toggle_logo", "clear_alert"] {
             assert!(action_permitted(&black, a), "{a}");
             assert!(!action_permitted(&nav, a), "{a}");
         }
@@ -1227,5 +1306,13 @@ mod tests {
         let start = html.find("function setGroupTag").unwrap();
         let tag_fn = &html[start..start + html[start..].find("\n    }\n").unwrap()];
         assert!(!tag_fn.contains("innerHTML"));
+    }
+
+    #[test]
+    fn test_remote_page_alert_controls_post_to_the_alert_endpoint() {
+        let html = RemoteServerManager::get_remote_html();
+        for needle in ["id=\"btn-send-alert\"", "id=\"btn-clear-alert\"", "id=\"input-alert\"", "/api/alert?token=", "maxlength=\"200\""] {
+            assert!(html.contains(needle), "remote page is missing {needle}");
+        }
     }
 }
