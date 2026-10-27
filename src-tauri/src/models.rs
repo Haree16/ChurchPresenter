@@ -321,6 +321,8 @@ pub struct BackupData {
     #[serde(default)]
     pub props: Vec<crate::props::Prop>,
     #[serde(default)]
+    pub slide_templates: Vec<crate::templates::SlideTemplate>,
+    #[serde(default)]
     pub themes: Vec<Theme>,
     #[serde(default)]
     pub media_assets: Vec<MediaAsset>,

@@ -11,6 +11,7 @@ mod osc;
 mod overlay;
 mod presentation;
 mod props;
+mod templates;
 mod theme_io;
 mod remote;
 
@@ -172,6 +173,10 @@ pub fn run() {
             commands::create_prop,
             commands::update_prop,
             commands::delete_prop,
+            commands::list_slide_templates,
+            commands::create_slide_template,
+            commands::update_slide_template,
+            commands::delete_slide_template,
             commands::toggle_prop,
             commands::clear_props,
             commands::clear_alert,

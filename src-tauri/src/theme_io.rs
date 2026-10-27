@@ -512,7 +512,7 @@ mod tests {
             text_margin: 24,
             text_shadow: Some("0 2px 8px rgba(0,0,0,0.8)".into()),
             overlay_color: Some("rgba(0, 0, 0, 0.25)".into()),
-            layout: Some(SlideLayout { margin_pct: Some(5.0), outline_width: Some(2.0), outline_color: Some("#000000".into()) }),
+            layout: Some(SlideLayout { margin_pct: Some(5.0), outline_width: Some(2.0), outline_color: Some("#000000".into()), ..Default::default() }),
             background_image: None,
         }
     }
@@ -636,7 +636,7 @@ mod tests {
         t.name = name.into();
         t.is_built_in = false;
         t.background_image_path = image.map(String::from);
-        t.layout = Some(SlideLayout { margin_pct: Some(6.0), outline_width: Some(3.0), outline_color: Some("#112233".into()) });
+        t.layout = Some(SlideLayout { margin_pct: Some(6.0), outline_width: Some(3.0), outline_color: Some("#112233".into()), ..Default::default() });
         t.font_family = "\"Noto Sans Tamil\", sans-serif".into();
         db.create_theme(&t).unwrap()
     }

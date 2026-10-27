@@ -590,6 +590,34 @@ pub async fn import_themes_from_file(
     crate::theme_io::import_themes_from_file(&db, std::path::Path::new(&path), &app_data_dir)
 }
 
+#[tauri::command]
+pub async fn list_slide_templates(
+    db: State<'_, DbManager>,
+) -> Result<Vec<crate::templates::SlideTemplate>, String> {
+    db.list_slide_templates().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_slide_template(
+    template: crate::templates::SlideTemplate,
+    db: State<'_, DbManager>,
+) -> Result<crate::templates::SlideTemplate, String> {
+    db.create_slide_template(&template)
+}
+
+#[tauri::command]
+pub async fn update_slide_template(
+    template: crate::templates::SlideTemplate,
+    db: State<'_, DbManager>,
+) -> Result<crate::templates::SlideTemplate, String> {
+    db.update_slide_template(&template)
+}
+
+#[tauri::command]
+pub async fn delete_slide_template(id: String, db: State<'_, DbManager>) -> Result<(), String> {
+    db.delete_slide_template(&id).map_err(|e| e.to_string())
+}
+
 // ================= Phase 2: Media Assets =================
 
 #[tauri::command]

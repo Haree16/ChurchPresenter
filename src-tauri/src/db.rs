@@ -1304,6 +1304,32 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 14: slide templates =================
+        if current_version < 14 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS slide_templates (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    background_color TEXT NOT NULL,
+                    foreground_color TEXT NOT NULL,
+                    font_size TEXT NOT NULL,
+                    text_alignment TEXT NOT NULL,
+                    background_image TEXT,
+                    layout TEXT,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (14, ?1);",
+                params![Utc::now().to_rfc3339()],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -5163,6 +5189,7 @@ impl DbManager {
             song_sections,
             song_arrangements,
             props: self.list_props()?,
+            slide_templates: self.list_slide_templates()?,
             themes,
             media_assets,
             services,
@@ -5203,6 +5230,7 @@ impl DbManager {
             tx.execute("DELETE FROM presentations;", [])?;
             tx.execute("DELETE FROM song_arrangements;", [])?;
             tx.execute("DELETE FROM props;", [])?;
+            tx.execute("DELETE FROM slide_templates;", [])?;
             tx.execute("DELETE FROM song_sections;", [])?;
             tx.execute("DELETE FROM songs;", [])?;
             tx.execute("DELETE FROM themes WHERE is_built_in = 0;", [])?;
@@ -5402,6 +5430,18 @@ impl DbManager {
                 params![
                     pr.id, pr.name, pr.kind, pr.text, pr.image_path, pr.position, pr.size_pct,
                     pr.text_color, pr.background_color, pr.sort_order, pr.created_at, pr.updated_at
+                ],
+            )?;
+        }
+
+        // Restore slide templates
+        for st in &backup.slide_templates {
+            tx.execute(
+                "INSERT OR IGNORE INTO slide_templates (id, name, background_color, foreground_color, font_size, text_alignment, background_image, layout, sort_order, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11);",
+                params![
+                    st.id, st.name, st.background_color, st.foreground_color, st.font_size, st.text_alignment,
+                    st.background_image, layout_to_json(&st.layout), st.sort_order, st.created_at, st.updated_at
                 ],
             )?;
         }
@@ -7750,7 +7790,7 @@ mod tests {
     }
 
     fn lay(margin: Option<f64>, width: Option<f64>, color: Option<&str>) -> crate::layout::SlideLayout {
-        crate::layout::SlideLayout { margin_pct: margin, outline_width: width, outline_color: color.map(String::from) }
+        crate::layout::SlideLayout { margin_pct: margin, outline_width: width, outline_color: color.map(String::from), ..Default::default() }
     }
 
     fn plain_slide(pres: &str, title: &str) -> Slide {
