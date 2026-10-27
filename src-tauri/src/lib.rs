@@ -4,6 +4,7 @@ mod db;
 mod display;
 mod midi;
 mod models;
+mod net_guard;
 mod osc;
 mod overlay;
 mod presentation;

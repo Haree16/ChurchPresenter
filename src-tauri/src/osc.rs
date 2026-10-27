@@ -77,7 +77,12 @@ impl OscService {
 
             while is_running_flag.load(Ordering::SeqCst) {
                 match socket.recv_from(&mut buf) {
-                    Ok((size, _addr)) => {
+                    Ok((size, addr)) => {
+                        if !crate::net_guard::is_lan_addr(addr.ip()) {
+                            *last_err_holder.lock().unwrap() =
+                                Some(format!("Dropped OSC packet from non-LAN address {}", addr.ip()));
+                            continue;
+                        }
                         let packet = match rosc::decoder::decode_udp(&buf[..size]) {
                             Ok((_, p)) => p,
                             Err(e) => {

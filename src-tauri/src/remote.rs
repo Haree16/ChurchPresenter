@@ -168,6 +168,15 @@ impl RemoteServerManager {
                                 })
                                 .collect();
 
+                            if let Some(peer) = request.remote_addr() {
+                                if !crate::net_guard::is_lan_addr(peer.ip()) {
+                                    let resp = Response::from_string("Forbidden: LAN access only")
+                                        .with_status_code(StatusCode(403));
+                                    request.respond(resp).ok();
+                                    return;
+                                }
+                            }
+
                             let remote_addr = request
                                 .remote_addr()
                                 .map(|a| a.ip().to_string())
