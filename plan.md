@@ -43,12 +43,13 @@ Status as of 2026-10-27, after the Phase 0-6 commit plus uncommitted work.
 
 ## Phases
 
-### A. Finish and harden what exists
-1. ~~Verify build + tests, commit pending work.~~ Done.
-2. ~~Tests for `commands.rs`, `remote.rs`, `osc.rs`.~~ Done for the pure logic (OSC mapping/allowlist, remote permissions, presentation-import helpers). The HTTP server loop, UDP loop and Tauri command wrappers need a running `AppHandle` and are still untested; an integration harness would cover them.
-3. Remote/OSC: ~~LAN-only source filtering~~ (done, `net_guard.rs`); LAN-only warning in UI, configurable bind address. *Pending.*
-4. Clear-layer model: ~~logo~~ (done: `L` key, header button, `toggle_logo` action, cleared when a slide goes live; uses `public/logo.png`); clear media / props / all as independent states, Settings override for the logo image. *Pending.*
-*Done when:* CI is green; clear, black and logo work independently.
+### A. Finish and harden what exists — done except the loop tests
+1. ~~Verify build + tests, commit pending work.~~
+2. Tests for pure logic in `commands.rs`, `remote.rs`, `osc.rs`, `net_guard.rs` — done. The HTTP server loop, UDP loop and Tauri command wrappers are still untested: they take `AppHandle<Wry>`, and `tauri::test::mock_app()` gives `AppHandle<MockRuntime>`, so testing them means making the server, `ActionDispatcher` and `PresentationManager` generic over `Runtime`.
+3. ~~Network exposure~~: remote + OSC accept only private/loopback sources (`net_guard.rs`); a "Who can connect" setting (this computer only / local network) applies on next start; the integrations modal warns about unencrypted HTTP and password-less OSC.
+4. ~~Output layers~~: logo (`L`), clear media (`M`), clear all (`C`) as separate states and actions; header buttons; OSC `/logo`, `/clear/media`, `/clear/all` (opt-in via the allowlist); phone remote "Clear All" (needs the blackout permission); custom logo image in Settings. Letter shortcuts ignore Ctrl/Cmd/Alt.
+   *Props layer:* "clear props" arrives with props in Phase C.
+*Done when:* CI is green; clear, black and logo work independently. (Verified in unit tests; not yet run in the live app.)
 
 ### B. Songs and Bible — mostly done
 Done:
