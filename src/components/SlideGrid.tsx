@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Slide, Presentation, PresentationState } from '../types';
 import { readableTextColor } from '../services/sectionColors';
+import { SlideElements } from './SlideElements';
 import { composeTextShadow, layoutPaddingPercent } from '../services/slideLayout';
 
 interface SlideCardProps {
@@ -155,6 +156,7 @@ export const SlideCard = React.memo<SlideCardProps>(({
             <span style={{ color: '#64748b', fontStyle: 'italic' }}>[Empty Slide]</span>
           )}
         </div>
+        <SlideElements elements={slide.layout?.elements} />
       </div>
 
       {/* Song group tag (Verse 1, Chorus, ...) */}

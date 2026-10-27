@@ -10,7 +10,36 @@ export type SectionType =
   | 'refrain'
   | 'custom';
 
-/** Safe margin and text outline for a slide or theme. Empty = default look. */
+/**
+ * An extra box on a slide: a text box, an image or a plain shape. Positions and sizes are
+ * percentages of the slide, so a slide looks the same on any screen. Later elements draw on top.
+ */
+export interface SlideElement {
+  id: string;
+  kind: 'text' | 'image' | 'shape';
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Text boxes. */
+  text?: string | null;
+  /** Text size as % of the slide height (1-30). */
+  fontSizePct?: number | null;
+  /** `#rrggbb` */
+  color?: string | null;
+  align?: 'left' | 'center' | 'right' | null;
+  weight?: 'normal' | 'bold' | null;
+  /** Images: a media-library path such as `media/logo.png`. */
+  imagePath?: string | null;
+  /** Shapes. */
+  shape?: 'rect' | 'ellipse' | null;
+  /** Shape colour, `#rrggbb`. */
+  fill?: string | null;
+  /** 0 (invisible) to 1 (solid). */
+  opacity?: number | null;
+}
+
+/** Safe margin, text outline and extra elements for a slide or theme. Empty = default look. */
 export interface SlideLayout {
   /** Keep text this far inside every edge, % of the screen (0-25). */
   marginPct?: number | null;
@@ -18,6 +47,24 @@ export interface SlideLayout {
   outlineWidth?: number | null;
   /** `#rrggbb`; used when outlineWidth is above 0. */
   outlineColor?: string | null;
+  /** Extra text boxes, images and shapes, drawn in order (the last one on top). */
+  elements?: SlideElement[];
+}
+
+/** A saved slide look that can be applied to any slide. */
+export interface SlideTemplate {
+  id: string;
+  name: string;
+  backgroundColor: string;
+  foregroundColor: string;
+  fontSize: FontSize;
+  textAlignment: TextAlignment;
+  /** Media-library path, or null for a plain colour background. */
+  backgroundImage?: string | null;
+  layout?: SlideLayout | null;
+  sortOrder?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Slide {

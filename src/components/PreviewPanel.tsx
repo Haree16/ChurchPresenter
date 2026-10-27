@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { PropsControl } from './PropsControl';
+import { SlideElements } from './SlideElements';
 import { composeTextShadow, layoutPaddingPercent } from '../services/slideLayout';
 import { AudienceAlertControl } from './AudienceAlertControl';
 import { GroupTag } from './GroupTag';
@@ -215,6 +216,9 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
               <div style={{ color: '#64748b', fontSize: '12px', textAlign: 'center' }}>
                 No active slide. Select a slide to go live.
               </div>
+            )}
+            {!isBlackout && isLive && currentSlide && (
+              <SlideElements elements={currentSlide.layout?.elements} />
             )}
           </div>
         </div>

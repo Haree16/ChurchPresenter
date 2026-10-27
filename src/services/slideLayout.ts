@@ -1,4 +1,5 @@
-import { SlideLayout } from '../types';
+import { SlideElement, SlideLayout } from '../types';
+import { validateElements } from './slideElements';
 
 export const MAX_MARGIN_PCT = 25;
 export const MAX_OUTLINE_WIDTH = 20;
@@ -17,22 +18,34 @@ export function validateLayout(l: SlideLayout | null | undefined): string | null
   if (l.outlineColor != null && !HEX.test(l.outlineColor)) {
     return 'Outline colour must look like #000000.';
   }
-  return null;
+  return validateElements(l.elements);
 }
 
 /** True when nothing in the layout would change how a slide looks. */
 export function isEmptyLayout(l: SlideLayout | null | undefined): boolean {
-  return !l || (l.marginPct == null && l.outlineWidth == null && l.outlineColor == null);
+  return (
+    !l ||
+    (l.marginPct == null && l.outlineWidth == null && l.outlineColor == null && (l.elements?.length ?? 0) === 0)
+  );
 }
 
-/** Builds a layout from editor values; returns `{}` (which clears a stored layout) when all are default. */
-export function buildLayout(marginPct: number, outlineWidth: number, outlineColor: string): SlideLayout {
+/**
+ * Builds a layout from editor values; returns `{}` (which clears a stored layout) when all are default.
+ * Pass the slide's existing `elements` so editing margin or outline never drops them.
+ */
+export function buildLayout(
+  marginPct: number,
+  outlineWidth: number,
+  outlineColor: string,
+  elements: SlideElement[] = []
+): SlideLayout {
   const layout: SlideLayout = {};
   if (marginPct > 0) layout.marginPct = marginPct;
   if (outlineWidth > 0) {
     layout.outlineWidth = outlineWidth;
     layout.outlineColor = outlineColor;
   }
+  if (elements.length > 0) layout.elements = elements;
   return layout;
 }
 

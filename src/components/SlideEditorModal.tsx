@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
-import { Slide, FontSize, TextAlignment } from '../types';
+import { Slide, FontSize, SlideElement, SlideTemplate, TextAlignment } from '../types';
 import { LayoutControls, LayoutValues, layoutValuesFrom } from './LayoutControls';
-import { buildLayout, composeTextShadow, layoutPaddingPercent } from '../services/slideLayout';
+import { ElementsEditor } from './ElementsEditor';
+import { SlideElements } from './SlideElements';
+import { TemplatePanel } from './TemplatePanel';
+import { buildLayout, composeTextShadow, layoutPaddingPercent, validateLayout } from '../services/slideLayout';
+import { clampElement, cloneElements } from '../services/slideElements';
 
 interface SlideEditorModalProps {
   slide: Slide | null;
@@ -24,9 +28,51 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
   const [fontSize, setFontSize] = useState<FontSize>('large');
   const [textAlignment, setTextAlignment] = useState<TextAlignment>('center');
   const [layoutValues, setLayoutValues] = useState<LayoutValues>(layoutValuesFrom(null));
+  const [elements, setElements] = useState<SlideElement[]>([]);
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const elementsRef = useRef<SlideElement[]>([]);
+  elementsRef.current = elements;
+
+  // Dragging an element in the preview moves it by the same percentage of the preview's size.
+  const startDrag = useCallback((id: string, e: React.PointerEvent) => {
+    const el = elementsRef.current.find((x) => x.id === id);
+    if (!el) return;
+    e.preventDefault();
+    dragRef.current = { id, startX: e.clientX, startY: e.clientY, origX: el.x, origY: el.y };
+  }, []);
+
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const drag = dragRef.current;
+      const rect = previewRef.current?.getBoundingClientRect();
+      if (!drag || !rect || rect.width === 0 || rect.height === 0) return;
+      const dx = ((e.clientX - drag.startX) / rect.width) * 100;
+      const dy = ((e.clientY - drag.startY) / rect.height) * 100;
+      setElements((list) =>
+        list.map((x) => (x.id === drag.id ? clampElement({ ...x, x: drag.origX + dx, y: drag.origY + dy }) : x))
+      );
+    };
+    const onUp = () => {
+      dragRef.current = null;
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, []);
 
   useEffect(() => {
     if (slide) {
+      setElements(slide.layout?.elements ? slide.layout.elements.map((e) => ({ ...e })) : []);
+      setSelectedElementId(null);
+      setBackgroundImage(slide.backgroundImage ?? null);
+      setSaveError(null);
       setTitle(slide.title);
       setBody(slide.body);
       setBackgroundColor(slide.backgroundColor || '#0a0f1d');
@@ -56,24 +102,58 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
     { name: 'Cyan', hex: '#38bdf8' },
   ];
 
+  const previewLayout = buildLayout(layoutValues.marginPct, layoutValues.outlineWidth, layoutValues.outlineColor, elements);
+
   const handleSave = async () => {
-    // Send the whole slide: the backend writes every style field, so leaving the ones this editor
-    // does not show out would reset them (background image, overlay, line spacing, shadow, font).
-    await onSave(slide.id, {
-      ...slide,
-      title,
-      body,
-      backgroundColor,
-      foregroundColor,
-      fontSize,
-      textAlignment,
-      // an empty layout clears a stored one
-      layout: buildLayout(layoutValues.marginPct, layoutValues.outlineWidth, layoutValues.outlineColor),
-    });
-    onClose();
+    const problem = validateLayout(previewLayout);
+    if (problem) {
+      setSaveError(problem);
+      return;
+    }
+    setSaveError(null);
+    try {
+      // Send the whole slide: the backend writes every style field, so leaving the ones this editor
+      // does not show out would reset them (background image, overlay, line spacing, shadow, font).
+      await onSave(slide.id, {
+        ...slide,
+        title,
+        body,
+        backgroundColor,
+        foregroundColor,
+        fontSize,
+        textAlignment,
+        backgroundImage,
+        // an empty layout clears a stored one
+        layout: previewLayout,
+      });
+      onClose();
+    } catch (err: any) {
+      setSaveError(typeof err === 'string' ? err : err?.message || 'Could not save the slide.');
+    }
   };
 
-  const previewLayout = buildLayout(layoutValues.marginPct, layoutValues.outlineWidth, layoutValues.outlineColor);
+  /** The look the "Save this look" button stores as a template. */
+  const currentLook: Omit<SlideTemplate, 'id' | 'name'> = {
+    backgroundColor,
+    foregroundColor,
+    fontSize,
+    textAlignment,
+    backgroundImage,
+    layout: previewLayout,
+  };
+
+  /** Applies a template to this slide: its look replaces the current one, the text stays. */
+  const applyTemplate = (t: SlideTemplate) => {
+    setBackgroundColor(t.backgroundColor);
+    setForegroundColor(t.foregroundColor);
+    setFontSize(t.fontSize);
+    setTextAlignment(t.textAlignment);
+    setBackgroundImage(t.backgroundImage ?? null);
+    setLayoutValues(layoutValuesFrom(t.layout));
+    // fresh ids, so applying the same template to many slides never shares elements between them
+    setElements(cloneElements(t.layout?.elements));
+    setSelectedElementId(null);
+  };
 
   const getFontSizeRem = (size: FontSize) => {
     switch (size) {
@@ -408,6 +488,19 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
                 </div>
               </div>
             </div>
+
+            <div style={{ paddingTop: '12px', borderTop: '1px solid #1e293b' }}>
+              <ElementsEditor
+                elements={elements}
+                onChange={setElements}
+                selectedId={selectedElementId}
+                onSelect={setSelectedElementId}
+              />
+            </div>
+
+            <div style={{ paddingTop: '12px', borderTop: '1px solid #1e293b' }}>
+              <TemplatePanel current={currentLook} onApply={applyTemplate} />
+            </div>
           </div>
 
 
@@ -424,7 +517,14 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
               Audience Preview (16:9)
             </label>
             <div
+              ref={previewRef}
+              data-testid="editor-preview"
+              onPointerDown={(e) => {
+                // clicking empty preview space deselects
+                if (e.target === e.currentTarget) setSelectedElementId(null);
+              }}
               style={{
+                position: 'relative',
                 width: '100%',
                 aspectRatio: '16 / 9',
                 backgroundColor: backgroundColor,
@@ -461,6 +561,13 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
                   </span>
                 )}
               </div>
+              <SlideElements
+                elements={elements}
+                interactive
+                selectedId={selectedElementId}
+                onSelect={setSelectedElementId}
+                onElementPointerDown={startDrag}
+              />
             </div>
             <div
               style={{
@@ -477,6 +584,16 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
             </div>
           </div>
         </div>
+
+        {saveError && (
+          <div
+            role="alert"
+            data-testid="editor-save-error"
+            style={{ padding: '8px 20px', fontSize: '12px', color: '#fca5a5', backgroundColor: '#1f0a0a', borderTop: '1px solid #3f1d1d' }}
+          >
+            {saveError}
+          </div>
+        )}
 
         {/* Modal Actions */}
         <div

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLogoUrl } from '../hooks/useLogoUrl';
 import { AlertBanner } from './AlertBanner';
 import { PropsLayer } from './PropsLayer';
+import { SlideElements } from './SlideElements';
 import { composeTextShadow, layoutPadding } from '../services/slideLayout';
 import { PresentationState } from '../types';
 import { api } from '../services/api';
@@ -417,6 +418,11 @@ export const AudienceView: React.FC = () => {
         }}
       >
         {currentSlide.body}
+      </div>
+
+      {/* Extra text boxes, images and shapes placed on the slide */}
+      <div style={{ opacity: slideOpacity, transition: 'opacity 250ms ease-in-out' }}>
+        <SlideElements elements={currentSlide.layout?.elements} />
       </div>
     </div>
   );

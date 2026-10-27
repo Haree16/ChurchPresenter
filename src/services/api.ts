@@ -52,7 +52,9 @@ import {
   Prop,
   ThemeExportResult,
   ThemeImportResult,
+  SlideTemplate,
 } from '../types';
+import { validateTemplate } from './slideTemplates';
 import { validateProp } from './propLayout';
 import { validateLayout, isEmptyLayout } from './slideLayout';
 import { sectionColor } from './sectionColors';
@@ -1481,6 +1483,50 @@ class MockDataStore {
     this.state.isLive = false;
     this.notify();
     return this.state;
+  }
+
+  private slideTemplates: SlideTemplate[] = [];
+
+  public async listSlideTemplates(): Promise<SlideTemplate[]> {
+    return this.slideTemplates.map((t) => JSON.parse(JSON.stringify(t)));
+  }
+
+  public async createSlideTemplate(template: SlideTemplate): Promise<SlideTemplate> {
+    const problem = validateTemplate(template);
+    if (problem) throw new Error(problem);
+    if (this.slideTemplates.length >= 200) throw new Error('You can keep at most 200 templates.');
+    const now = new Date().toISOString();
+    const saved: SlideTemplate = {
+      ...JSON.parse(JSON.stringify(template)),
+      id: 'tpl-' + Math.random().toString(36).substring(2, 9),
+      name: template.name.trim(),
+      backgroundImage: template.backgroundImage?.trim() ? template.backgroundImage : null,
+      layout: isEmptyLayout(template.layout) ? null : JSON.parse(JSON.stringify(template.layout)),
+      sortOrder: this.slideTemplates.length,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.slideTemplates.push(saved);
+    return JSON.parse(JSON.stringify(saved));
+  }
+
+  public async updateSlideTemplate(template: SlideTemplate): Promise<SlideTemplate> {
+    const problem = validateTemplate(template);
+    if (problem) throw new Error(problem);
+    const idx = this.slideTemplates.findIndex((t) => t.id === template.id);
+    if (idx < 0) throw new Error('That template no longer exists.');
+    this.slideTemplates[idx] = {
+      ...this.slideTemplates[idx],
+      ...JSON.parse(JSON.stringify(template)),
+      name: template.name.trim(),
+      layout: isEmptyLayout(template.layout) ? null : JSON.parse(JSON.stringify(template.layout)),
+      updatedAt: new Date().toISOString(),
+    };
+    return JSON.parse(JSON.stringify(this.slideTemplates[idx]));
+  }
+
+  public async deleteSlideTemplate(id: string): Promise<void> {
+    this.slideTemplates = this.slideTemplates.filter((t) => t.id !== id);
   }
 
   private props: Prop[] = [];
@@ -4043,6 +4089,35 @@ export const api = {
       });
     }
     return mockStore.setLiveSlide(presentationId, slideId);
+  },
+
+  listSlideTemplates: async (): Promise<SlideTemplate[]> => {
+    if (isTauri()) {
+      return await invoke<SlideTemplate[]>('list_slide_templates');
+    }
+    return mockStore.listSlideTemplates();
+  },
+
+  createSlideTemplate: async (template: SlideTemplate): Promise<SlideTemplate> => {
+    if (isTauri()) {
+      return await invoke<SlideTemplate>('create_slide_template', { template });
+    }
+    return mockStore.createSlideTemplate(template);
+  },
+
+  updateSlideTemplate: async (template: SlideTemplate): Promise<SlideTemplate> => {
+    if (isTauri()) {
+      return await invoke<SlideTemplate>('update_slide_template', { template });
+    }
+    return mockStore.updateSlideTemplate(template);
+  },
+
+  deleteSlideTemplate: async (id: string): Promise<void> => {
+    if (isTauri()) {
+      await invoke<void>('delete_slide_template', { id });
+      return;
+    }
+    return mockStore.deleteSlideTemplate(id);
   },
 
   listProps: async (): Promise<Prop[]> => {

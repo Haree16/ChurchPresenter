@@ -531,7 +531,8 @@ export const ThemeManagerModal: React.FC<ThemeManagerModalProps> = ({
                     onChange={(v) =>
                       setActiveTheme({
                         ...activeTheme,
-                        layout: buildLayout(v.marginPct, v.outlineWidth, v.outlineColor),
+                        // keep any elements the theme already carries (e.g. from an imported file)
+                        layout: buildLayout(v.marginPct, v.outlineWidth, v.outlineColor, activeTheme.layout?.elements),
                       })
                     }
                   />

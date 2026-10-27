@@ -188,7 +188,7 @@ describe('SlideEditorModal', () => {
     const onSave = vi.fn().mockResolvedValue(null);
     render(<SlideEditorModal slide={full} isOpen onClose={vi.fn()} onSave={onSave} />);
     fireEvent.change(screen.getByTestId('layout-outline-width'), { target: { value: '3' } });
-    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Slide' }));
     await waitFor(() => expect(onSave).toHaveBeenCalled());
 
     const [id, payload] = onSave.mock.calls[0];
@@ -205,7 +205,7 @@ describe('SlideEditorModal', () => {
     const onSave = vi.fn().mockResolvedValue(null);
     render(<SlideEditorModal slide={full} isOpen onClose={vi.fn()} onSave={onSave} />);
     fireEvent.click(screen.getByTestId('layout-reset'));
-    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Slide' }));
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][1].layout).toEqual({});
   });

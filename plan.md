@@ -74,10 +74,13 @@ Done:
 
 - **Portable themes**: export one theme or all custom themes to a `.cptheme` file with the background image embedded; import creates new custom themes (name clashes are renamed, nothing is imported if any theme is invalid, images are checked by content and copied into the app's own folder). Imports list the fonts a theme needs and the app warns about ones not installed on that computer. The theme manager also gained a background image picker (from the media library) and fit mode, which did not exist before.
 
+- **Multi-element slides**: a slide's `layout` can carry up to 20 extra elements (text boxes, images from the media library, rectangles/ellipses), positioned in percent of the slide and drawn in order on the audience screen, operator preview and slide cards. The slide editor adds, edits, reorders and deletes them, and elements can be dragged in the preview.
+- **Templates** (migration 14): save a slide's look (colours, text size, alignment, background image, margin, outline, elements) and apply it to any slide; applying keeps the slide's text and gives the elements fresh ids. Included in backup/restore.
+
 Not done (design notes):
-- The `layout` value is meant to also carry extra elements and templates later.
+- Elements have no rotation or resize handles (size is set with number fields); there is no "new slide from template" button (apply a template inside the editor).
+- Elements are not drawn on the stage display or the phone remote preview.
 - Fonts are not embedded in theme files (reported instead); only PNG/JPG/GIF/WEBP backgrounds travel with a theme.
-- **Multi-element slides** (extra text boxes, images, shapes positioned in % of the slide) and **templates** (saved layouts).
 - Props are not drawn in the operator preview panel; phones cannot toggle individual props (only clear them).
 *Done when:* a theme exported from one machine looks identical on another.
 
