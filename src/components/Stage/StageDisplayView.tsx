@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { GroupTag } from '../GroupTag';
+import { StageCanvas } from './StageCanvas';
 import { PresentationState, StageConfig, TimerState } from '../../types';
 import { api } from '../../services/api';
 
@@ -49,6 +50,13 @@ export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
       if (cfg) setStageConfig(cfg);
     });
 
+    let unsubscribeConfig: (() => void) | undefined;
+    let disposed = false;
+    api.subscribeStageConfig((cfg) => setStageConfig(cfg)).then((unsub) => {
+      if (disposed) unsub();
+      else unsubscribeConfig = unsub;
+    });
+
     let unsubscribe: (() => void) | undefined;
     api.subscribeStateChanges((newState) => {
       setPresentationState(newState);
@@ -57,7 +65,9 @@ export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
     });
 
     return () => {
+      disposed = true;
       if (unsubscribe) unsubscribe();
+      if (unsubscribeConfig) unsubscribeConfig();
     };
   }, []);
 
@@ -142,6 +152,33 @@ export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
   const textColor = stageConfig.highContrast ? '#ffffff' : '#f1f5f9';
   const nextTextColor = stageConfig.highContrast ? '#94a3b8' : '#64748b';
   const accentColor = isExpired ? '#ef4444' : isWarning ? '#eab308' : '#38bdf8';
+
+  // A designed layout replaces the classic one; with no panels the classic layout is used as before.
+  if (stageConfig.panels && stageConfig.panels.length > 0) {
+    return (
+      <div
+        data-testid="stage-display-view"
+        data-layout="custom"
+        style={{ position: 'relative', width: '100%', height: previewMode ? '480px' : '100vh', overflow: 'hidden' }}
+      >
+        <StageCanvas
+          panels={stageConfig.panels}
+          state={presentationState}
+          clock={currentTimeStr}
+          timer={{ display: computedTimerDisplay, isWarning, isExpired }}
+          highContrast={stageConfig.highContrast}
+        />
+        {previewMode && onClose && (
+          <button
+            onClick={onClose}
+            style={{ position: 'absolute', top: 8, right: 8, background: '#334155', border: 'none', color: '#fff', padding: '6px 14px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, zIndex: 5 }}
+          >
+            Close Preview
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

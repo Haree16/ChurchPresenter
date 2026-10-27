@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { LogoSettingsCard } from './LogoSettingsCard';
+import { StageLayoutEditor } from '../Stage/StageLayoutEditor';
 import { AppInfo, AppDiagnosticEntry, AppDiagnosticFilter } from '../../types';
 
 interface SettingsModalProps {
@@ -29,6 +30,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenBackupModal,
 }) => {
   const [activeTab, setActiveTab] = useState<'general' | 'storage' | 'diagnostics' | 'maintenance'>('general');
+  const [isStageLayoutOpen, setIsStageLayoutOpen] = useState(false);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [diagnostics, setDiagnostics] = useState<AppDiagnosticEntry[]>([]);
   const [filterLevel, setFilterLevel] = useState<string>('ALL');
@@ -337,10 +339,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* TAB 2: STORAGE & DATABASE */}
           {activeTab === 'general' && (
-            <div style={{ marginTop: '16px' }}>
+            <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <LogoSettingsCard />
+              <div
+                data-testid="stage-layout-card"
+                style={{ padding: '16px', backgroundColor: '#1e293b', borderRadius: '8px', border: '1px solid #334155', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}
+              >
+                <div style={{ flex: 1, minWidth: '220px' }}>
+                  <div style={{ fontWeight: 700, color: '#f8fafc', fontSize: '14px' }}>Stage display layout</div>
+                  <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
+                    Choose which panels the stage monitor shows (current and next slide, clock, timer, messages) and where.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  data-testid="open-stage-layout"
+                  onClick={() => setIsStageLayoutOpen(true)}
+                  style={{ padding: '6px 14px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#0f172a', color: '#f8fafc', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Edit layout…
+                </button>
+              </div>
             </div>
           )}
+          <StageLayoutEditor isOpen={isStageLayoutOpen} onClose={() => setIsStageLayoutOpen(false)} />
 
           {activeTab === 'storage' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

@@ -7,7 +7,7 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 const safeColor = (c: string | null | undefined, fallback: string) => (c && HEX.test(c) ? c : fallback);
 
 /** Height of an element in pixels, kept up to date as it resizes. 0 until it is on screen. */
-function useElementHeight(ref: React.RefObject<HTMLElement>): number {
+export function useElementHeight(ref: React.RefObject<HTMLElement>): number {
   const [height, setHeight] = useState(0);
   useLayoutEffect(() => {
     const el = ref.current;

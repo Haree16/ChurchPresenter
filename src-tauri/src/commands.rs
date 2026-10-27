@@ -1298,9 +1298,13 @@ pub async fn get_stage_config(
 pub async fn update_stage_config(
     config: StageConfig,
     db: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<StageConfig, String> {
     crate::stage_layout::validate_panels(&config.panels)?;
-    db.update_stage_config(&config).map_err(|e| e.to_string())
+    let saved = db.update_stage_config(&config).map_err(|e| e.to_string())?;
+    // open stage windows pick the new layout up straight away
+    app.emit("stage:config-changed", &saved).ok();
+    Ok(saved)
 }
 
 #[tauri::command]

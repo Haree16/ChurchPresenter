@@ -518,6 +518,21 @@ export interface TimerState {
   isExpired: boolean;
 }
 
+/** The things a stage panel can show. Each may appear once per layout. */
+export type StagePanelKind = 'current' | 'next' | 'clock' | 'timer' | 'message' | 'status' | 'notes';
+
+/** A panel on the stage display, positioned in percent of the stage screen. */
+export interface StagePanel {
+  id: string;
+  kind: StagePanelKind;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Text size as % of the stage height (1-30); omitted uses the panel's default. */
+  fontSizePct?: number | null;
+}
+
 export interface StageConfig {
   id: string;
   fontSize: 'small' | 'medium' | 'large' | 'xlarge' | string;
@@ -525,6 +540,8 @@ export interface StageConfig {
   showTimer: boolean;
   showNext: boolean;
   highContrast: boolean;
+  /** Custom panel layout; empty or absent means the classic stage layout. */
+  panels?: StagePanel[];
   createdAt: string;
   updatedAt: string;
 }

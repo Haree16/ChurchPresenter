@@ -60,6 +60,7 @@ import {
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
 import { validateLook } from './looks';
+import { validatePanels } from './stageLayouts';
 import { validateProp } from './propLayout';
 import { validateLayout, isEmptyLayout } from './slideLayout';
 import { sectionColor } from './sectionColors';
@@ -3336,12 +3337,29 @@ class MockDataStore {
   }
 
   public async getStageConfig(_id?: string): Promise<StageConfig> {
-    return { ...this.stageConfig };
+    return { ...this.stageConfig, panels: JSON.parse(JSON.stringify(this.stageConfig.panels || [])) };
+  }
+
+  private stageConfigListeners = new Set<(c: StageConfig) => void>();
+
+  public subscribeStageConfig(callback: (c: StageConfig) => void): () => void {
+    this.stageConfigListeners.add(callback);
+    return () => {
+      this.stageConfigListeners.delete(callback);
+    };
   }
 
   public async updateStageConfig(config: StageConfig): Promise<StageConfig> {
-    this.stageConfig = { ...config, updatedAt: new Date().toISOString() };
-    return { ...this.stageConfig };
+    const problem = validatePanels(config.panels);
+    if (problem) throw new Error(problem);
+    this.stageConfig = {
+      ...config,
+      panels: JSON.parse(JSON.stringify(config.panels || [])),
+      updatedAt: new Date().toISOString(),
+    };
+    const saved = { ...this.stageConfig, panels: JSON.parse(JSON.stringify(this.stageConfig.panels || [])) };
+    this.stageConfigListeners.forEach((cb) => cb(saved));
+    return saved;
   }
 
   public async openStageWindow(
@@ -4906,6 +4924,17 @@ export const api = {
       };
     }
     return mockStore.subscribe(callback);
+  },
+
+  /** Called when the stage layout is saved, so an open stage window can refresh itself. */
+  subscribeStageConfig: async (callback: (config: StageConfig) => void): Promise<() => void> => {
+    if (isTauri()) {
+      const unlisten: UnlistenFn = await listen<StageConfig>('stage:config-changed', (event) => callback(event.payload));
+      return () => {
+        unlisten();
+      };
+    }
+    return mockStore.subscribeStageConfig(callback);
   },
 
   // ================= Phase 3: Services & Playlists API =================
