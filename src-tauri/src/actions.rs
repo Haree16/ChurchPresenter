@@ -2,13 +2,7 @@ use crate::db::DbManager;
 use crate::models::PresentationState;
 use crate::presentation::PresentationManager;
 use chrono::Utc;
-use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
-
-// Debounce tracker for rapid duplicate messages (e.g. physical MIDI bouncy switches or network bursts)
-static LAST_ACTION_TIMESTAMP_MS: AtomicI64 = AtomicI64::new(0);
-static LAST_ACTION_NAME: Mutex<Option<String>> = Mutex::new(None);
 
 pub struct ActionDispatcher;
 
@@ -18,20 +12,10 @@ impl ActionDispatcher {
         pres_mgr: &PresentationManager,
         action_name: &str,
     ) -> Result<PresentationState, String> {
-        let now_ms = Utc::now().timestamp_millis();
-        let last_time = LAST_ACTION_TIMESTAMP_MS.load(Ordering::SeqCst);
-
-        // Debounce: prevent same action executed within 80ms
-        {
-            let mut last_name_lock = LAST_ACTION_NAME.lock().unwrap();
-            if let Some(ref prev) = *last_name_lock {
-                if prev == action_name && (now_ms - last_time) < 80 {
-                    return Ok(pres_mgr.get_state());
-                }
-            }
-            *last_name_lock = Some(action_name.to_string());
+        // Debounce: drop the same action repeated within 80ms (bouncy MIDI switches, network bursts)
+        if pres_mgr.is_action_bounce(action_name, Utc::now().timestamp_millis()) {
+            return Ok(pres_mgr.get_state());
         }
-        LAST_ACTION_TIMESTAMP_MS.store(now_ms, Ordering::SeqCst);
 
         let result_state = match action_name {
             "next_slide" => pres_mgr.next_slide_core(db),
@@ -46,6 +30,7 @@ impl ActionDispatcher {
             "clear_media" => pres_mgr.clear_media_core(),
             "clear_alert" => pres_mgr.clear_alert_core(),
             "clear_props" => pres_mgr.clear_props_core(),
+            "stop_auto_advance" => pres_mgr.stop_auto_advance_core(),
             "clear_all" => pres_mgr.clear_all_core(),
             "toggle_logo" => {
                 pres_mgr.toggle_logo_core();
@@ -293,5 +278,16 @@ mod tests {
         pres_mgr.toggle_prop_core(&db, &prop.id).unwrap();
         let res = ActionDispatcher::dispatch_core(&db, &pres_mgr, "clear_props").unwrap();
         assert!(res.active_props.is_empty());
+    }
+
+    #[test]
+    fn test_stop_auto_advance_action() {
+        let db = DbManager::new_in_memory().unwrap();
+        let pres_mgr = PresentationManager::new();
+        pres_mgr.init_pointers(&db);
+        pres_mgr.next_slide_core(&db);
+        pres_mgr.start_auto_advance_core(5, false, 0).unwrap();
+        let res = ActionDispatcher::dispatch_core(&db, &pres_mgr, "stop_auto_advance").unwrap();
+        assert!(res.auto_advance.is_none());
     }
 }

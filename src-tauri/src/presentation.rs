@@ -1,7 +1,24 @@
 use crate::db::DbManager;
-use crate::models::{AudienceAlert, MediaPlaybackState, PresentationState, TimerState};
+use crate::models::{AudienceAlert, AutoAdvanceStatus, MediaPlaybackState, PresentationState, TimerState};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
+
+pub const MIN_AUTO_ADVANCE_SECONDS: u32 = 1;
+pub const MAX_AUTO_ADVANCE_SECONDS: u32 = 3600;
+
+/// What one scheduler tick did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoAdvanceTick {
+    /// Auto-advance is not running.
+    Idle,
+    /// Nothing to do yet (not due, or paused because the output is blank or blacked out).
+    Waiting,
+    Advanced,
+    /// Reached the last slide and went back to the first.
+    Looped,
+    /// Reached the last slide and stopped.
+    Finished,
+}
 
 pub const MAX_ALERT_CHARS: usize = 200;
 pub const DEFAULT_ALERT_SECONDS: u32 = 30;
@@ -20,16 +37,60 @@ pub fn expire_alert(state: &mut PresentationState, now_ms: i64) {
     }
 }
 
+/// Runs one auto-advance run on a background thread until it is stopped, replaced or finished.
+pub fn spawn_auto_advance_loop(app: AppHandle, db: DbManager, pres: PresentationManager, run_id: String) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        if pres.auto_advance_run_id().as_deref() != Some(run_id.as_str()) {
+            break;
+        }
+        let (tick, state) = pres.auto_advance_tick_core(&db, now_ms());
+        if matches!(tick, AutoAdvanceTick::Advanced | AutoAdvanceTick::Looped | AutoAdvanceTick::Finished) {
+            app.emit("presentation:state-changed", &state).ok();
+        }
+        if tick == AutoAdvanceTick::Finished {
+            break;
+        }
+    });
+}
+
+/// Starts auto-advance and the thread that drives it.
+pub fn start_auto_advance_running(
+    app: &AppHandle,
+    db: &DbManager,
+    pres: &PresentationManager,
+    interval_seconds: u32,
+    loop_at_end: bool,
+) -> Result<PresentationState, String> {
+    let state = pres.start_auto_advance(app, interval_seconds, loop_at_end)?;
+    if let Some(run) = &state.auto_advance {
+        spawn_auto_advance_loop(app.clone(), db.clone(), pres.clone(), run.id.clone());
+    }
+    Ok(state)
+}
+
 #[derive(Clone)]
 pub struct PresentationManager {
     state: Arc<Mutex<PresentationState>>,
+    /// The last dispatched action and when, for the repeat filter in `ActionDispatcher`.
+    last_action: Arc<Mutex<(Option<String>, i64)>>,
 }
 
 impl PresentationManager {
     pub fn new() -> Self {
         Self {
             state: Arc::new(Mutex::new(PresentationState::default())),
+            last_action: Arc::new(Mutex::new((None, 0))),
         }
+    }
+
+    /// True when `action` is the same as the previous one and came less than 80 ms after it.
+    /// Records the action either way.
+    pub fn is_action_bounce(&self, action: &str, now_ms: i64) -> bool {
+        let mut last = self.last_action.lock().unwrap();
+        let bounce = last.0.as_deref() == Some(action) && now_ms - last.1 < 80;
+        *last = (Some(action.to_string()), now_ms);
+        bounce
     }
 
     pub fn get_state(&self) -> PresentationState {
@@ -130,6 +191,131 @@ impl PresentationManager {
         let cloned = self.clear_props_core();
         app.emit("presentation:state-changed", &cloned).ok();
         cloned
+    }
+
+    /// Starts advancing the live slide every `interval_seconds`. Something must be live already,
+    /// so starting it can never put a slide on screen by surprise.
+    pub fn start_auto_advance_core(
+        &self,
+        interval_seconds: u32,
+        loop_at_end: bool,
+        now_ms: i64,
+    ) -> Result<PresentationState, String> {
+        if !(MIN_AUTO_ADVANCE_SECONDS..=MAX_AUTO_ADVANCE_SECONDS).contains(&interval_seconds) {
+            return Err(format!(
+                "Interval must be between {} and {} seconds.",
+                MIN_AUTO_ADVANCE_SECONDS, MAX_AUTO_ADVANCE_SECONDS
+            ));
+        }
+        let mut state = self.state.lock().unwrap();
+        if !state.is_live || state.current_slide_id.is_none() {
+            return Err("Take a slide live first; auto-advance continues from the live slide.".to_string());
+        }
+        state.auto_advance = Some(AutoAdvanceStatus {
+            id: uuid::Uuid::new_v4().to_string(),
+            interval_seconds,
+            loop_at_end,
+            next_at_ms: now_ms + i64::from(interval_seconds) * 1000,
+        });
+        Ok(state.clone())
+    }
+
+    pub fn stop_auto_advance_core(&self) -> PresentationState {
+        let mut state = self.state.lock().unwrap();
+        state.auto_advance = None;
+        state.clone()
+    }
+
+    pub fn start_auto_advance(
+        &self,
+        app: &AppHandle,
+        interval_seconds: u32,
+        loop_at_end: bool,
+    ) -> Result<PresentationState, String> {
+        let state = self.start_auto_advance_core(interval_seconds, loop_at_end, now_ms())?;
+        app.emit("presentation:state-changed", &state).ok();
+        Ok(state)
+    }
+
+    pub fn stop_auto_advance(&self, app: &AppHandle) -> PresentationState {
+        let state = self.stop_auto_advance_core();
+        app.emit("presentation:state-changed", &state).ok();
+        state
+    }
+
+    /// The id of the current auto-advance run, so a scheduler thread knows when it was replaced.
+    pub fn auto_advance_run_id(&self) -> Option<String> {
+        self.state.lock().unwrap().auto_advance.as_ref().map(|a| a.id.clone())
+    }
+
+    /// Goes to the first slide of what is live (the current service item, or the presentation).
+    fn go_to_first_slide_core(&self, db: &DbManager) {
+        let mut state = self.state.lock().unwrap();
+        let first = match (&state.current_service_id, &state.current_item_id, &state.current_presentation_id) {
+            (Some(_), Some(item_id), _) => db.get_service_item_slides(item_id).unwrap_or_default().first().map(|s| s.id.clone()),
+            (_, _, Some(pres_id)) => db.get_slides(pres_id).unwrap_or_default().first().map(|s| s.id.clone()),
+            _ => None,
+        };
+        if let Some(id) = first {
+            state.current_slide_id = Some(id);
+            state.is_live = true;
+            state.is_logo = false;
+            self.update_pointers_internal(&mut state, db);
+        }
+    }
+
+    /// One scheduler tick: advance when due. Pauses (pushing the next advance back) while the
+    /// output is blank or blacked out, and stops by itself after the last slide unless looping.
+    pub fn auto_advance_tick_core(&self, db: &DbManager, now_ms: i64) -> (AutoAdvanceTick, PresentationState) {
+        let run = {
+            let mut state = self.state.lock().unwrap();
+            let Some(run) = state.auto_advance.clone() else {
+                return (AutoAdvanceTick::Idle, state.clone());
+            };
+            if now_ms < run.next_at_ms {
+                return (AutoAdvanceTick::Waiting, state.clone());
+            }
+            if !state.is_live || state.is_blackout {
+                if let Some(a) = state.auto_advance.as_mut() {
+                    a.next_at_ms = now_ms + i64::from(a.interval_seconds) * 1000;
+                }
+                return (AutoAdvanceTick::Waiting, state.clone());
+            }
+            run
+        };
+
+        let before = self.state.lock().unwrap().current_slide_id.clone();
+        self.next_slide_core(db);
+        let after = self.state.lock().unwrap().current_slide_id.clone();
+
+        let mut outcome = AutoAdvanceTick::Advanced;
+        if before == after {
+            // there was nothing further to advance to
+            if run.loop_at_end {
+                self.go_to_first_slide_core(db);
+                outcome = AutoAdvanceTick::Looped;
+            } else {
+                outcome = AutoAdvanceTick::Finished;
+            }
+        }
+
+        let mut state = self.state.lock().unwrap();
+        // only touch the run if it is still the same one (it may have been stopped or replaced)
+        match state.auto_advance.as_mut() {
+            Some(a) if a.id == run.id => {
+                if outcome == AutoAdvanceTick::Finished {
+                    state.auto_advance = None;
+                } else {
+                    a.next_at_ms = now_ms + i64::from(run.interval_seconds) * 1000;
+                }
+            }
+            _ => {}
+        }
+        (outcome, state.clone())
+    }
+
+    pub fn set_running_macro_core(&self, running: Option<crate::models::RunningMacro>) {
+        self.state.lock().unwrap().running_macro = running;
     }
 
     pub fn clear_alert_core(&self) -> PresentationState {
@@ -360,6 +546,7 @@ impl PresentationManager {
         state.media_playback = None;
         state.alert = None;
         state.active_props.clear();
+        state.auto_advance = None;
         state.clone()
     }
 
@@ -772,5 +959,173 @@ mod tests {
 
         mgr.send_alert_at("y", Some(0), 0).unwrap();
         assert!(mgr.clear_all_core().alert.is_none());
+    }
+
+    fn live_manager(db: &DbManager) -> PresentationManager {
+        let mgr = PresentationManager::new();
+        mgr.init_pointers(db);
+        mgr.next_slide_core(db); // goes live on a slide of the seeded presentation
+        assert!(mgr.get_state().is_live);
+        mgr
+    }
+
+    #[test]
+    fn test_auto_advance_start_validates_interval_and_needs_a_live_slide() {
+        let db = DbManager::new_in_memory().unwrap();
+        let idle = PresentationManager::new();
+        idle.init_pointers(&db);
+        assert!(idle.start_auto_advance_core(5, false, 0).unwrap_err().contains("live"));
+        assert!(idle.get_state().auto_advance.is_none());
+
+        let mgr = live_manager(&db);
+        for bad in [0, MAX_AUTO_ADVANCE_SECONDS + 1, u32::MAX] {
+            assert!(mgr.start_auto_advance_core(bad, false, 0).unwrap_err().contains("between"), "{bad}");
+        }
+        let st = mgr.start_auto_advance_core(5, true, 1_000).unwrap();
+        let run = st.auto_advance.unwrap();
+        assert_eq!((run.interval_seconds, run.loop_at_end, run.next_at_ms), (5, true, 6_000));
+        assert!(mgr.start_auto_advance_core(MIN_AUTO_ADVANCE_SECONDS, false, 0).is_ok());
+        assert!(mgr.start_auto_advance_core(MAX_AUTO_ADVANCE_SECONDS, false, 0).is_ok());
+    }
+
+    #[test]
+    fn test_starting_again_replaces_the_run_and_stop_clears_it() {
+        let db = DbManager::new_in_memory().unwrap();
+        let mgr = live_manager(&db);
+        let first = mgr.start_auto_advance_core(5, false, 0).unwrap().auto_advance.unwrap();
+        let second = mgr.start_auto_advance_core(9, true, 0).unwrap().auto_advance.unwrap();
+        assert_ne!(first.id, second.id);
+        assert_eq!(mgr.auto_advance_run_id(), Some(second.id));
+        assert!(mgr.stop_auto_advance_core().auto_advance.is_none());
+        assert!(mgr.stop_auto_advance_core().auto_advance.is_none()); // idempotent
+        assert_eq!(mgr.auto_advance_run_id(), None);
+    }
+
+    #[test]
+    fn test_tick_waits_until_due_then_advances_one_slide() {
+        let db = DbManager::new_in_memory().unwrap();
+        let mgr = live_manager(&db);
+        mgr.start_auto_advance_core(10, false, 0).unwrap();
+        let first = mgr.get_state().current_slide_id.clone();
+
+        assert_eq!(mgr.auto_advance_tick_core(&db, 9_999).0, AutoAdvanceTick::Waiting);
+        assert_eq!(mgr.get_state().current_slide_id, first);
+
+        let (tick, st) = mgr.auto_advance_tick_core(&db, 10_000);
+        assert_eq!(tick, AutoAdvanceTick::Advanced);
+        assert_ne!(st.current_slide_id, first);
+        assert_eq!(st.auto_advance.unwrap().next_at_ms, 20_000); // next one a full interval later
+
+        // not due again yet
+        assert_eq!(mgr.auto_advance_tick_core(&db, 15_000).0, AutoAdvanceTick::Waiting);
+    }
+
+    #[test]
+    fn test_tick_without_a_run_is_idle() {
+        let db = DbManager::new_in_memory().unwrap();
+        let mgr = live_manager(&db);
+        assert_eq!(mgr.auto_advance_tick_core(&db, i64::MAX).0, AutoAdvanceTick::Idle);
+    }
+
+    #[test]
+    fn test_it_stops_after_the_last_slide_unless_looping() {
+        let db = DbManager::new_in_memory().unwrap();
+        let mgr = live_manager(&db);
+        let total = mgr.get_state().total_slides;
+        assert!(total >= 2);
+
+        mgr.start_auto_advance_core(1, false, 0).unwrap();
+        let mut now = 1_000;
+        let mut advances = 0;
+        loop {
+            let (tick, _) = mgr.auto_advance_tick_core(&db, now);
+            match tick {
+                AutoAdvanceTick::Advanced => advances += 1,
+                AutoAdvanceTick::Finished => break,
+                other => panic!("unexpected {other:?}"),
+            }
+            now += 1_000;
+            assert!(advances <= total, "never-ending run");
+        }
+        assert!(mgr.get_state().auto_advance.is_none());
+        assert_eq!(mgr.get_state().current_slide_index, total - 1); // stayed on the last slide
+        assert!(mgr.get_state().is_live);
+    }
+
+    #[test]
+    fn test_looping_goes_back_to_the_first_slide() {
+        let db = DbManager::new_in_memory().unwrap();
+        let mgr = live_manager(&db);
+        let total = mgr.get_state().total_slides;
+        mgr.start_auto_advance_core(1, true, 0).unwrap();
+
+        let mut now = 0;
+        let mut saw_loop = false;
+        for _ in 0..(total + 2) {
+            now += 1_000;
+            if mgr.auto_advance_tick_core(&db, now).0 == AutoAdvanceTick::Looped {
+                saw_loop = true;
+                assert_eq!(mgr.get_state().current_slide_index, 0);
+                assert!(mgr.get_state().is_live);
+            }
+        }
+        assert!(saw_loop);
+        assert!(mgr.get_state().auto_advance.is_some(), "a looping run keeps going");
+    }
+
+    #[test]
+    fn test_it_pauses_while_blacked_out_or_cleared_and_resumes_afterwards() {
+        let db = DbManager::new_in_memory().unwrap();
+        let mgr = live_manager(&db);
+        let start = mgr.get_state().current_slide_id.clone();
+        mgr.start_auto_advance_core(10, false, 0).unwrap();
+
+        mgr.toggle_blackout_core();
+        let (tick, st) = mgr.auto_advance_tick_core(&db, 10_000);
+        assert_eq!(tick, AutoAdvanceTick::Waiting);
+        assert_eq!(st.current_slide_id, start); // did not advance behind the blackout
+        assert_eq!(st.auto_advance.unwrap().next_at_ms, 20_000); // pushed back a full interval
+
+        mgr.toggle_blackout_core();
+        assert_eq!(mgr.auto_advance_tick_core(&db, 20_000).0, AutoAdvanceTick::Advanced);
+
+        mgr.clear_live_core();
+        let (tick, _) = mgr.auto_advance_tick_core(&db, 30_000);
+        assert_eq!(tick, AutoAdvanceTick::Waiting);
+    }
+
+    #[test]
+    fn test_clear_all_stops_auto_advance() {
+        let db = DbManager::new_in_memory().unwrap();
+        let mgr = live_manager(&db);
+        mgr.start_auto_advance_core(5, true, 0).unwrap();
+        assert!(mgr.clear_all_core().auto_advance.is_none());
+        assert_eq!(mgr.auto_advance_tick_core(&db, i64::MAX).0, AutoAdvanceTick::Idle);
+    }
+
+    #[test]
+    fn test_a_stale_tick_cannot_revive_or_change_a_replaced_run() {
+        let db = DbManager::new_in_memory().unwrap();
+        let mgr = live_manager(&db);
+        let old = mgr.start_auto_advance_core(1, false, 0).unwrap().auto_advance.unwrap();
+        let newer = mgr.start_auto_advance_core(60, false, 0).unwrap().auto_advance.unwrap();
+        assert_ne!(old.id, newer.id);
+        // the scheduler for the old run notices it was replaced and exits
+        assert_ne!(mgr.auto_advance_run_id().as_deref(), Some(old.id.as_str()));
+        // the new run keeps its own schedule
+        assert_eq!(mgr.get_state().auto_advance.unwrap().next_at_ms, 60_000);
+    }
+
+    #[test]
+    fn test_action_bounce_filter_only_drops_quick_repeats_of_the_same_action() {
+        let mgr = PresentationManager::new();
+        assert!(!mgr.is_action_bounce("next_slide", 1_000)); // first ever
+        assert!(mgr.is_action_bounce("next_slide", 1_050)); // same action, 50 ms later
+        assert!(!mgr.is_action_bounce("next_slide", 1_200)); // 150 ms after the last one
+        assert!(!mgr.is_action_bounce("prev_slide", 1_210)); // a different action is never a bounce
+        assert!(!mgr.is_action_bounce("next_slide", 1_220));
+        // each manager keeps its own history
+        let other = PresentationManager::new();
+        assert!(!other.is_action_bounce("next_slide", 1_221));
     }
 }

@@ -60,7 +60,9 @@ pub fn extract_token(request: &tiny_http::Request, query_params: &HashMap<String
 /// Whether a paired device's permission flags allow `action`. Unknown actions are denied.
 pub fn action_permitted(device: &crate::models::RemoteDevice, action: &str) -> bool {
     match action {
-        "next_slide" | "prev_slide" | "next_item" | "prev_item" | "jump_slide" => device.can_navigate,
+        "next_slide" | "prev_slide" | "next_item" | "prev_item" | "jump_slide" | "stop_auto_advance" => {
+            device.can_navigate
+        }
         "toggle_blackout" | "toggle_logo" | "clear_screen" | "clear_live" | "clear_media" | "clear_all" | "clear_alert" | "clear_props" => {
             device.can_blackout
         }

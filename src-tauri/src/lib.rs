@@ -5,6 +5,7 @@ mod db;
 mod display;
 mod midi;
 mod layout;
+mod macros;
 mod models;
 mod net_guard;
 mod osc;
@@ -142,6 +143,7 @@ pub fn run() {
             app.manage(db_manager);
             app.manage(pres_manager);
             app.manage(RemoteServerManager::new());
+            app.manage(macros::MacroRunner::new());
             app.manage(MidiService::new());
             app.manage(OscService::new());
 
@@ -169,6 +171,14 @@ pub fn run() {
             commands::toggle_logo,
             commands::clear_media,
             commands::send_alert,
+            commands::start_auto_advance,
+            commands::list_macros,
+            commands::create_macro,
+            commands::update_macro,
+            commands::delete_macro,
+            commands::run_macro,
+            commands::stop_macro,
+            commands::stop_auto_advance,
             commands::list_props,
             commands::create_prop,
             commands::update_prop,

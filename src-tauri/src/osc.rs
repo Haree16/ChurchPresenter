@@ -195,6 +195,7 @@ fn osc_path_to_action(path: &str) -> Option<&'static str> {
         "/clear/media" => Some("clear_media"),
         "/alert/clear" => Some("clear_alert"),
         "/clear/props" => Some("clear_props"),
+        "/autoadvance/stop" => Some("stop_auto_advance"),
         "/clear/all" => Some("clear_all"),
         _ => None,
     }

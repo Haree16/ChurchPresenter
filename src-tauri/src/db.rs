@@ -1330,6 +1330,43 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 15: stop-auto-advance in the action registry =================
+        if current_version < 15 {
+            let tx = conn.unchecked_transaction()?;
+            let now = Utc::now().to_rfc3339();
+            tx.execute(
+                "INSERT OR IGNORE INTO action_mappings (id, action_name, display_label, category, keyboard_shortcut, is_enabled, created_at, updated_at)
+                 VALUES ('act-stop-auto-advance', 'stop_auto_advance', 'Stop Auto-Advance', 'presentation', NULL, 1, ?1, ?1);",
+                params![now],
+            )?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (15, ?1);",
+                params![now],
+            )?;
+            tx.commit()?;
+        }
+
+        // ================= Migration 16: macros =================
+        if current_version < 16 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS macros (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    steps TEXT NOT NULL DEFAULT '[]',
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (16, ?1);",
+                params![Utc::now().to_rfc3339()],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -5190,6 +5227,7 @@ impl DbManager {
             song_arrangements,
             props: self.list_props()?,
             slide_templates: self.list_slide_templates()?,
+            macros: self.list_macros()?,
             themes,
             media_assets,
             services,
@@ -5231,6 +5269,7 @@ impl DbManager {
             tx.execute("DELETE FROM song_arrangements;", [])?;
             tx.execute("DELETE FROM props;", [])?;
             tx.execute("DELETE FROM slide_templates;", [])?;
+            tx.execute("DELETE FROM macros;", [])?;
             tx.execute("DELETE FROM song_sections;", [])?;
             tx.execute("DELETE FROM songs;", [])?;
             tx.execute("DELETE FROM themes WHERE is_built_in = 0;", [])?;
@@ -5442,6 +5481,22 @@ impl DbManager {
                 params![
                     st.id, st.name, st.background_color, st.foreground_color, st.font_size, st.text_alignment,
                     st.background_image, layout_to_json(&st.layout), st.sort_order, st.created_at, st.updated_at
+                ],
+            )?;
+        }
+
+        // Restore macros
+        for mac in &backup.macros {
+            tx.execute(
+                "INSERT OR IGNORE INTO macros (id, name, steps, sort_order, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6);",
+                params![
+                    mac.id,
+                    mac.name,
+                    serde_json::to_string(&mac.steps).unwrap_or_else(|_| "[]".to_string()),
+                    mac.sort_order,
+                    mac.created_at,
+                    mac.updated_at
                 ],
             )?;
         }
@@ -6411,7 +6466,8 @@ impl DbManager {
              ('act-clear-media', 'clear_media', 'Clear Media', 'display', 'M', 1, ?1, ?1),
              ('act-clear-all', 'clear_all', 'Clear All (blank output)', 'display', 'C', 1, ?1, ?1),
              ('act-clear-alert', 'clear_alert', 'Clear Audience Alert', 'display', NULL, 1, ?1, ?1),
-             ('act-clear-props', 'clear_props', 'Clear Props', 'display', NULL, 1, ?1, ?1);",
+             ('act-clear-props', 'clear_props', 'Clear Props', 'display', NULL, 1, ?1, ?1),
+             ('act-stop-auto-advance', 'stop_auto_advance', 'Stop Auto-Advance', 'presentation', NULL, 1, ?1, ?1);",
             params![now],
         )?;
         Ok(())
@@ -7628,11 +7684,11 @@ mod tests {
     fn test_action_registry_lists_logo_and_clear_actions_after_migration_and_reset() {
         let db = DbManager::new_in_memory().unwrap();
         let has = |db: &DbManager, name: &str| db.list_action_mappings().unwrap().iter().any(|a| a.action_name == name);
-        for n in ["toggle_logo", "clear_media", "clear_all", "clear_alert", "clear_props"] {
+        for n in ["toggle_logo", "clear_media", "clear_all", "clear_alert", "clear_props", "stop_auto_advance"] {
             assert!(has(&db, n), "{n} missing after migration");
         }
         db.reset_action_mappings_to_default().unwrap();
-        for n in ["toggle_logo", "clear_media", "clear_all", "clear_alert", "clear_props"] {
+        for n in ["toggle_logo", "clear_media", "clear_all", "clear_alert", "clear_props", "stop_auto_advance"] {
             assert!(has(&db, n), "{n} missing after reset");
         }
     }

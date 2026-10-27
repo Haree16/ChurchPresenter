@@ -344,6 +344,83 @@ pub async fn clear_props(
     Ok(pres_mgr.clear_props(&app))
 }
 
+/// Advances the live slide every `interval_seconds` (1-3600), optionally looping. Something must
+/// be live already.
+#[tauri::command]
+pub async fn start_auto_advance(
+    interval_seconds: u32,
+    loop_at_end: bool,
+    db: State<'_, DbManager>,
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    crate::presentation::start_auto_advance_running(&app, &db, &pres_mgr, interval_seconds, loop_at_end)
+}
+
+#[tauri::command]
+pub async fn stop_auto_advance(
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    Ok(pres_mgr.stop_auto_advance(&app))
+}
+
+#[tauri::command]
+pub async fn list_macros(db: State<'_, DbManager>) -> Result<Vec<crate::macros::Macro>, String> {
+    db.list_macros().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_macro(
+    r#macro: crate::macros::Macro,
+    db: State<'_, DbManager>,
+) -> Result<crate::macros::Macro, String> {
+    db.create_macro(&r#macro)
+}
+
+#[tauri::command]
+pub async fn update_macro(
+    r#macro: crate::macros::Macro,
+    db: State<'_, DbManager>,
+) -> Result<crate::macros::Macro, String> {
+    db.update_macro(&r#macro)
+}
+
+#[tauri::command]
+pub async fn delete_macro(id: String, db: State<'_, DbManager>) -> Result<(), String> {
+    db.delete_macro(&id).map_err(|e| e.to_string())
+}
+
+/// Runs a saved macro in the background. Only one macro runs at a time.
+#[tauri::command]
+pub async fn run_macro(
+    id: String,
+    runner: State<'_, crate::macros::MacroRunner>,
+    db: State<'_, DbManager>,
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let m = db
+        .get_macro(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "That macro no longer exists.".to_string())?;
+    runner.run(app, db.inner().clone(), pres_mgr.inner().clone(), m)
+}
+
+/// Stops the running macro before its next step.
+#[tauri::command]
+pub async fn stop_macro(
+    runner: State<'_, crate::macros::MacroRunner>,
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    runner.cancel();
+    pres_mgr.set_running_macro_core(None);
+    let state = pres_mgr.get_state();
+    app.emit("presentation:state-changed", &state).ok();
+    Ok(state)
+}
+
 #[tauri::command]
 pub async fn clear_media(
     pres_mgr: State<'_, PresentationManager>,

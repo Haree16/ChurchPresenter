@@ -53,6 +53,29 @@ pub struct Presentation {
     pub slide_count: i32,
 }
 
+/// Slides advancing by themselves every `interval_seconds`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoAdvanceStatus {
+    pub id: String,
+    pub interval_seconds: u32,
+    /// Go back to the first slide after the last one instead of stopping.
+    pub loop_at_end: bool,
+    /// Unix ms of the next automatic advance.
+    pub next_at_ms: i64,
+}
+
+/// A macro that is currently running (for the progress display).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunningMacro {
+    pub id: String,
+    pub name: String,
+    /// 1-based number of the step being run.
+    pub step: usize,
+    pub total: usize,
+}
+
 /// A short text banner shown over the audience output (e.g. a nursery call).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,6 +118,10 @@ pub struct PresentationState {
     /// Props currently shown over the output (snapshots, so every window can draw them).
     #[serde(default)]
     pub active_props: Vec<crate::props::Prop>,
+    #[serde(default)]
+    pub auto_advance: Option<AutoAdvanceStatus>,
+    #[serde(default)]
+    pub running_macro: Option<RunningMacro>,
 }
 
 impl Default for PresentationState {
@@ -118,6 +145,8 @@ impl Default for PresentationState {
             stage_message: None,
             alert: None,
             active_props: Vec::new(),
+            auto_advance: None,
+            running_macro: None,
         }
     }
 }
@@ -322,6 +351,8 @@ pub struct BackupData {
     pub props: Vec<crate::props::Prop>,
     #[serde(default)]
     pub slide_templates: Vec<crate::templates::SlideTemplate>,
+    #[serde(default)]
+    pub macros: Vec<crate::macros::Macro>,
     #[serde(default)]
     pub themes: Vec<Theme>,
     #[serde(default)]
