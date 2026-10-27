@@ -13,6 +13,7 @@ mod osc;
 mod overlay;
 mod presentation;
 mod props;
+mod stage_layout;
 mod templates;
 mod theme_io;
 mod remote;

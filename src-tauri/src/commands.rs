@@ -1299,6 +1299,7 @@ pub async fn update_stage_config(
     config: StageConfig,
     db: State<'_, DbManager>,
 ) -> Result<StageConfig, String> {
+    crate::stage_layout::validate_panels(&config.panels)?;
     db.update_stage_config(&config).map_err(|e| e.to_string())
 }
 

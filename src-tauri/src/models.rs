@@ -581,6 +581,9 @@ pub struct StageConfig {
     pub show_timer: bool,
     pub show_next: bool,
     pub high_contrast: bool,
+    /// Custom panel layout; empty means the classic stage layout.
+    #[serde(default)]
+    pub panels: Vec<crate::stage_layout::StagePanel>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -595,6 +598,7 @@ impl Default for StageConfig {
             show_timer: true,
             show_next: true,
             high_contrast: true,
+            panels: Vec::new(),
             created_at: now.clone(),
             updated_at: now,
         }

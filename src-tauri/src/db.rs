@@ -7,6 +7,7 @@ use crate::models::{
     Timer, WorkspaceState,
 };
 use crate::layout::{layout_from_json, layout_to_json};
+use crate::stage_layout::{panels_from_json, panels_to_json};
 use chrono::Utc;
 use rusqlite::{params, Connection, Result};
 use std::collections::HashMap;
@@ -1385,6 +1386,17 @@ impl DbManager {
             )?;
             tx.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (17, ?1);",
+                params![Utc::now().to_rfc3339()],
+            )?;
+            tx.commit()?;
+        }
+
+        // ================= Migration 18: stage display panel layout =================
+        if current_version < 18 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute("ALTER TABLE stage_configs ADD COLUMN panels TEXT;", [])?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (18, ?1);",
                 params![Utc::now().to_rfc3339()],
             )?;
             tx.commit()?;
@@ -3085,7 +3097,7 @@ impl DbManager {
     pub fn get_stage_config(&self, id: &str) -> Result<StageConfig> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, font_size, show_notes, show_timer, show_next, high_contrast, created_at, updated_at
+            "SELECT id, font_size, show_notes, show_timer, show_next, high_contrast, created_at, updated_at, panels
              FROM stage_configs
              WHERE id = ?1;",
         )?;
@@ -3098,6 +3110,7 @@ impl DbManager {
                 show_timer: row.get::<_, i32>(3)? != 0,
                 show_next: row.get::<_, i32>(4)? != 0,
                 high_contrast: row.get::<_, i32>(5)? != 0,
+                panels: panels_from_json(row.get(8)?),
                 created_at: row.get(6)?,
                 updated_at: row.get(7)?,
             })
@@ -3115,14 +3128,15 @@ impl DbManager {
         let now = Utc::now().to_rfc3339();
 
         conn.execute(
-            "INSERT INTO stage_configs (id, font_size, show_notes, show_timer, show_next, high_contrast, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "INSERT INTO stage_configs (id, font_size, show_notes, show_timer, show_next, high_contrast, created_at, updated_at, panels)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT(id) DO UPDATE SET
                 font_size = excluded.font_size,
                 show_notes = excluded.show_notes,
                 show_timer = excluded.show_timer,
                 show_next = excluded.show_next,
                 high_contrast = excluded.high_contrast,
+                panels = excluded.panels,
                 updated_at = excluded.updated_at;",
             params![
                 config.id,
@@ -3132,7 +3146,8 @@ impl DbManager {
                 if config.show_next { 1 } else { 0 },
                 if config.high_contrast { 1 } else { 0 },
                 now,
-                now
+                now,
+                panels_to_json(&config.panels)
             ],
         )?;
 
@@ -3143,6 +3158,7 @@ impl DbManager {
             show_timer: config.show_timer,
             show_next: config.show_next,
             high_contrast: config.high_contrast,
+            panels: config.panels.clone(),
             created_at: config.created_at.clone(),
             updated_at: now,
         })
@@ -3151,7 +3167,7 @@ impl DbManager {
     pub fn list_stage_configs(&self) -> Result<Vec<StageConfig>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, font_size, show_notes, show_timer, show_next, high_contrast, created_at, updated_at
+            "SELECT id, font_size, show_notes, show_timer, show_next, high_contrast, created_at, updated_at, panels
              FROM stage_configs
              ORDER BY id ASC;",
         )?;
@@ -3164,6 +3180,7 @@ impl DbManager {
                 show_timer: row.get::<_, i32>(3)? != 0,
                 show_next: row.get::<_, i32>(4)? != 0,
                 high_contrast: row.get::<_, i32>(5)? != 0,
+                panels: panels_from_json(row.get(8)?),
                 created_at: row.get(6)?,
                 updated_at: row.get(7)?,
             })
@@ -5707,14 +5724,15 @@ impl DbManager {
         // Restore stage configs
         for sc in &backup.stage_configs {
             tx.execute(
-                "INSERT INTO stage_configs (id, font_size, show_notes, show_timer, show_next, high_contrast, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                "INSERT INTO stage_configs (id, font_size, show_notes, show_timer, show_next, high_contrast, created_at, updated_at, panels)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                  ON CONFLICT(id) DO UPDATE SET
                     font_size = excluded.font_size,
                     show_notes = excluded.show_notes,
                     show_timer = excluded.show_timer,
                     show_next = excluded.show_next,
                     high_contrast = excluded.high_contrast,
+                    panels = excluded.panels,
                     updated_at = excluded.updated_at;",
                 params![
                     sc.id,
@@ -5724,7 +5742,8 @@ impl DbManager {
                     if sc.show_next { 1 } else { 0 },
                     if sc.high_contrast { 1 } else { 0 },
                     sc.created_at,
-                    sc.updated_at
+                    sc.updated_at,
+                    panels_to_json(&sc.panels)
                 ],
             )?;
         }
@@ -8060,6 +8079,61 @@ mod tests {
         let old: crate::models::BackupData = serde_json::from_value(value).unwrap();
         assert!(old.slides.iter().all(|s| s.layout.is_none()));
         db.import_backup(&old, "overwrite").unwrap();
+    }
+
+    fn sample_panels() -> Vec<crate::stage_layout::StagePanel> {
+        use crate::stage_layout::StagePanel;
+        vec![
+            StagePanel { id: "c".into(), kind: "current".into(), x: 2.0, y: 12.0, w: 60.0, h: 70.0, font_size_pct: Some(8.0) },
+            StagePanel { id: "n".into(), kind: "next".into(), x: 64.0, y: 12.0, w: 34.0, h: 40.0, font_size_pct: None },
+            StagePanel { id: "t".into(), kind: "clock".into(), x: 80.0, y: 2.0, w: 18.0, h: 8.0, font_size_pct: None },
+        ]
+    }
+
+    #[test]
+    fn test_stage_layout_round_trips_and_classic_stays_the_default() {
+        let db = DbManager::new_in_memory().unwrap();
+        let cfg = db.get_stage_config("default-stage").unwrap();
+        assert!(cfg.panels.is_empty()); // classic layout until one is designed
+
+        let saved = db.update_stage_config(&StageConfig { panels: sample_panels(), ..cfg.clone() }).unwrap();
+        assert_eq!(saved.panels.len(), 3);
+        let back = db.get_stage_config("default-stage").unwrap();
+        assert_eq!(back.panels, sample_panels()); // order and values kept
+        assert_eq!(db.list_stage_configs().unwrap().iter().find(|c| c.id == "default-stage").unwrap().panels.len(), 3);
+
+        // clearing goes back to the classic layout
+        db.update_stage_config(&StageConfig { panels: vec![], ..cfg }).unwrap();
+        assert!(db.get_stage_config("default-stage").unwrap().panels.is_empty());
+    }
+
+    #[test]
+    fn test_a_damaged_stage_layout_in_the_database_falls_back_to_classic() {
+        let db = DbManager::new_in_memory().unwrap();
+        let cfg = db.get_stage_config("default-stage").unwrap();
+        db.update_stage_config(&StageConfig { panels: sample_panels(), ..cfg }).unwrap();
+        db.conn.lock().unwrap().execute("UPDATE stage_configs SET panels = 'garbage' WHERE id = 'default-stage';", []).unwrap();
+        assert!(db.get_stage_config("default-stage").unwrap().panels.is_empty());
+    }
+
+    #[test]
+    fn test_stage_layout_survives_backup_restore_and_old_backups_load() {
+        let db = DbManager::new_in_memory().unwrap();
+        let cfg = db.get_stage_config("default-stage").unwrap();
+        db.update_stage_config(&StageConfig { panels: sample_panels(), high_contrast: false, ..cfg }).unwrap();
+        let backup = db.export_backup().unwrap();
+        assert_eq!(backup.stage_configs.iter().find(|c| c.id == "default-stage").unwrap().panels.len(), 3);
+
+        db.update_stage_config(&StageConfig { panels: vec![], ..db.get_stage_config("default-stage").unwrap() }).unwrap();
+        db.import_backup(&backup, "overwrite").unwrap();
+        assert_eq!(db.get_stage_config("default-stage").unwrap().panels, sample_panels());
+
+        let mut value = serde_json::to_value(&backup).unwrap();
+        for c in value["stageConfigs"].as_array_mut().unwrap() {
+            c.as_object_mut().unwrap().remove("panels");
+        }
+        let old: crate::models::BackupData = serde_json::from_value(value).unwrap();
+        assert!(old.stage_configs.iter().all(|c| c.panels.is_empty()));
     }
 }
 
