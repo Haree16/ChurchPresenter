@@ -1525,15 +1525,7 @@ pub async fn import_presentation_document(
         return Err(format!("File not found: {}", file_path));
     }
 
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
-    if ext != "pdf" && ext != "pptx" && ext != "ppt" {
-        return Err("Only PDF and PPTX presentation files are supported.".to_string());
-    }
+    let ext = presentation_extension(path)?;
 
     let app_data_dir = app
         .path()
@@ -1608,26 +1600,14 @@ pub async fn import_presentation_document(
         ])
         .status();
 
-    let mut slide_images: Vec<std::path::PathBuf> = Vec::new();
-
-    if let Ok(st) = ppm_status {
-        if st.success() {
-            if let Ok(entries) = std::fs::read_dir(&slides_dir) {
-                for entry in entries.flatten() {
-                    let p = entry.path();
-                    if p.extension().and_then(|e| e.to_str()) == Some("png") {
-                        slide_images.push(p);
-                    }
-                }
-            }
-        }
-    }
+    let slide_images = match ppm_status {
+        Ok(st) if st.success() => collect_slide_images(&slides_dir),
+        _ => Vec::new(),
+    };
 
     if slide_images.is_empty() {
         return Err("Failed to extract presentation slides with pdftoppm. Please ensure pdftoppm is installed.".to_string());
     }
-
-    slide_images.sort();
 
     let pres_title = title.unwrap_or_else(|| {
         path.file_stem()
@@ -1641,27 +1621,7 @@ pub async fn import_presentation_document(
         .map_err(|e| e.to_string())?;
 
     for (idx, img_path) in slide_images.iter().enumerate() {
-        let slide = Slide {
-            id: Uuid::new_v4().to_string(),
-            presentation_id: presentation.id.clone(),
-            sort_order: idx as i32,
-            title: format!("Slide {}", idx + 1),
-            body: String::new(),
-            background_color: "#000000".to_string(),
-            foreground_color: "#ffffff".to_string(),
-            font_size: "medium".to_string(),
-            text_alignment: "center".to_string(),
-            theme_override: None,
-            background_image: Some(img_path.to_string_lossy().to_string()),
-            overlay_color: None,
-            line_spacing: Some(1.35),
-            text_shadow: None,
-            vertical_alignment: Some("center".to_string()),
-            font_family: None,
-            font_weight: None,
-            created_at: Utc::now().to_rfc3339(),
-            updated_at: Utc::now().to_rfc3339(),
-        };
+        let slide = image_slide(&presentation.id, img_path, idx);
         let _ = db.create_slide(&slide);
     }
 
@@ -1675,3 +1635,123 @@ pub async fn import_presentation_document(
 
 
 
+
+/// Validates the file extension of an importable presentation and returns it lowercased.
+fn presentation_extension(path: &std::path::Path) -> Result<String, String> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    if ext != "pdf" && ext != "pptx" && ext != "ppt" {
+        return Err("Only PDF and PPTX presentation files are supported.".to_string());
+    }
+    Ok(ext)
+}
+
+/// Lists the PNG pages `pdftoppm` wrote into `dir`, in page order.
+fn collect_slide_images(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut images: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("png"))
+                .collect()
+        })
+        .unwrap_or_default();
+    images.sort();
+    images
+}
+
+/// Builds a full-bleed image slide for page `idx` (0-based) of an imported presentation.
+fn image_slide(presentation_id: &str, img_path: &std::path::Path, idx: usize) -> Slide {
+    Slide {
+        id: Uuid::new_v4().to_string(),
+        presentation_id: presentation_id.to_string(),
+        sort_order: idx as i32,
+        title: format!("Slide {}", idx + 1),
+        body: String::new(),
+        background_color: "#000000".to_string(),
+        foreground_color: "#ffffff".to_string(),
+        font_size: "medium".to_string(),
+        text_alignment: "center".to_string(),
+        theme_override: None,
+        background_image: Some(img_path.to_string_lossy().to_string()),
+        overlay_color: None,
+        line_spacing: Some(1.35),
+        text_shadow: None,
+        vertical_alignment: Some("center".to_string()),
+        font_family: None,
+        font_weight: None,
+        created_at: Utc::now().to_rfc3339(),
+        updated_at: Utc::now().to_rfc3339(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn accepts_pdf_and_powerpoint_extensions_case_insensitively() {
+        assert_eq!(presentation_extension(Path::new("a.pdf")).unwrap(), "pdf");
+        assert_eq!(presentation_extension(Path::new("a.PPTX")).unwrap(), "pptx");
+        assert_eq!(presentation_extension(Path::new("/x/y/deck.Ppt")).unwrap(), "ppt");
+    }
+
+    #[test]
+    fn rejects_other_or_missing_extensions() {
+        for p in ["a.docx", "a.odp", "a", "a.pdf.exe", ".pdf", "archive.zip"] {
+            assert!(presentation_extension(Path::new(p)).is_err(), "{p} should be rejected");
+        }
+    }
+
+    #[test]
+    fn collects_only_png_pages_in_order() {
+        let dir = std::env::temp_dir().join(format!("cp-slides-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["slide-03.png", "slide-01.png", "slide-02.png", "notes.txt", "slide-04.jpg"] {
+            std::fs::write(dir.join(name), b"x").unwrap();
+        }
+
+        let names: Vec<String> = collect_slide_images(&dir)
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(names, vec!["slide-01.png", "slide-02.png", "slide-03.png"]);
+    }
+
+    #[test]
+    fn missing_directory_yields_no_images() {
+        let dir = std::env::temp_dir().join(format!("cp-missing-{}", Uuid::new_v4()));
+        assert!(collect_slide_images(&dir).is_empty());
+    }
+
+    #[test]
+    fn image_slide_is_one_based_titled_and_zero_based_ordered() {
+        let slide = image_slide("pres-1", Path::new("/tmp/slide-02.png"), 1);
+        assert_eq!(slide.presentation_id, "pres-1");
+        assert_eq!(slide.title, "Slide 2");
+        assert_eq!(slide.sort_order, 1);
+        assert_eq!(slide.background_image.as_deref(), Some("/tmp/slide-02.png"));
+        assert!(slide.body.is_empty());
+    }
+
+    #[test]
+    fn imported_slides_persist_in_database_order() {
+        let db = DbManager::new_in_memory().unwrap();
+        let pres = db.create_presentation("Deck", "presentation", None).unwrap();
+        for i in 0..3 {
+            let img = format!("/tmp/slide-{}.png", i + 1);
+            db.create_slide(&image_slide(&pres.id, Path::new(&img), i)).unwrap();
+        }
+        let slides = db.get_slides(&pres.id).unwrap();
+        let titles: Vec<&str> = slides.iter().map(|s| s.title.as_str()).collect();
+        assert_eq!(titles, vec!["Slide 1", "Slide 2", "Slide 3"]);
+    }
+}

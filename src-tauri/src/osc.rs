@@ -165,30 +165,77 @@ impl OscService {
             updated_at: "".to_string(),
         });
 
-        let allowed_actions: Vec<&str> = osc_cfg
-            .allowlist_actions
-            .split(',')
-            .map(|s| s.trim())
-            .collect();
-
-        let action_to_dispatch = match path {
-            "/slide/next" => Some("next_slide"),
-            "/slide/prev" | "/slide/previous" => Some("prev_slide"),
-            "/item/next" => Some("next_item"),
-            "/item/prev" | "/item/previous" => Some("prev_item"),
-            "/presentation/blackout" | "/blackout" => Some("toggle_blackout"),
-            "/presentation/live" | "/live" => Some("toggle_live"),
-            "/timer/start" => Some("start_timer"),
-            "/timer/stop" | "/timer/pause" => Some("stop_timer"),
-            "/timer/reset" => Some("reset_timer"),
-            "/overlay/clear" => Some("clear_overlay"),
-            _ => None,
-        };
-
-        if let Some(action) = action_to_dispatch {
-            if allowed_actions.contains(&action) {
+        if let Some(action) = osc_path_to_action(path) {
+            if is_action_allowed(&osc_cfg.allowlist_actions, action) {
                 let _ = ActionDispatcher::dispatch(app, db, pres_mgr, action);
             }
+        }
+    }
+}
+
+/// Maps an OSC address pattern to the action it triggers, if any.
+fn osc_path_to_action(path: &str) -> Option<&'static str> {
+    match path {
+        "/slide/next" => Some("next_slide"),
+        "/slide/prev" | "/slide/previous" => Some("prev_slide"),
+        "/item/next" => Some("next_item"),
+        "/item/prev" | "/item/previous" => Some("prev_item"),
+        "/presentation/blackout" | "/blackout" => Some("toggle_blackout"),
+        "/presentation/live" | "/live" => Some("toggle_live"),
+        "/timer/start" => Some("start_timer"),
+        "/timer/stop" | "/timer/pause" => Some("stop_timer"),
+        "/timer/reset" => Some("reset_timer"),
+        "/overlay/clear" => Some("clear_overlay"),
+        _ => None,
+    }
+}
+
+/// True when `action` appears in the comma-separated allowlist.
+fn is_action_allowed(allowlist: &str, action: &str) -> bool {
+    allowlist.split(',').map(|s| s.trim()).any(|a| a == action)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_known_paths_and_aliases() {
+        assert_eq!(osc_path_to_action("/slide/next"), Some("next_slide"));
+        assert_eq!(osc_path_to_action("/slide/prev"), Some("prev_slide"));
+        assert_eq!(osc_path_to_action("/slide/previous"), Some("prev_slide"));
+        assert_eq!(osc_path_to_action("/blackout"), Some("toggle_blackout"));
+        assert_eq!(osc_path_to_action("/presentation/blackout"), Some("toggle_blackout"));
+        assert_eq!(osc_path_to_action("/live"), Some("toggle_live"));
+        assert_eq!(osc_path_to_action("/timer/pause"), Some("stop_timer"));
+        assert_eq!(osc_path_to_action("/overlay/clear"), Some("clear_overlay"));
+    }
+
+    #[test]
+    fn unknown_or_malformed_paths_map_to_nothing() {
+        for p in ["", "/", "/slide", "/slide/next/", "/SLIDE/NEXT", "slide/next", "/app/quit"] {
+            assert_eq!(osc_path_to_action(p), None, "{p:?} must not map");
+        }
+    }
+
+    #[test]
+    fn allowlist_matches_exact_names_and_trims_whitespace() {
+        let list = "next_slide, prev_slide ,toggle_blackout";
+        assert!(is_action_allowed(list, "next_slide"));
+        assert!(is_action_allowed(list, "prev_slide"));
+        assert!(is_action_allowed(list, "toggle_blackout"));
+        assert!(!is_action_allowed(list, "toggle_live"));
+        // substring of an allowed name must not match
+        assert!(!is_action_allowed(list, "next"));
+        assert!(!is_action_allowed("", "next_slide"));
+    }
+
+    #[test]
+    fn every_mapped_action_is_in_the_default_allowlist_or_deliberately_excluded() {
+        let default = "next_slide,prev_slide,next_item,prev_item,toggle_blackout,toggle_live,start_timer,stop_timer,reset_timer,clear_overlay";
+        for p in ["/slide/next", "/slide/prev", "/item/next", "/item/prev", "/blackout", "/live", "/timer/start", "/timer/stop", "/timer/reset", "/overlay/clear"] {
+            let action = osc_path_to_action(p).unwrap();
+            assert!(is_action_allowed(default, action), "{action} missing from default allowlist");
         }
     }
 }

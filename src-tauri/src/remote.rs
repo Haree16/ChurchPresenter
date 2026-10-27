@@ -56,6 +56,17 @@ pub fn extract_token(request: &tiny_http::Request, query_params: &HashMap<String
     query_params.get("token").cloned().unwrap_or_default()
 }
 
+/// Whether a paired device's permission flags allow `action`. Unknown actions are denied.
+pub fn action_permitted(device: &crate::models::RemoteDevice, action: &str) -> bool {
+    match action {
+        "next_slide" | "prev_slide" | "next_item" | "prev_item" | "jump_slide" => device.can_navigate,
+        "toggle_blackout" | "toggle_logo" | "clear_screen" | "clear_live" => device.can_blackout,
+        "toggle_live" => device.can_take_live,
+        "start_timer" | "stop_timer" | "reset_timer" => device.can_control_timer,
+        _ => false,
+    }
+}
+
 pub fn is_ip_locked_out(failed_map: &HashMap<String, (u32, Instant)>, ip: &str) -> bool {
     if let Some((count, last_time)) = failed_map.get(ip) {
         if *count >= 5 && Instant::now().duration_since(*last_time) < Duration::from_secs(600) {
@@ -518,13 +529,7 @@ impl RemoteServerManager {
                                             let json_val: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
                                             let action = json_val.get("action").and_then(|v| v.as_str()).unwrap_or("");
 
-                                            let is_permitted = match action {
-                                                "next_slide" | "prev_slide" | "next_item" | "prev_item" | "jump_slide" => device.can_navigate,
-                                                "toggle_blackout" | "toggle_logo" | "clear_screen" | "clear_live" => device.can_blackout,
-                                                "toggle_live" => device.can_take_live,
-                                                "start_timer" | "stop_timer" | "reset_timer" => device.can_control_timer,
-                                                _ => false,
-                                            };
+                                            let is_permitted = action_permitted(&device, action);
 
                                             if !is_permitted {
                                                 let resp = Response::from_string("{\"error\":\"Action not permitted for this remote device\"}")
@@ -1080,6 +1085,59 @@ impl RemoteServerManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn device(nav: bool, black: bool, live: bool, timer: bool) -> crate::models::RemoteDevice {
+        crate::models::RemoteDevice {
+            id: "d1".into(),
+            device_name: "Phone".into(),
+            ip_address: "192.168.1.5".into(),
+            token_hash: String::new(),
+            is_approved: true,
+            can_navigate: nav,
+            can_blackout: black,
+            can_take_live: live,
+            can_control_timer: timer,
+            paired_at: String::new(),
+            last_seen_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_action_permissions_follow_device_flags() {
+        let nav_only = device(true, false, false, false);
+        for a in ["next_slide", "prev_slide", "next_item", "prev_item", "jump_slide"] {
+            assert!(action_permitted(&nav_only, a), "{a}");
+        }
+        for a in ["toggle_blackout", "toggle_logo", "clear_screen", "clear_live", "toggle_live", "start_timer"] {
+            assert!(!action_permitted(&nav_only, a), "{a}");
+        }
+
+        let black_only = device(false, true, false, false);
+        for a in ["toggle_blackout", "toggle_logo", "clear_screen", "clear_live"] {
+            assert!(action_permitted(&black_only, a), "{a}");
+        }
+        assert!(!action_permitted(&black_only, "next_slide"));
+
+        assert!(action_permitted(&device(false, false, true, false), "toggle_live"));
+        let timer = device(false, false, false, true);
+        for a in ["start_timer", "stop_timer", "reset_timer"] {
+            assert!(action_permitted(&timer, a), "{a}");
+        }
+    }
+
+    #[test]
+    fn test_unknown_actions_are_denied_even_with_all_permissions() {
+        let all = device(true, true, true, true);
+        for a in ["", "quit", "delete_song", "NEXT_SLIDE", "next_slide ", "clear_overlay"] {
+            assert!(!action_permitted(&all, a), "{a:?} must be denied");
+        }
+    }
+
+    #[test]
+    fn test_local_ips_never_empty() {
+        let ips = RemoteServerManager::get_local_ips();
+        assert!(!ips.is_empty());
+    }
 
     #[test]
     fn test_secure_pin_format() {

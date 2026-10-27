@@ -37,7 +37,7 @@ Status as of 2026-10-27, after the Phase 0-6 commit plus uncommitted work.
 | 12 | Stream Deck, mobile app, HTTPS remote | E/F |
 | 13 | Auto-updater | E |
 | 14 | Multi-screen edge blending | F |
-| 15 | Test depth: Rust tests are ~20, 13 in `db.rs`; none in `commands.rs`, `lib.rs`, `osc.rs` | A |
+| 15 | Test depth: Rust tests: 36, mostly `db.rs`; server/UDP loops and command wrappers untested | A |
 | 16 | Security: remote and OSC bind `0.0.0.0`; no TLS; OSC has no auth | A |
 | 17 | `db.rs` and `api.ts` size | ongoing |
 
@@ -45,7 +45,7 @@ Status as of 2026-10-27, after the Phase 0-6 commit plus uncommitted work.
 
 ### A. Finish and harden what exists
 1. ~~Verify build + tests, commit pending work.~~ Done.
-2. Tests for `commands.rs`, `remote.rs`, `osc.rs`. *Pending.*
+2. ~~Tests for `commands.rs`, `remote.rs`, `osc.rs`.~~ Done for the pure logic (OSC mapping/allowlist, remote permissions, presentation-import helpers). The HTTP server loop, UDP loop and Tauri command wrappers need a running `AppHandle` and are still untested; an integration harness would cover them.
 3. Remote/OSC: ~~LAN-only source filtering~~ (done, `net_guard.rs`); LAN-only warning in UI, configurable bind address. *Pending.*
 4. Clear-layer model: ~~logo~~ (done: `L` key, header button, `toggle_logo` action, cleared when a slide goes live; uses `public/logo.png`); clear media / props / all as independent states, Settings override for the logo image. *Pending.*
 *Done when:* CI is green; clear, black and logo work independently.
