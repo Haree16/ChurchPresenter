@@ -675,6 +675,7 @@ impl RemoteServerManager {
     main { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 16px; max-width: 600px; margin: 0 auto; width: 100%; }
     .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; }
     .card-title { font-size: 13px; text-transform: uppercase; color: #94a3b8; font-weight: 600; margin-bottom: 8px; }
+    .group-tag { padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 6px; }
     .slide-body { font-size: 18px; line-height: 1.5; white-space: pre-wrap; font-weight: 500; min-height: 80px; }
     .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     button { background: #3b82f6; color: white; border: none; border-radius: 10px; padding: 18px 12px; font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; touch-action: manipulation; }
@@ -724,11 +725,13 @@ impl RemoteServerManager {
     <div id="view-controls" style="display: none; flex-direction: column; gap: 16px;">
       <div class="card">
         <div class="card-title">Live Slide (<span id="slide-index">0/0</span>)</div>
+        <div id="live-group" class="group-tag" style="display: none;"></div>
         <div id="live-body" class="slide-body">No slide live</div>
       </div>
 
       <div class="card" style="opacity: 0.85;">
         <div class="card-title">Up Next</div>
+        <div id="next-group" class="group-tag" style="display: none;"></div>
         <div id="next-body" style="font-size: 15px; color: #cbd5e1; white-space: pre-wrap;">(End of presentation)</div>
       </div>
 
@@ -772,6 +775,19 @@ impl RemoteServerManager {
     document.getElementById('dev-name-input').value = devName;
     let sseActive = false;
 
+    // Shows the song group (Verse 1, Chorus...) of a slide as a coloured tag.
+    function setGroupTag(id, slide) {
+      const el = document.getElementById(id);
+      const ok = slide && slide.groupLabel && /^#[0-9a-fA-F]{6}$/.test(slide.groupColor || '');
+      if (!ok) { el.style.display = 'none'; return; }
+      const n = parseInt(slide.groupColor.slice(1), 16);
+      const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+      el.innerText = slide.groupLabel;
+      el.style.backgroundColor = slide.groupColor;
+      el.style.color = lum > 0.6 ? '#0b1020' : '#ffffff';
+      el.style.display = 'inline-block';
+    }
+
     function showView(name) {
       document.getElementById('view-pairing').style.display = name === 'pairing' ? 'block' : 'none';
       document.getElementById('view-pending').style.display = name === 'pending' ? 'block' : 'none';
@@ -793,6 +809,9 @@ impl RemoteServerManager {
 
       document.getElementById('badge-blackout').style.display = data.isBlackout ? 'inline-block' : 'none';
       document.getElementById('slide-index').innerText = `${(data.currentSlideIndex || 0) + 1}/${data.totalSlides || 0}`;
+
+      setGroupTag('live-group', data.currentSlide);
+      setGroupTag('next-group', data.nextSlide);
 
       if (data.currentSlide) {
         document.getElementById('live-body').innerText = data.currentSlide.body || data.currentSlide.title || '';
@@ -1193,5 +1212,20 @@ mod tests {
         // In unit test without request headers, falls back to query param
         let found = query.get("token").cloned().unwrap_or_default();
         assert_eq!(found, "abc-123");
+    }
+
+    #[test]
+    fn test_remote_page_has_group_tag_elements_and_validates_colours() {
+        let html = RemoteServerManager::get_remote_html();
+        for needle in ["id=\"live-group\"", "id=\"next-group\"", "function setGroupTag", "setGroupTag('live-group', data.currentSlide)", "setGroupTag('next-group', data.nextSlide)"] {
+            assert!(html.contains(needle), "remote page is missing {needle}");
+        }
+        // only real hex colours may reach the style attribute
+        assert!(html.contains("/^#[0-9a-fA-F]{6}$/.test(slide.groupColor"));
+        // tag text is written with innerText, not innerHTML
+        assert!(html.contains("el.innerText = slide.groupLabel"));
+        let start = html.find("function setGroupTag").unwrap();
+        let tag_fn = &html[start..start + html[start..].find("\n    }\n").unwrap()];
+        assert!(!tag_fn.contains("innerHTML"));
     }
 }

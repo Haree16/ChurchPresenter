@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { GroupTag } from './GroupTag';
 import {
   ChevronLeft,
   ChevronRight,
@@ -94,16 +95,19 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
           Output & Controls
         </div>
         {totalSlides > 0 && isLive && (
-          <span
-            style={{
-              fontSize: '11px',
-              color: '#94a3b8',
-              backgroundColor: '#1e293b',
-              padding: '2px 8px',
-              borderRadius: '10px',
-            }}
-          >
-            Slide {currentSlideIndex + 1} of {totalSlides}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <GroupTag slide={currentSlide} />
+            <span
+              style={{
+                fontSize: '11px',
+                color: '#94a3b8',
+                backgroundColor: '#1e293b',
+                padding: '2px 8px',
+                borderRadius: '10px',
+              }}
+            >
+              Slide {currentSlideIndex + 1} of {totalSlides}
+            </span>
           </span>
         )}
       </div>

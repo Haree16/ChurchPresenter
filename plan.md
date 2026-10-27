@@ -55,11 +55,11 @@ Status as of 2026-10-27, after the Phase 0-6 commit plus uncommitted work.
 Done:
 - Bible: Rust importers for USFM, OSIS, Zefania and JSON (correct book numbers, multi-line verses, footnote stripping); file picker + paste import; re-importing a book replaces it; translation list comes from the database; FTS5 keyword search (ASCII; Tamil falls back to LIKE); book-name normalisation (`1John`, `Jn.`, `First John`); a 31k-verse import and search test (<0.4s in memory).
 - Slide cards: slides generated from songs (presentation or service) carry their group label + colour (migration 9) and the slide grid shows a coloured tag; survives duplicate and backup/restore. Slides already in existing services have no tag until the song is re-added.
+- Group tag also shows in the preview panel, stage display (current + next) and the phone remote page.
+- Song export/import/duplicate keep arrangements and colours (JSON); OpenLyrics gets the default arrangement as `<verseOrder>` (colours have no OpenLyrics equivalent); OpenLyrics import now keeps line breaks.
 - Songs: per-section group colours (type default + custom override); named arrangements with repeats, a default per song, used by "add to service" and the slide generator; included in backup/restore.
 
 Not done:
-- Group tag is only in the operator slide grid, not in the preview panel, remote page or stage view.
-- Song export (JSON/OpenLyrics) does not include arrangements or colours.
 - Two translations side by side existed already; no layout work was done on it.
 - Bible autocomplete suggestions still come from a short hard-coded passage list (reference parsing itself accepts any book).
 - Real-world import not yet tried against a full public-domain USFM/Zefania file.

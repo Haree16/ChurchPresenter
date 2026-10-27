@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { GroupTag } from '../GroupTag';
 import { PresentationState, StageConfig, TimerState } from '../../types';
 import { api } from '../../services/api';
 
@@ -329,6 +330,7 @@ export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
             >
               ● CURRENT SLIDE (AUDIENCE IS SEEING)
             </span>
+            <GroupTag slide={currentSlide} size="lg" />
             {currentSlide?.title && (
               <span style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 600 }}>
                 {currentSlide.title}
@@ -396,6 +398,7 @@ export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
               >
                 NEXT SLIDE (COMING UP)
               </span>
+              <GroupTag slide={nextSlide} size="lg" />
               {nextSlide?.title && (
                 <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 600 }}>
                   {nextSlide.title}
