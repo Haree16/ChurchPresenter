@@ -33,6 +33,9 @@ pub struct Slide {
     /// Hex colour of that group.
     #[serde(default)]
     pub group_color: Option<String>,
+    /// Safe margin and text outline; `None` keeps the default look.
+    #[serde(default)]
+    pub layout: Option<crate::layout::SlideLayout>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -226,6 +229,9 @@ pub struct Theme {
     pub text_margin: i32,
     pub text_shadow: Option<String>,
     pub overlay_color: Option<String>,
+    /// Safe margin and outline copied onto slides made with this theme.
+    #[serde(default)]
+    pub layout: Option<crate::layout::SlideLayout>,
     pub created_at: String,
     pub updated_at: String,
 }

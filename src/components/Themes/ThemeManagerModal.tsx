@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { Theme, FontSize, TextAlignment } from '../../types';
 import { api } from '../../services/api';
+import { LayoutControls, layoutValuesFrom } from '../LayoutControls';
+import { buildLayout, composeTextShadow, layoutPaddingPercent } from '../../services/slideLayout';
 
 interface ThemeManagerModalProps {
   isOpen: boolean;
@@ -441,7 +443,7 @@ export const ThemeManagerModal: React.FC<ThemeManagerModalProps> = ({
                         : activeTheme.textAlignment === 'right'
                         ? 'flex-end'
                         : 'center',
-                    padding: `${activeTheme.textMargin || 24}px`,
+                    padding: layoutPaddingPercent(activeTheme.layout) ?? `${activeTheme.textMargin || 24}px`,
                     boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
                   }}
                 >
@@ -474,8 +476,10 @@ export const ThemeManagerModal: React.FC<ThemeManagerModalProps> = ({
                       fontWeight: activeTheme.fontWeight === 'bold' ? 700 : 500,
                       textAlign: activeTheme.textAlignment,
                       lineHeight: activeTheme.lineSpacing || 1.4,
-                      textShadow:
-                        activeTheme.textShadow || '0 2px 8px rgba(0,0,0,0.7)',
+                      textShadow: composeTextShadow(
+                        activeTheme.layout,
+                        activeTheme.textShadow || '0 2px 8px rgba(0,0,0,0.7)'
+                      ),
                       width: '100%',
                     }}
                   >
@@ -494,6 +498,31 @@ export const ThemeManagerModal: React.FC<ThemeManagerModalProps> = ({
                   overflowY: 'auto',
                 }}
               >
+                {/* Safe margin and text outline (copied onto slides made with this theme) */}
+                <div
+                  style={{
+                    padding: '12px',
+                    backgroundColor: '#0f172a',
+                    border: '1px solid #1e293b',
+                    borderRadius: '8px',
+                    opacity: activeTheme.isBuiltIn ? 0.6 : 1,
+                    pointerEvents: activeTheme.isBuiltIn ? 'none' : 'auto',
+                  }}
+                >
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8', marginBottom: '8px' }}>
+                    SAFE MARGIN &amp; OUTLINE
+                  </div>
+                  <LayoutControls
+                    values={layoutValuesFrom(activeTheme.layout)}
+                    onChange={(v) =>
+                      setActiveTheme({
+                        ...activeTheme,
+                        layout: buildLayout(v.marginPct, v.outlineWidth, v.outlineColor),
+                      })
+                    }
+                  />
+                </div>
+
                 {/* Theme Name */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>

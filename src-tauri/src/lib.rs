@@ -4,6 +4,7 @@ mod commands;
 mod db;
 mod display;
 mod midi;
+mod layout;
 mod models;
 mod net_guard;
 mod osc;

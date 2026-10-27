@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLogoUrl } from '../hooks/useLogoUrl';
 import { AlertBanner } from './AlertBanner';
 import { PropsLayer } from './PropsLayer';
+import { composeTextShadow, layoutPadding } from '../services/slideLayout';
 import { PresentationState } from '../types';
 import { api } from '../services/api';
 import { mediaService, getMediaTypeFromExtension } from '../services/mediaService';
@@ -307,7 +308,7 @@ export const AudienceView: React.FC = () => {
         flexDirection: 'column',
         justifyContent: justifyContent,
         alignItems: alignItems,
-        padding: '5vw 6vw',
+        padding: layoutPadding(currentSlide.layout) ?? '5vw 6vw',
         boxSizing: 'border-box',
         overflow: 'hidden',
         position: 'relative',
@@ -405,10 +406,12 @@ export const AudienceView: React.FC = () => {
           fontFamily: currentSlide.fontFamily || 'var(--font-family)',
           lineHeight: currentSlide.lineSpacing || 1.35,
           letterSpacing: '0.015em',
-          textShadow:
+          textShadow: composeTextShadow(
+            currentSlide.layout,
             currentSlide.textShadow !== null && currentSlide.textShadow !== undefined
               ? currentSlide.textShadow
-              : '0 2px 12px rgba(0, 0, 0, 0.85)',
+              : '0 2px 12px rgba(0, 0, 0, 0.85)'
+          ),
           transition: 'opacity 250ms ease-in-out',
           opacity: slideOpacity,
         }}

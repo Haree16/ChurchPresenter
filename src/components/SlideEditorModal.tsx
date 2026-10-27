@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
 import { Slide, FontSize, TextAlignment } from '../types';
+import { LayoutControls, LayoutValues, layoutValuesFrom } from './LayoutControls';
+import { buildLayout, composeTextShadow, layoutPaddingPercent } from '../services/slideLayout';
 
 interface SlideEditorModalProps {
   slide: Slide | null;
@@ -21,6 +23,7 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
   const [foregroundColor, setForegroundColor] = useState('#ffffff');
   const [fontSize, setFontSize] = useState<FontSize>('large');
   const [textAlignment, setTextAlignment] = useState<TextAlignment>('center');
+  const [layoutValues, setLayoutValues] = useState<LayoutValues>(layoutValuesFrom(null));
 
   useEffect(() => {
     if (slide) {
@@ -30,6 +33,7 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
       setForegroundColor(slide.foregroundColor || '#ffffff');
       setFontSize(slide.fontSize || 'large');
       setTextAlignment(slide.textAlignment || 'center');
+      setLayoutValues(layoutValuesFrom(slide.layout));
     }
   }, [slide]);
 
@@ -53,16 +57,23 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
   ];
 
   const handleSave = async () => {
+    // Send the whole slide: the backend writes every style field, so leaving the ones this editor
+    // does not show out would reset them (background image, overlay, line spacing, shadow, font).
     await onSave(slide.id, {
+      ...slide,
       title,
       body,
       backgroundColor,
       foregroundColor,
       fontSize,
       textAlignment,
+      // an empty layout clears a stored one
+      layout: buildLayout(layoutValues.marginPct, layoutValues.outlineWidth, layoutValues.outlineColor),
     });
     onClose();
   };
+
+  const previewLayout = buildLayout(layoutValues.marginPct, layoutValues.outlineWidth, layoutValues.outlineColor);
 
   const getFontSizeRem = (size: FontSize) => {
     switch (size) {
@@ -399,7 +410,7 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
             </div>
           </div>
 
-          {/* Right: Live Preview Panel */}
+
           <div>
             <label
               style={{
@@ -429,7 +440,7 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
                     : textAlignment === 'right'
                     ? 'flex-end'
                     : 'flex-start',
-                padding: '16px',
+                padding: layoutPaddingPercent(previewLayout) ?? '16px',
                 textAlign: textAlignment,
                 overflow: 'hidden',
                 boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
@@ -441,6 +452,7 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
                   fontSize: getFontSizeRem(fontSize),
                   fontWeight: 600,
                   maxHeight: '100%',
+                  textShadow: composeTextShadow(previewLayout, null),
                 }}
               >
                 {body || (
@@ -459,6 +471,9 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
               }}
             >
               Includes Tamil Unicode support and auto word wrapping
+            </div>
+            <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #1e293b' }}>
+              <LayoutControls values={layoutValues} onChange={setLayoutValues} />
             </div>
           </div>
         </div>

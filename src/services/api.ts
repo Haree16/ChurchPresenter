@@ -52,6 +52,7 @@ import {
   Prop,
 } from '../types';
 import { validateProp } from './propLayout';
+import { validateLayout, isEmptyLayout } from './slideLayout';
 import { sectionColor } from './sectionColors';
 
 // Detect whether we are running inside native Tauri runtime
@@ -1341,6 +1342,8 @@ class MockDataStore {
     slideData: Partial<Slide>
   ): Promise<Slide> {
     const current = this.slides.filter((s) => s.presentationId === presentationId);
+    const layoutProblem = validateLayout(slideData.layout);
+    if (layoutProblem) throw new Error(layoutProblem);
     const newSlide: Slide = {
       id: 'slide-' + Math.random().toString(36).substring(2, 9),
       presentationId,
@@ -1361,6 +1364,7 @@ class MockDataStore {
       fontWeight: slideData.fontWeight || null,
       groupLabel: slideData.groupLabel || null,
       groupColor: slideData.groupColor || null,
+      layout: isEmptyLayout(slideData.layout) ? null : { ...slideData.layout },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -1374,7 +1378,12 @@ class MockDataStore {
   public async updateSlide(id: string, slideData: Partial<Slide>): Promise<Slide> {
     const slide = this.slides.find((s) => s.id === id);
     if (!slide) throw new Error('Slide not found');
-    Object.assign(slide, slideData, { updatedAt: new Date().toISOString() });
+    const problem = validateLayout(slideData.layout);
+    if (problem) throw new Error(problem);
+    const { layout, ...rest } = slideData;
+    Object.assign(slide, rest, { updatedAt: new Date().toISOString() });
+    // layout: undefined keeps the stored one; an empty layout clears it
+    if (layout !== undefined) slide.layout = isEmptyLayout(layout) ? null : { ...layout };
     if (this.state.currentSlideId === id) {
       this.notify();
     }
@@ -2040,6 +2049,8 @@ class MockDataStore {
   }
 
   public async createTheme(themeData: Partial<Theme>): Promise<Theme> {
+    const themeProblem = validateLayout(themeData.layout);
+    if (themeProblem) throw new Error(themeProblem);
     const newTheme: Theme = {
       id: 'theme-' + Math.random().toString(36).substring(2, 9),
       name: themeData.name || 'Custom Theme',
@@ -2058,6 +2069,7 @@ class MockDataStore {
       textMargin: themeData.textMargin || 6,
       textShadow: themeData.textShadow || null,
       overlayColor: themeData.overlayColor || null,
+      layout: isEmptyLayout(themeData.layout) ? null : { ...themeData.layout },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -2068,7 +2080,12 @@ class MockDataStore {
   public async updateTheme(themeData: Theme): Promise<Theme> {
     const t = this.themes.find((x) => x.id === themeData.id);
     if (!t) throw new Error('Theme not found');
-    Object.assign(t, themeData, { updatedAt: new Date().toISOString() });
+    const problem = validateLayout(themeData.layout);
+    if (problem) throw new Error(problem);
+    Object.assign(t, themeData, {
+      layout: isEmptyLayout(themeData.layout) ? null : { ...themeData.layout },
+      updatedAt: new Date().toISOString(),
+    });
     return t;
   }
 
@@ -2277,6 +2294,7 @@ class MockDataStore {
           fontWeight: theme?.fontWeight || null,
           groupLabel: sec.label,
           groupColor: sectionColor(sec),
+          layout: theme?.layout ?? null,
         });
         createdSlides.push(slide);
       }
@@ -2701,6 +2719,7 @@ class MockDataStore {
           fontWeight: theme.fontWeight,
           groupLabel: sec.label,
           groupColor: sectionColor(sec),
+          layout: theme.layout ?? null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });
@@ -2835,6 +2854,7 @@ class MockDataStore {
         verticalAlignment: theme.verticalAlignment,
         fontFamily: theme.fontFamily,
         fontWeight: 'normal',
+        layout: theme.layout ?? null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
@@ -3954,6 +3974,7 @@ export const api = {
         verticalAlignment: slide.verticalAlignment ?? null,
         fontFamily: slide.fontFamily ?? null,
         fontWeight: slide.fontWeight ?? null,
+        layout: slide.layout ?? null,
       });
     }
     return mockStore.createSlide(presentationId, slide);
@@ -3977,6 +3998,8 @@ export const api = {
         verticalAlignment: slide.verticalAlignment,
         fontFamily: slide.fontFamily,
         fontWeight: slide.fontWeight,
+        // omitted = leave unchanged; an empty layout clears it
+        layout: slide.layout ?? undefined,
       });
     }
     return mockStore.updateSlide(id, slide);

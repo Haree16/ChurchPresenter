@@ -10,6 +10,16 @@ export type SectionType =
   | 'refrain'
   | 'custom';
 
+/** Safe margin and text outline for a slide or theme. Empty = default look. */
+export interface SlideLayout {
+  /** Keep text this far inside every edge, % of the screen (0-25). */
+  marginPct?: number | null;
+  /** Outline thickness in points at 1080p (0-20). */
+  outlineWidth?: number | null;
+  /** `#rrggbb`; used when outlineWidth is above 0. */
+  outlineColor?: string | null;
+}
+
 export interface Slide {
   id: string;
   presentationId: string;
@@ -31,6 +41,7 @@ export interface Slide {
   /** Song group this slide came from (e.g. "Chorus"), shown as a coloured tag on the card. */
   groupLabel?: string | null;
   groupColor?: string | null;
+  layout?: SlideLayout | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -184,6 +195,8 @@ export interface Theme {
   verticalAlignment: 'top' | 'center' | 'bottom';
   lineSpacing: number;
   textMargin: number;
+  /** Safe margin and outline copied onto slides made with this theme. */
+  layout?: SlideLayout | null;
   textShadow?: string | null;
   overlayColor?: string | null;
   createdAt?: string;

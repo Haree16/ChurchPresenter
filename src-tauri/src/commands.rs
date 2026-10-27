@@ -117,10 +117,14 @@ pub async fn create_slide(
     vertical_alignment: Option<String>,
     font_family: Option<String>,
     font_weight: Option<String>,
+    layout: Option<crate::layout::SlideLayout>,
     db: State<'_, DbManager>,
     pres_mgr: State<'_, PresentationManager>,
     app: AppHandle,
 ) -> Result<Slide, String> {
+    if let Some(l) = &layout {
+        crate::layout::validate_layout(l)?;
+    }
     let slide = Slide {
         id: Uuid::new_v4().to_string(),
         presentation_id,
@@ -141,6 +145,7 @@ pub async fn create_slide(
         font_weight,
         group_label: None,
         group_color: None,
+        layout,
         created_at: "".to_string(),
         updated_at: "".to_string(),
     };
@@ -167,10 +172,14 @@ pub async fn update_slide(
     vertical_alignment: Option<String>,
     font_family: Option<String>,
     font_weight: Option<String>,
+    layout: Option<crate::layout::SlideLayout>,
     db: State<'_, DbManager>,
     pres_mgr: State<'_, PresentationManager>,
     app: AppHandle,
 ) -> Result<Slide, String> {
+    if let Some(l) = &layout {
+        crate::layout::validate_layout(l)?;
+    }
     let slide = Slide {
         id,
         presentation_id: "".to_string(),
@@ -191,6 +200,7 @@ pub async fn update_slide(
         font_weight,
         group_label: None,
         group_color: None,
+        layout,
         created_at: "".to_string(),
         updated_at: "".to_string(),
     };
@@ -522,11 +532,17 @@ pub async fn get_theme(id: String, db: State<'_, DbManager>) -> Result<Option<Th
 
 #[tauri::command]
 pub async fn create_theme(theme: Theme, db: State<'_, DbManager>) -> Result<Theme, String> {
+    if let Some(l) = &theme.layout {
+        crate::layout::validate_layout(l)?;
+    }
     db.create_theme(&theme).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn update_theme(theme: Theme, db: State<'_, DbManager>) -> Result<Theme, String> {
+    if let Some(l) = &theme.layout {
+        crate::layout::validate_layout(l)?;
+    }
     db.update_theme(&theme).map_err(|e| e.to_string())
 }
 
@@ -936,6 +952,7 @@ pub async fn save_service_item_slides(
     pres_mgr: State<'_, PresentationManager>,
     app: AppHandle,
 ) -> Result<Vec<Slide>, String> {
+    validate_slide_layouts(&slides)?;
     let saved = db
         .save_service_item_slides(&item_id, &slides)
         .map_err(|e| e.to_string())?;
@@ -1898,6 +1915,16 @@ pub async fn import_presentation_document(
 
 
 
+/// Rejects the whole batch if any slide carries an invalid safe margin or outline.
+fn validate_slide_layouts(slides: &[Slide]) -> Result<(), String> {
+    for (i, slide) in slides.iter().enumerate() {
+        if let Some(layout) = &slide.layout {
+            crate::layout::validate_layout(layout).map_err(|e| format!("Slide {}: {}", i + 1, e))?;
+        }
+    }
+    Ok(())
+}
+
 /// Validates the file extension of an importable presentation and returns it lowercased.
 fn presentation_extension(path: &std::path::Path) -> Result<String, String> {
     let ext = path
@@ -1949,6 +1976,7 @@ fn image_slide(presentation_id: &str, img_path: &std::path::Path, idx: usize) ->
         font_weight: None,
         group_label: None,
         group_color: None,
+        layout: None,
         created_at: Utc::now().to_rfc3339(),
         updated_at: Utc::now().to_rfc3339(),
     }
@@ -2035,5 +2063,19 @@ mod tests {
         assert!(validate_logo_file("png", MAX_LOGO_BYTES).is_ok());
         let err = validate_logo_file("png", MAX_LOGO_BYTES + 1).unwrap_err();
         assert!(err.contains("too large"));
+    }
+
+    #[test]
+    fn slide_layout_batches_are_validated_with_the_slide_number() {
+        let mut ok = image_slide("p", Path::new("/tmp/a.png"), 0);
+        ok.layout = Some(crate::layout::SlideLayout { margin_pct: Some(5.0), ..Default::default() });
+        let mut bad = image_slide("p", Path::new("/tmp/b.png"), 1);
+        bad.layout = Some(crate::layout::SlideLayout { margin_pct: Some(90.0), ..Default::default() });
+        let plain = image_slide("p", Path::new("/tmp/c.png"), 2);
+
+        assert!(validate_slide_layouts(&[ok.clone(), plain.clone()]).is_ok());
+        assert!(validate_slide_layouts(&[]).is_ok());
+        let err = validate_slide_layouts(&[ok, bad, plain]).unwrap_err();
+        assert!(err.starts_with("Slide 2:") && err.contains("margin"), "{err}");
     }
 }

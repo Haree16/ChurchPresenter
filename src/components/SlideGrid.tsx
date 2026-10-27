@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Slide, Presentation, PresentationState } from '../types';
 import { readableTextColor } from '../services/sectionColors';
+import { composeTextShadow, layoutPaddingPercent } from '../services/slideLayout';
 
 interface SlideCardProps {
   slide: Slide;
@@ -128,7 +129,7 @@ export const SlideCard = React.memo<SlideCardProps>(({
               ? 'flex-end'
               : 'flex-start',
           justifyContent: 'center',
-          padding: '12px',
+          padding: layoutPaddingPercent(slide.layout) ?? '12px',
           textAlign: slide.textAlignment,
           position: 'relative',
           overflow: 'hidden',
@@ -147,6 +148,7 @@ export const SlideCard = React.memo<SlideCardProps>(({
             display: '-webkit-box',
             WebkitLineClamp: 4,
             WebkitBoxOrient: 'vertical',
+            textShadow: composeTextShadow(slide.layout, null),
           }}
         >
           {slide.body || (

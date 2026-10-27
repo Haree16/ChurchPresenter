@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { PropsControl } from './PropsControl';
+import { composeTextShadow, layoutPaddingPercent } from '../services/slideLayout';
 import { AudienceAlertControl } from './AudienceAlertControl';
 import { GroupTag } from './GroupTag';
 import {
@@ -177,7 +178,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
                   : currentSlide?.textAlignment === 'right'
                   ? 'flex-end'
                   : 'flex-start',
-              padding: '12px',
+              padding: layoutPaddingPercent(currentSlide?.layout) ?? '12px',
               textAlign: currentSlide?.textAlignment || 'center',
             }}
           >
@@ -205,6 +206,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
                   fontWeight: 600,
                   maxHeight: '100%',
                   lineHeight: 1.35,
+                  textShadow: composeTextShadow(currentSlide.layout, null),
                 }}
               >
                 {currentSlide.body}
