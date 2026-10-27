@@ -45,6 +45,31 @@ export interface Presentation {
   slideCount?: number;
 }
 
+/** A saved overlay (text lower-third, logo bug, ...) toggled over the audience output. */
+export interface Prop {
+  id: string;
+  name: string;
+  kind: 'text' | 'image';
+  text?: string | null;
+  imagePath?: string | null;
+  position:
+    | 'lower-third'
+    | 'top-bar'
+    | 'top-left'
+    | 'top-right'
+    | 'bottom-left'
+    | 'bottom-right'
+    | 'bottom-bar'
+    | 'center';
+  /** Text: font size as % of screen height. Image: width as % of screen width. */
+  sizePct: number;
+  textColor: string;
+  backgroundColor?: string | null;
+  sortOrder?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 /** Short banner over the audience output (e.g. a nursery call). */
 export interface AudienceAlert {
   id: string;
@@ -63,6 +88,7 @@ export interface PresentationState {
   isBlackout: boolean;
   isLogo?: boolean;
   alert?: AudienceAlert | null;
+  activeProps?: Prop[];
   isLive: boolean;
   currentServiceId?: string | null;
   currentItemId?: string | null;

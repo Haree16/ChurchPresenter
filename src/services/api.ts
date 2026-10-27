@@ -49,7 +49,9 @@ import {
   AppInfo,
   BibleTranslationInfo,
   SongArrangement,
+  Prop,
 } from '../types';
+import { validateProp } from './propLayout';
 import { sectionColor } from './sectionColors';
 
 // Detect whether we are running inside native Tauri runtime
@@ -1470,6 +1472,72 @@ class MockDataStore {
     return this.state;
   }
 
+  private props: Prop[] = [];
+
+  public async listProps(): Promise<Prop[]> {
+    return this.props.map((p) => ({ ...p }));
+  }
+
+  public async createProp(prop: Prop): Promise<Prop> {
+    const error = validateProp(prop);
+    if (error) throw new Error(error);
+    const now = new Date().toISOString();
+    const saved: Prop = {
+      ...prop,
+      id: 'prop-' + Math.random().toString(36).substring(2, 9),
+      name: prop.name.trim(),
+      text: prop.text?.trim() ?? null,
+      sortOrder: this.props.length,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.props.push(saved);
+    return { ...saved };
+  }
+
+  public async updateProp(prop: Prop): Promise<Prop> {
+    const error = validateProp(prop);
+    if (error) throw new Error(error);
+    const idx = this.props.findIndex((p) => p.id === prop.id);
+    if (idx < 0) throw new Error('That prop no longer exists.');
+    this.props[idx] = { ...this.props[idx], ...prop, name: prop.name.trim(), updatedAt: new Date().toISOString() };
+    this.syncActiveProps();
+    return { ...this.props[idx] };
+  }
+
+  public async deleteProp(id: string): Promise<void> {
+    this.props = this.props.filter((p) => p.id !== id);
+    this.syncActiveProps();
+  }
+
+  public async toggleProp(id: string): Promise<PresentationState> {
+    const active = this.state.activeProps || [];
+    if (active.some((p) => p.id === id)) {
+      this.state.activeProps = active.filter((p) => p.id !== id);
+    } else {
+      const prop = this.props.find((p) => p.id === id);
+      if (!prop) throw new Error('That prop no longer exists.');
+      this.state.activeProps = [...active, { ...prop }];
+    }
+    this.notify();
+    return this.state;
+  }
+
+  public async clearProps(): Promise<PresentationState> {
+    this.state.activeProps = [];
+    this.notify();
+    return this.state;
+  }
+
+  /** Keeps the on-screen copies of props in step with the saved ones. */
+  private syncActiveProps(): void {
+    this.state.activeProps = (this.state.activeProps || [])
+      .map((a) => this.props.find((p) => p.id === a.id))
+      .filter((p): p is Prop => !!p)
+      .map((p) => ({ ...p }));
+    this.notify();
+  }
+
   public async sendAlert(message: string, durationSeconds?: number): Promise<PresentationState> {
     const text = message.trim();
     if (!text) throw new Error('Alert message cannot be empty.');
@@ -1502,6 +1570,7 @@ class MockDataStore {
     this.state.isBlackout = false;
     this.state.mediaPlayback = null;
     this.state.alert = null;
+    this.state.activeProps = [];
     this.notify();
     return this.state;
   }
@@ -3461,6 +3530,8 @@ class MockDataStore {
         return this.clearMedia();
       case 'clear_alert':
         return this.clearAlert();
+      case 'clear_props':
+        return this.clearProps();
       case 'clear_all':
         return this.clearAll();
       case 'toggle_live':
@@ -3947,6 +4018,50 @@ export const api = {
       });
     }
     return mockStore.setLiveSlide(presentationId, slideId);
+  },
+
+  listProps: async (): Promise<Prop[]> => {
+    if (isTauri()) {
+      return await invoke<Prop[]>('list_props');
+    }
+    return mockStore.listProps();
+  },
+
+  createProp: async (prop: Prop): Promise<Prop> => {
+    if (isTauri()) {
+      return await invoke<Prop>('create_prop', { prop });
+    }
+    return mockStore.createProp(prop);
+  },
+
+  updateProp: async (prop: Prop): Promise<Prop> => {
+    if (isTauri()) {
+      return await invoke<Prop>('update_prop', { prop });
+    }
+    return mockStore.updateProp(prop);
+  },
+
+  deleteProp: async (id: string): Promise<void> => {
+    if (isTauri()) {
+      await invoke<void>('delete_prop', { id });
+      return;
+    }
+    return mockStore.deleteProp(id);
+  },
+
+  /** Shows the prop over the output, or takes it off if it is already showing. */
+  toggleProp: async (id: string): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('toggle_prop', { id });
+    }
+    return mockStore.toggleProp(id);
+  },
+
+  clearProps: async (): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('clear_props');
+    }
+    return mockStore.clearProps();
   },
 
   /** Shows a banner on the audience screen. `durationSeconds`: omitted = 30s, 0 = until cleared. */

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { PropsControl } from './PropsControl';
 import { AudienceAlertControl } from './AudienceAlertControl';
 import { GroupTag } from './GroupTag';
 import {
@@ -401,6 +402,8 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
           </button>
 
           <AudienceAlertControl alert={presentationState.alert} />
+
+          <PropsControl presentationState={presentationState} />
 
           {/* Quick Stage Message Cue */}
           <div

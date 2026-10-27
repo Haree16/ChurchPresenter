@@ -45,6 +45,7 @@ impl ActionDispatcher {
             }
             "clear_media" => pres_mgr.clear_media_core(),
             "clear_alert" => pres_mgr.clear_alert_core(),
+            "clear_props" => pres_mgr.clear_props_core(),
             "clear_all" => pres_mgr.clear_all_core(),
             "toggle_logo" => {
                 pres_mgr.toggle_logo_core();
@@ -276,5 +277,21 @@ mod tests {
         pres_mgr.send_alert_core("hello", Some(0)).unwrap();
         let res = ActionDispatcher::dispatch_core(&db, &pres_mgr, "clear_alert").unwrap();
         assert!(res.alert.is_none());
+    }
+
+    #[test]
+    fn test_clear_props_action() {
+        let db = DbManager::new_in_memory().unwrap();
+        let pres_mgr = PresentationManager::new();
+        let prop = db
+            .create_prop(&crate::props::Prop {
+                id: String::new(), name: "P".into(), kind: "text".into(), text: Some("hi".into()), image_path: None,
+                position: "center".into(), size_pct: 5, text_color: "#ffffff".into(), background_color: None,
+                sort_order: 0, created_at: String::new(), updated_at: String::new(),
+            })
+            .unwrap();
+        pres_mgr.toggle_prop_core(&db, &prop.id).unwrap();
+        let res = ActionDispatcher::dispatch_core(&db, &pres_mgr, "clear_props").unwrap();
+        assert!(res.active_props.is_empty());
     }
 }

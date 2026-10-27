@@ -278,6 +278,63 @@ pub async fn clear_alert(
 }
 
 #[tauri::command]
+pub async fn list_props(db: State<'_, DbManager>) -> Result<Vec<crate::props::Prop>, String> {
+    db.list_props().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_prop(
+    prop: crate::props::Prop,
+    db: State<'_, DbManager>,
+) -> Result<crate::props::Prop, String> {
+    db.create_prop(&prop)
+}
+
+/// Saves a prop; if it is currently on screen, the screen updates too.
+#[tauri::command]
+pub async fn update_prop(
+    prop: crate::props::Prop,
+    db: State<'_, DbManager>,
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<crate::props::Prop, String> {
+    let saved = db.update_prop(&prop)?;
+    pres_mgr.sync_active_props(&app, &db);
+    Ok(saved)
+}
+
+/// Deletes a prop and takes it off the screen if it was showing.
+#[tauri::command]
+pub async fn delete_prop(
+    id: String,
+    db: State<'_, DbManager>,
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<(), String> {
+    db.delete_prop(&id).map_err(|e| e.to_string())?;
+    pres_mgr.sync_active_props(&app, &db);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn toggle_prop(
+    id: String,
+    db: State<'_, DbManager>,
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    pres_mgr.toggle_prop(&app, &db, &id)
+}
+
+#[tauri::command]
+pub async fn clear_props(
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    Ok(pres_mgr.clear_props(&app))
+}
+
+#[tauri::command]
 pub async fn clear_media(
     pres_mgr: State<'_, PresentationManager>,
     app: AppHandle,

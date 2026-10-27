@@ -81,6 +81,57 @@ impl PresentationManager {
         Ok(state)
     }
 
+    /// Turns a saved prop on or off over the output.
+    pub fn toggle_prop_core(&self, db: &DbManager, prop_id: &str) -> Result<PresentationState, String> {
+        let mut state = self.state.lock().unwrap();
+        if let Some(pos) = state.active_props.iter().position(|p| p.id == prop_id) {
+            state.active_props.remove(pos);
+        } else {
+            let prop = db
+                .get_prop(prop_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "That prop no longer exists.".to_string())?;
+            state.active_props.push(prop);
+        }
+        Ok(state.clone())
+    }
+
+    pub fn toggle_prop(&self, app: &AppHandle, db: &DbManager, prop_id: &str) -> Result<PresentationState, String> {
+        let state = self.toggle_prop_core(db, prop_id)?;
+        app.emit("presentation:state-changed", &state).ok();
+        Ok(state)
+    }
+
+    /// Re-reads the active props from the database after one was edited or deleted.
+    pub fn sync_active_props_core(&self, db: &DbManager) -> PresentationState {
+        let mut state = self.state.lock().unwrap();
+        let saved = db.list_props().unwrap_or_default();
+        state.active_props = state
+            .active_props
+            .iter()
+            .filter_map(|active| saved.iter().find(|p| p.id == active.id).cloned())
+            .collect();
+        state.clone()
+    }
+
+    pub fn sync_active_props(&self, app: &AppHandle, db: &DbManager) -> PresentationState {
+        let state = self.sync_active_props_core(db);
+        app.emit("presentation:state-changed", &state).ok();
+        state
+    }
+
+    pub fn clear_props_core(&self) -> PresentationState {
+        let mut state = self.state.lock().unwrap();
+        state.active_props.clear();
+        state.clone()
+    }
+
+    pub fn clear_props(&self, app: &AppHandle) -> PresentationState {
+        let cloned = self.clear_props_core();
+        app.emit("presentation:state-changed", &cloned).ok();
+        cloned
+    }
+
     pub fn clear_alert_core(&self) -> PresentationState {
         let mut state = self.state.lock().unwrap();
         state.alert = None;
@@ -308,6 +359,7 @@ impl PresentationManager {
         state.is_blackout = false;
         state.media_playback = None;
         state.alert = None;
+        state.active_props.clear();
         state.clone()
     }
 

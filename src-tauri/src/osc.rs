@@ -194,6 +194,7 @@ fn osc_path_to_action(path: &str) -> Option<&'static str> {
         "/logo" => Some("toggle_logo"),
         "/clear/media" => Some("clear_media"),
         "/alert/clear" => Some("clear_alert"),
+        "/clear/props" => Some("clear_props"),
         "/clear/all" => Some("clear_all"),
         _ => None,
     }
@@ -226,9 +227,10 @@ mod tests {
         assert_eq!(osc_path_to_action("/clear/media"), Some("clear_media"));
         assert_eq!(osc_path_to_action("/clear/all"), Some("clear_all"));
         assert_eq!(osc_path_to_action("/alert/clear"), Some("clear_alert"));
+        assert_eq!(osc_path_to_action("/clear/props"), Some("clear_props"));
         // new actions are opt-in: not part of the default allowlist
         let default = "next_slide,prev_slide,next_item,prev_item,toggle_blackout,toggle_live,start_timer,stop_timer,reset_timer,clear_overlay";
-        for a in ["toggle_logo", "clear_media", "clear_all", "clear_alert"] {
+        for a in ["toggle_logo", "clear_media", "clear_all", "clear_alert", "clear_props"] {
             assert!(!is_action_allowed(default, a));
         }
     }

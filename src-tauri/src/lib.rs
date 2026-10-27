@@ -9,6 +9,7 @@ mod net_guard;
 mod osc;
 mod overlay;
 mod presentation;
+mod props;
 mod remote;
 
 use db::DbManager;
@@ -165,6 +166,12 @@ pub fn run() {
             commands::toggle_logo,
             commands::clear_media,
             commands::send_alert,
+            commands::list_props,
+            commands::create_prop,
+            commands::update_prop,
+            commands::delete_prop,
+            commands::toggle_prop,
+            commands::clear_props,
             commands::clear_alert,
             commands::clear_all,
             commands::next_slide,

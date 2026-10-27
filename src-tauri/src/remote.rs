@@ -61,7 +61,7 @@ pub fn extract_token(request: &tiny_http::Request, query_params: &HashMap<String
 pub fn action_permitted(device: &crate::models::RemoteDevice, action: &str) -> bool {
     match action {
         "next_slide" | "prev_slide" | "next_item" | "prev_item" | "jump_slide" => device.can_navigate,
-        "toggle_blackout" | "toggle_logo" | "clear_screen" | "clear_live" | "clear_media" | "clear_all" | "clear_alert" => {
+        "toggle_blackout" | "toggle_logo" | "clear_screen" | "clear_live" | "clear_media" | "clear_all" | "clear_alert" | "clear_props" => {
             device.can_blackout
         }
         "toggle_live" => device.can_take_live,
@@ -1237,7 +1237,7 @@ mod tests {
     fn test_clear_actions_need_the_blackout_permission() {
         let black = device(false, true, false, false);
         let nav = device(true, false, true, true);
-        for a in ["clear_media", "clear_all", "toggle_logo", "clear_alert"] {
+        for a in ["clear_media", "clear_all", "toggle_logo", "clear_alert", "clear_props"] {
             assert!(action_permitted(&black, a), "{a}");
             assert!(!action_permitted(&nav, a), "{a}");
         }

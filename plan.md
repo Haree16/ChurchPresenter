@@ -64,8 +64,16 @@ Not done:
 - Bible autocomplete suggestions still come from a short hard-coded passage list (reference parsing itself accepts any book).
 - Real-world import not yet tried against a full public-domain USFM/Zefania file.
 
-### C. Slide editor and themes
-Multi-element slides, templates, outline and safe margins, props, audience alerts.
+### C. Slide editor and themes — in progress
+Done:
+- **Audience alerts** (nursery calls): banner over the audience output (above slides, logo, blackout), auto-dismiss (10s / 30s / 1 min / until cleared), 200-char limit, operator control, phone-remote control (`/api/alert`, needs the blackout permission), `clear_alert` action (OSC `/alert/clear`, opt-in), cleared by Clear All.
+- **Props**: saved text / image overlays in 8 preset positions, toggled on and off from the operator panel, edited live, hidden by blackout, cleared by `clear_props` (OSC `/clear/props`, opt-in) and Clear All; included in backup/restore. Colours are plain hex only; text is rendered as text.
+
+Not done (design notes):
+- **Safe margins and text outline**: `text_margin` exists on themes but is not applied to the output, and slides copy theme values, so this needs a per-slide layout field. Plan: one `layout` JSON column on slides (margin, outline, elements) so margins, outline, elements and templates share one migration.
+- **Multi-element slides** (extra text boxes, images, shapes positioned in % of the slide) and **templates** (saved layouts).
+- **Portable theme export/import** with the background image embedded, so a theme looks identical on another machine.
+- Props are not drawn in the operator preview panel; phones cannot toggle individual props (only clear them).
 *Done when:* a theme exported from one machine looks identical on another.
 
 ### D. Automation

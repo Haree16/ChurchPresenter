@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct DbManager {
-    conn: Arc<Mutex<Connection>>,
+    pub(crate) conn: Arc<Mutex<Connection>>,
     db_path: Option<std::path::PathBuf>,
     init_error: Option<String>,
 }
@@ -1252,6 +1252,39 @@ impl DbManager {
             )?;
             tx.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (11, ?1);",
+                params![now],
+            )?;
+            tx.commit()?;
+        }
+
+        // ================= Migration 12: props =================
+        if current_version < 12 {
+            let tx = conn.unchecked_transaction()?;
+            let now = Utc::now().to_rfc3339();
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS props (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    text TEXT,
+                    image_path TEXT,
+                    position TEXT NOT NULL,
+                    size_pct INTEGER NOT NULL,
+                    text_color TEXT NOT NULL,
+                    background_color TEXT,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+            tx.execute(
+                "INSERT OR IGNORE INTO action_mappings (id, action_name, display_label, category, keyboard_shortcut, is_enabled, created_at, updated_at)
+                 VALUES ('act-clear-props', 'clear_props', 'Clear Props', 'display', NULL, 1, ?1, ?1);",
+                params![now],
+            )?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (12, ?1);",
                 params![now],
             )?;
             tx.commit()?;
@@ -5096,6 +5129,7 @@ impl DbManager {
             songs,
             song_sections,
             song_arrangements,
+            props: self.list_props()?,
             themes,
             media_assets,
             services,
@@ -5135,6 +5169,7 @@ impl DbManager {
             tx.execute("DELETE FROM slides;", [])?;
             tx.execute("DELETE FROM presentations;", [])?;
             tx.execute("DELETE FROM song_arrangements;", [])?;
+            tx.execute("DELETE FROM props;", [])?;
             tx.execute("DELETE FROM song_sections;", [])?;
             tx.execute("DELETE FROM songs;", [])?;
             tx.execute("DELETE FROM themes WHERE is_built_in = 0;", [])?;
@@ -5320,6 +5355,18 @@ impl DbManager {
                     serde_json::to_string(&a.section_ids).unwrap_or_else(|_| "[]".to_string()),
                     a.is_default as i32,
                     Utc::now().to_rfc3339()
+                ],
+            )?;
+        }
+
+        // Restore props
+        for pr in &backup.props {
+            tx.execute(
+                "INSERT OR IGNORE INTO props (id, name, kind, text, image_path, position, size_pct, text_color, background_color, sort_order, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12);",
+                params![
+                    pr.id, pr.name, pr.kind, pr.text, pr.image_path, pr.position, pr.size_pct,
+                    pr.text_color, pr.background_color, pr.sort_order, pr.created_at, pr.updated_at
                 ],
             )?;
         }
@@ -6287,7 +6334,8 @@ impl DbManager {
              ('act-toggle-logo', 'toggle_logo', 'Toggle Logo Screen', 'display', 'L', 1, ?1, ?1),
              ('act-clear-media', 'clear_media', 'Clear Media', 'display', 'M', 1, ?1, ?1),
              ('act-clear-all', 'clear_all', 'Clear All (blank output)', 'display', 'C', 1, ?1, ?1),
-             ('act-clear-alert', 'clear_alert', 'Clear Audience Alert', 'display', NULL, 1, ?1, ?1);",
+             ('act-clear-alert', 'clear_alert', 'Clear Audience Alert', 'display', NULL, 1, ?1, ?1),
+             ('act-clear-props', 'clear_props', 'Clear Props', 'display', NULL, 1, ?1, ?1);",
             params![now],
         )?;
         Ok(())
@@ -7500,11 +7548,11 @@ mod tests {
     fn test_action_registry_lists_logo_and_clear_actions_after_migration_and_reset() {
         let db = DbManager::new_in_memory().unwrap();
         let has = |db: &DbManager, name: &str| db.list_action_mappings().unwrap().iter().any(|a| a.action_name == name);
-        for n in ["toggle_logo", "clear_media", "clear_all"] {
+        for n in ["toggle_logo", "clear_media", "clear_all", "clear_alert", "clear_props"] {
             assert!(has(&db, n), "{n} missing after migration");
         }
         db.reset_action_mappings_to_default().unwrap();
-        for n in ["toggle_logo", "clear_media", "clear_all"] {
+        for n in ["toggle_logo", "clear_media", "clear_all", "clear_alert", "clear_props"] {
             assert!(has(&db, n), "{n} missing after reset");
         }
     }

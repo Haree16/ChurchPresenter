@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLogoUrl } from '../hooks/useLogoUrl';
 import { AlertBanner } from './AlertBanner';
+import { PropsLayer } from './PropsLayer';
 import { PresentationState } from '../types';
 import { api } from '../services/api';
 import { mediaService, getMediaTypeFromExtension } from '../services/mediaService';
@@ -70,10 +71,12 @@ export const AudienceView: React.FC = () => {
   const { isLive, isBlackout, isLogo, currentSlide, mediaPlayback } = presentationState;
   // re-read the custom logo each time the logo screen is shown
   const logoUrl = useLogoUrl(!!isLogo);
-  // alerts show over every kind of output (slide, logo, blackout, video)
+  // props and alerts show over every kind of output (slide, logo, blackout, video)
   const withAlert = (node: React.ReactElement) => (
     <>
       {node}
+      {/* blackout hides props; alerts still show */}
+      {!presentationState.isBlackout && <PropsLayer props={presentationState.activeProps} />}
       <AlertBanner alert={presentationState.alert} />
     </>
   );

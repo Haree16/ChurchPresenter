@@ -89,6 +89,9 @@ pub struct PresentationState {
     pub stage_message: Option<String>,
     #[serde(default)]
     pub alert: Option<AudienceAlert>,
+    /// Props currently shown over the output (snapshots, so every window can draw them).
+    #[serde(default)]
+    pub active_props: Vec<crate::props::Prop>,
 }
 
 impl Default for PresentationState {
@@ -111,6 +114,7 @@ impl Default for PresentationState {
             timer_state: None,
             stage_message: None,
             alert: None,
+            active_props: Vec::new(),
         }
     }
 }
@@ -308,6 +312,8 @@ pub struct BackupData {
     pub song_sections: Vec<SongSection>,
     #[serde(default)]
     pub song_arrangements: Vec<SongArrangement>,
+    #[serde(default)]
+    pub props: Vec<crate::props::Prop>,
     #[serde(default)]
     pub themes: Vec<Theme>,
     #[serde(default)]
