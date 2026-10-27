@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLogoUrl } from '../hooks/useLogoUrl';
 import { PresentationState } from '../types';
 import { api } from '../services/api';
 import { mediaService, getMediaTypeFromExtension } from '../services/mediaService';
@@ -66,6 +67,8 @@ export const AudienceView: React.FC = () => {
   }, []);
 
   const { isLive, isBlackout, isLogo, currentSlide, mediaPlayback } = presentationState;
+  // re-read the custom logo each time the logo screen is shown
+  const logoUrl = useLogoUrl(!!isLogo);
 
   // Slide transition effect (fade under 500ms, no flash)
   useEffect(() => {
@@ -154,7 +157,7 @@ export const AudienceView: React.FC = () => {
         }}
       >
         <img
-          src="/logo.png"
+          src={logoUrl}
           alt=""
           style={{ maxWidth: '40vmin', maxHeight: '40vmin', objectFit: 'contain' }}
         />

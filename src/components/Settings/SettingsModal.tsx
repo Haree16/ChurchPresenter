@@ -14,6 +14,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { LogoSettingsCard } from './LogoSettingsCard';
 import { AppInfo, AppDiagnosticEntry, AppDiagnosticFilter } from '../../types';
 
 interface SettingsModalProps {
@@ -335,6 +336,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
 
           {/* TAB 2: STORAGE & DATABASE */}
+          {activeTab === 'general' && (
+            <div style={{ marginTop: '16px' }}>
+              <LogoSettingsCard />
+            </div>
+          )}
+
           {activeTab === 'storage' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {/* SQLite Location */}

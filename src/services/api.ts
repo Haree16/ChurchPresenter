@@ -3222,6 +3222,19 @@ class MockDataStore {
     };
   }
 
+  public async setCustomLogo(sourcePath: string): Promise<string> {
+    const ext = sourcePath.split('.').pop()?.toLowerCase() || '';
+    if (!['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(ext)) {
+      throw new Error('Logo must be a PNG, JPG, WEBP, GIF or SVG image.');
+    }
+    await this.setSetting('logo_path', sourcePath);
+    return sourcePath;
+  }
+
+  public async clearCustomLogo(): Promise<void> {
+    await this.setSetting('logo_path', '');
+  }
+
   public async getNetworkBindMode(): Promise<'local' | 'lan'> {
     return (await this.getSetting('network_bind_mode')) === 'local' ? 'local' : 'lan';
   }
@@ -4164,6 +4177,23 @@ export const api = {
       return await invoke<ImportResult>('import_backup', { backup, mode });
     }
     return mockStore.importBackup(backup, mode);
+  },
+
+  /** Copies an image into the app data folder and uses it for "clear to logo". */
+  setCustomLogo: async (sourcePath: string): Promise<string> => {
+    if (isTauri()) {
+      return await invoke<string>('set_custom_logo', { sourcePath });
+    }
+    return mockStore.setCustomLogo(sourcePath);
+  },
+
+  /** Goes back to the built-in logo. */
+  clearCustomLogo: async (): Promise<void> => {
+    if (isTauri()) {
+      await invoke<void>('clear_custom_logo');
+      return;
+    }
+    return mockStore.clearCustomLogo();
   },
 
   getNetworkBindMode: async (): Promise<'local' | 'lan'> => {

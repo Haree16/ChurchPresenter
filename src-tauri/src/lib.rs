@@ -197,6 +197,8 @@ pub fn run() {
             // Phase 2: Media Assets
             commands::list_media_assets,
             commands::import_media_asset,
+            commands::set_custom_logo,
+            commands::clear_custom_logo,
             commands::delete_media_asset,
             // Phase 2: Slide Generation & Interchange
             commands::generate_slides_from_song,

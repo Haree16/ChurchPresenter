@@ -471,6 +471,78 @@ pub async fn list_media_assets(db: State<'_, DbManager>) -> Result<Vec<MediaAsse
     db.list_media_assets().map_err(|e| e.to_string())
 }
 
+/// Setting holding the app-data-relative path of the user's custom logo image.
+const LOGO_SETTING: &str = "logo_path";
+const MAX_LOGO_BYTES: u64 = 10 * 1024 * 1024;
+
+/// Validates a candidate logo file and returns its lowercased extension.
+fn validate_logo_file(ext: &str, size_bytes: u64) -> Result<String, String> {
+    let ext = ext.to_lowercase();
+    if !matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif" | "svg") {
+        return Err("Logo must be a PNG, JPG, WEBP, GIF or SVG image.".to_string());
+    }
+    if size_bytes == 0 {
+        return Err("The selected logo file is empty.".to_string());
+    }
+    if size_bytes > MAX_LOGO_BYTES {
+        return Err(format!(
+            "Logo is too large ({:.1} MB). Maximum is {} MB.",
+            size_bytes as f64 / 1_048_576.0,
+            MAX_LOGO_BYTES / 1_048_576
+        ));
+    }
+    Ok(ext)
+}
+
+fn logo_dir(app: &AppHandle) -> std::path::PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| crate::resolve_app_data_path())
+        .join("media")
+        .join("logo")
+}
+
+/// Copies `source_path` into the app data folder as the logo shown by "clear to logo".
+/// Returns the app-data-relative path that is also stored in the `logo_path` setting.
+#[tauri::command]
+pub async fn set_custom_logo(
+    source_path: String,
+    app: AppHandle,
+    db: State<'_, DbManager>,
+) -> Result<String, String> {
+    let source = Path::new(&source_path);
+    let meta = fs::metadata(source).map_err(|_| "The selected logo file could not be read.".to_string())?;
+    if !meta.is_file() {
+        return Err("The selected logo is not a file.".to_string());
+    }
+    let ext = validate_logo_file(
+        source.extension().and_then(|e| e.to_str()).unwrap_or(""),
+        meta.len(),
+    )?;
+
+    let dir = logo_dir(&app);
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create logo folder: {}", e))?;
+    // only one custom logo is kept
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+    let file_name = format!("custom-logo.{}", ext);
+    fs::copy(source, dir.join(&file_name)).map_err(|e| format!("Failed to copy logo: {}", e))?;
+
+    let relative = format!("media/logo/{}", file_name);
+    db.set_setting(LOGO_SETTING, &relative).map_err(|e| e.to_string())?;
+    Ok(relative)
+}
+
+/// Removes the custom logo so the built-in one is used again.
+#[tauri::command]
+pub async fn clear_custom_logo(app: AppHandle, db: State<'_, DbManager>) -> Result<(), String> {
+    let _ = fs::remove_dir_all(logo_dir(&app));
+    db.set_setting(LOGO_SETTING, "").map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn import_media_asset(
     source_path: String,
@@ -1869,5 +1941,23 @@ mod tests {
         let slides = db.get_slides(&pres.id).unwrap();
         let titles: Vec<&str> = slides.iter().map(|s| s.title.as_str()).collect();
         assert_eq!(titles, vec!["Slide 1", "Slide 2", "Slide 3"]);
+    }
+
+    #[test]
+    fn logo_accepts_common_image_types_case_insensitively() {
+        for ext in ["png", "PNG", "jpg", "jpeg", "webp", "gif", "svg"] {
+            assert_eq!(validate_logo_file(ext, 1024).unwrap(), ext.to_lowercase());
+        }
+    }
+
+    #[test]
+    fn logo_rejects_non_images_empty_and_oversized_files() {
+        assert!(validate_logo_file("mp4", 1024).is_err());
+        assert!(validate_logo_file("exe", 1024).is_err());
+        assert!(validate_logo_file("", 1024).is_err());
+        assert!(validate_logo_file("png", 0).is_err());
+        assert!(validate_logo_file("png", MAX_LOGO_BYTES).is_ok());
+        let err = validate_logo_file("png", MAX_LOGO_BYTES + 1).unwrap_err();
+        assert!(err.contains("too large"));
     }
 }
