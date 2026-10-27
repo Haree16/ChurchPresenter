@@ -50,6 +50,7 @@ export interface PresentationState {
   currentSlide: Slide | null;
   nextSlide: Slide | null;
   isBlackout: boolean;
+  isLogo?: boolean;
   isLive: boolean;
   currentServiceId?: string | null;
   currentItemId?: string | null;

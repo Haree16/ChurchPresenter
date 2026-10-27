@@ -248,6 +248,15 @@ export function usePresentation() {
     }
   };
 
+  const toggleLogo = async () => {
+    try {
+      await api.toggleLogo();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to toggle logo';
+      setError(msg);
+    }
+  };
+
   const toggleBlackout = async () => {
     try {
       await api.toggleBlackout();
@@ -285,6 +294,7 @@ export function usePresentation() {
     nextSlide,
     previousSlide,
     toggleBlackout,
+    toggleLogo,
     refreshPresentationState,
   };
 }

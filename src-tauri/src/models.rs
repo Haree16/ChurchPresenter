@@ -54,6 +54,8 @@ pub struct PresentationState {
     pub current_slide: Option<Slide>,
     pub next_slide: Option<Slide>,
     pub is_blackout: bool,
+    #[serde(default)]
+    pub is_logo: bool,
     pub is_live: bool,
     #[serde(default)]
     pub current_service_id: Option<String>,
@@ -81,6 +83,7 @@ impl Default for PresentationState {
             current_slide: None,
             next_slide: None,
             is_blackout: false,
+            is_logo: false,
             is_live: false,
             current_service_id: None,
             current_item_id: None,

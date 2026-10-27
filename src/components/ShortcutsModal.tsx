@@ -26,6 +26,11 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
       description: 'Instant blackout: hides slide content on audience screen without changing the active slide.',
     },
     {
+      action: 'Clear to Logo (Toggle)',
+      keys: ['L'],
+      description: 'Shows the church logo on the audience screen; going live with any slide clears it.',
+    },
+    {
       action: 'Direct Slide Jump',
       keys: ['Click on any slide card'],
       description: 'Immediately presents the clicked slide to the audience.',

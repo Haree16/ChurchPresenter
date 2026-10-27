@@ -44,10 +44,10 @@ Status as of 2026-10-27, after the Phase 0-6 commit plus uncommitted work.
 ## Phases
 
 ### A. Finish and harden what exists
-1. Verify build + tests, commit pending work.
-2. Tests for `commands.rs`, `remote.rs`, `osc.rs`.
-3. Remote/OSC: LAN-only warning in UI; OSC auth/allowlist; configurable bind address.
-4. Clear-layer model: clear slide / media / props / all, black, and logo as independent states.
+1. ~~Verify build + tests, commit pending work.~~ Done.
+2. Tests for `commands.rs`, `remote.rs`, `osc.rs`. *Pending.*
+3. Remote/OSC: ~~LAN-only source filtering~~ (done, `net_guard.rs`); LAN-only warning in UI, configurable bind address. *Pending.*
+4. Clear-layer model: ~~logo~~ (done: `L` key, header button, `toggle_logo` action, cleared when a slide goes live; uses `public/logo.png`); clear media / props / all as independent states, Settings override for the logo image. *Pending.*
 *Done when:* CI is green; clear, black and logo work independently.
 
 ### B. Songs and Bible

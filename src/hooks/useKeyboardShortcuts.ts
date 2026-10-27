@@ -5,6 +5,7 @@ interface UseKeyboardShortcutsOptions {
   onNext: () => void;
   onPrevious: () => void;
   onToggleBlackout: () => void;
+  onToggleLogo?: () => void;
   onEscape?: () => void;
   enabled?: boolean;
 }
@@ -13,6 +14,7 @@ export function useKeyboardShortcuts({
   onNext,
   onPrevious,
   onToggleBlackout,
+  onToggleLogo,
   onEscape,
   enabled = true,
 }: UseKeyboardShortcutsOptions) {
@@ -60,6 +62,14 @@ export function useKeyboardShortcuts({
           onToggleBlackout();
           break;
 
+        case 'l':
+        case 'L':
+          if (onToggleLogo) {
+            e.preventDefault();
+            onToggleLogo();
+          }
+          break;
+
         case 'Escape':
           if (onEscape) {
             e.preventDefault();
@@ -76,7 +86,7 @@ export function useKeyboardShortcuts({
           break;
       }
     },
-    [enabled, onNext, onPrevious, onToggleBlackout, onEscape]
+    [enabled, onNext, onPrevious, onToggleBlackout, onToggleLogo, onEscape]
   );
 
   useEffect(() => {

@@ -161,6 +161,7 @@ pub fn run() {
             commands::get_presentation_state,
             commands::set_live_slide,
             commands::toggle_blackout,
+            commands::toggle_logo,
             commands::next_slide,
             commands::previous_slide,
             // Display & Audience

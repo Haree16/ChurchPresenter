@@ -255,6 +255,14 @@ pub async fn set_live_slide(
 }
 
 #[tauri::command]
+pub async fn toggle_logo(
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<bool, String> {
+    Ok(pres_mgr.toggle_logo(&app))
+}
+
+#[tauri::command]
 pub async fn toggle_blackout(
     pres_mgr: State<'_, PresentationManager>,
     app: AppHandle,

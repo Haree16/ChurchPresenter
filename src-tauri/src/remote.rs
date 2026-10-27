@@ -520,7 +520,7 @@ impl RemoteServerManager {
 
                                             let is_permitted = match action {
                                                 "next_slide" | "prev_slide" | "next_item" | "prev_item" | "jump_slide" => device.can_navigate,
-                                                "toggle_blackout" | "clear_screen" | "clear_live" => device.can_blackout,
+                                                "toggle_blackout" | "toggle_logo" | "clear_screen" | "clear_live" => device.can_blackout,
                                                 "toggle_live" => device.can_take_live,
                                                 "start_timer" | "stop_timer" | "reset_timer" => device.can_control_timer,
                                                 _ => false,

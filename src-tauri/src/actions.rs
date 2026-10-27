@@ -43,6 +43,10 @@ impl ActionDispatcher {
                 pres_mgr.toggle_blackout_core();
                 pres_mgr.get_state()
             }
+            "toggle_logo" => {
+                pres_mgr.toggle_logo_core();
+                pres_mgr.get_state()
+            }
             "clear_blackout" => {
                 if pres_mgr.get_state().is_blackout {
                     pres_mgr.toggle_blackout_core();

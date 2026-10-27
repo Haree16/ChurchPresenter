@@ -131,6 +131,7 @@ impl PresentationManager {
         state.current_presentation_id = Some(presentation_id.to_string());
         state.current_slide_id = Some(slide_id.to_string());
         state.is_live = true;
+        state.is_logo = false;
         self.update_pointers_internal(&mut state, db);
         state.clone()
     }
@@ -160,6 +161,7 @@ impl PresentationManager {
         state.current_presentation_id = None;
         state.current_slide_id = Some(slide_id.to_string());
         state.is_live = true;
+        state.is_logo = false;
         self.update_pointers_internal(&mut state, db);
         state.clone()
     }
@@ -211,6 +213,19 @@ impl PresentationManager {
         state.is_blackout
     }
 
+    pub fn toggle_logo_core(&self) -> bool {
+        let mut state = self.state.lock().unwrap();
+        state.is_logo = !state.is_logo;
+        state.is_logo
+    }
+
+    pub fn toggle_logo(&self, app: &AppHandle) -> bool {
+        let is_logo = self.toggle_logo_core();
+        let cloned = self.get_state();
+        app.emit("presentation:state-changed", &cloned).ok();
+        is_logo
+    }
+
     pub fn toggle_blackout(&self, app: &AppHandle) -> bool {
         let is_blackout = self.toggle_blackout_core();
         let cloned = self.get_state();
@@ -230,6 +245,7 @@ impl PresentationManager {
                     if curr_idx + 1 < slides.len() {
                         state.current_slide_id = Some(slides[curr_idx + 1].id.clone());
                         state.is_live = true;
+                        state.is_logo = false;
                         self.update_pointers_internal(&mut state, db);
                     } else {
                         // Boundary transition: first slide of next item in playlist
@@ -243,6 +259,7 @@ impl PresentationManager {
                                     state.current_item_id = Some(next_it.id.clone());
                                     state.current_slide_id = Some(first_s.id.clone());
                                     state.is_live = true;
+                                    state.is_logo = false;
                                     self.update_pointers_internal(&mut state, db);
                                     break;
                                 }
@@ -260,6 +277,7 @@ impl PresentationManager {
                 if curr_idx + 1 < slides.len() {
                     state.current_slide_id = Some(slides[curr_idx + 1].id.clone());
                     state.is_live = true;
+                    state.is_logo = false;
                     self.update_pointers_internal(&mut state, db);
                 }
             }
@@ -285,6 +303,7 @@ impl PresentationManager {
                     if curr_idx > 0 {
                         state.current_slide_id = Some(slides[curr_idx - 1].id.clone());
                         state.is_live = true;
+                        state.is_logo = false;
                         self.update_pointers_internal(&mut state, db);
                     } else {
                         // Boundary transition: last slide of previous item in playlist
@@ -299,6 +318,7 @@ impl PresentationManager {
                                         state.current_item_id = Some(prev_it.id.clone());
                                         state.current_slide_id = Some(last_s.id.clone());
                                         state.is_live = true;
+                                        state.is_logo = false;
                                         self.update_pointers_internal(&mut state, db);
                                         break;
                                     }
@@ -317,6 +337,7 @@ impl PresentationManager {
                 if curr_idx > 0 {
                     state.current_slide_id = Some(slides[curr_idx - 1].id.clone());
                     state.is_live = true;
+                    state.is_logo = false;
                     self.update_pointers_internal(&mut state, db);
                 }
             }
@@ -389,6 +410,31 @@ impl PresentationManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_logo_is_independent_of_blackout_and_clears_on_go_live() {
+        let db = DbManager::new_in_memory().unwrap();
+        let pres_mgr = PresentationManager::new();
+        pres_mgr.init_pointers(&db);
+
+        assert!(pres_mgr.toggle_logo_core());
+        assert!(pres_mgr.get_state().is_logo);
+        assert!(!pres_mgr.get_state().is_blackout);
+
+        // Blackout does not disturb the logo flag
+        pres_mgr.toggle_blackout_core();
+        assert!(pres_mgr.get_state().is_logo);
+        pres_mgr.toggle_blackout_core();
+
+        // Taking a slide live clears the logo
+        let state = pres_mgr.next_slide_core(&db);
+        assert!(state.is_live);
+        assert!(!state.is_logo);
+
+        // Logo toggles off again
+        assert!(pres_mgr.toggle_logo_core());
+        assert!(!pres_mgr.toggle_logo_core());
+    }
 
     #[test]
     fn test_presentation_navigation_core() {

@@ -39,6 +39,23 @@ describe('Presentation Controls & Navigation', () => {
     expect(finalState.currentSlideIndex).toBe(0);
   });
 
+  it('toggles clear-to-logo without modifying the active slide and clears when going live', async () => {
+    const before = await api.getPresentationState();
+    expect(before.isLogo).toBeFalsy();
+
+    expect(await api.toggleLogo()).toBe(true);
+    let state = await api.getPresentationState();
+    expect(state.isLogo).toBe(true);
+    expect(state.currentSlideId).toBe(before.currentSlideId);
+
+    state = await api.nextSlide();
+    expect(state.isLogo).toBe(false);
+    expect(state.isLive).toBe(true);
+
+    expect(await api.toggleLogo()).toBe(true);
+    expect(await api.toggleLogo()).toBe(false);
+  });
+
   it('toggles black screen without modifying the active slide and restores properly', async () => {
     const initialState = await api.getPresentationState();
     expect(initialState.isBlackout).toBe(false);

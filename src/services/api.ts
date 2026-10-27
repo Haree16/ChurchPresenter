@@ -1146,6 +1146,7 @@ class MockDataStore {
     currentSlide: null,
     nextSlide: null,
     isBlackout: false,
+    isLogo: false,
     isLive: false,
   };
 
@@ -1428,6 +1429,7 @@ class MockDataStore {
     this.state.currentPresentationId = presentationId;
     this.state.currentSlideId = slideId;
     this.state.isLive = true;
+    this.state.isLogo = false;
     this.notify();
     return this.state;
   }
@@ -1442,6 +1444,7 @@ class MockDataStore {
     this.state.currentPresentationId = null;
     this.state.currentSlideId = slideId;
     this.state.isLive = true;
+    this.state.isLogo = false;
     this.notify();
     return this.state;
   }
@@ -1462,6 +1465,12 @@ class MockDataStore {
     return this.state;
   }
 
+  public async toggleLogo(): Promise<boolean> {
+    this.state.isLogo = !this.state.isLogo;
+    this.notify();
+    return !!this.state.isLogo;
+  }
+
   public async toggleBlackout(): Promise<boolean> {
     this.state.isBlackout = !this.state.isBlackout;
     this.notify();
@@ -1477,6 +1486,7 @@ class MockDataStore {
       if (currIdx >= 0 && currIdx + 1 < itemSlides.length) {
         this.state.currentSlideId = itemSlides[currIdx + 1].id;
         this.state.isLive = true;
+        this.state.isLogo = false;
         this.notify();
       } else {
         // Boundary transition: first slide of next item with slides
@@ -1493,6 +1503,7 @@ class MockDataStore {
               this.state.currentItemId = items[i].id;
               this.state.currentSlideId = nextSlides[0].id;
               this.state.isLive = true;
+              this.state.isLogo = false;
               this.notify();
               break;
             }
@@ -1511,6 +1522,7 @@ class MockDataStore {
     if (currIdx >= 0 && currIdx + 1 < slides.length) {
       this.state.currentSlideId = slides[currIdx + 1].id;
       this.state.isLive = true;
+      this.state.isLogo = false;
       this.notify();
     }
     return this.state;
@@ -1525,6 +1537,7 @@ class MockDataStore {
       if (currIdx > 0) {
         this.state.currentSlideId = itemSlides[currIdx - 1].id;
         this.state.isLive = true;
+        this.state.isLogo = false;
         this.notify();
       } else {
         // Boundary transition: last slide of previous item with slides
@@ -1541,6 +1554,7 @@ class MockDataStore {
               this.state.currentItemId = items[i].id;
               this.state.currentSlideId = prevSlides[prevSlides.length - 1].id;
               this.state.isLive = true;
+              this.state.isLogo = false;
               this.notify();
               break;
             }
@@ -1559,6 +1573,7 @@ class MockDataStore {
     if (currIdx > 0) {
       this.state.currentSlideId = slides[currIdx - 1].id;
       this.state.isLive = true;
+      this.state.isLogo = false;
       this.notify();
     }
     return this.state;
@@ -3283,11 +3298,15 @@ class MockDataStore {
       case 'toggle_blackout':
         await this.toggleBlackout();
         return this.getPresentationState();
+      case 'toggle_logo':
+        await this.toggleLogo();
+        return this.getPresentationState();
       case 'toggle_live':
         if (this.state.isLive) {
           return this.clearLive();
         } else {
           this.state.isLive = true;
+          this.state.isLogo = false;
           this.notify();
           return this.getPresentationState();
         }
@@ -3756,6 +3775,13 @@ export const api = {
       });
     }
     return mockStore.setLiveSlide(presentationId, slideId);
+  },
+
+  toggleLogo: async (): Promise<boolean> => {
+    if (isTauri()) {
+      return await invoke<boolean>('toggle_logo');
+    }
+    return mockStore.toggleLogo();
   },
 
   toggleBlackout: async (): Promise<boolean> => {

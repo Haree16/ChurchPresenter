@@ -12,6 +12,7 @@ export const AudienceView: React.FC = () => {
     currentSlide: null,
     nextSlide: null,
     isBlackout: false,
+    isLogo: false,
     isLive: false,
     mediaPlayback: null,
   });
@@ -64,7 +65,7 @@ export const AudienceView: React.FC = () => {
     };
   }, []);
 
-  const { isLive, isBlackout, currentSlide, mediaPlayback } = presentationState;
+  const { isLive, isBlackout, isLogo, currentSlide, mediaPlayback } = presentationState;
 
   // Slide transition effect (fade under 500ms, no flash)
   useEffect(() => {
@@ -135,6 +136,31 @@ export const AudienceView: React.FC = () => {
     mediaPlayback?.mediaType === 'video' &&
     (!currentSlide || !currentSlide.body.trim()) &&
     mediaPlayback.mediaUrl;
+
+  // Clear-to-logo: church logo on black, unless blackout takes priority
+  if (isLogo && !isBlackout) {
+    return (
+      <div
+        data-testid="audience-logo"
+        style={{
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: '#000000',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'none',
+          overflow: 'hidden',
+        }}
+      >
+        <img
+          src="/logo.png"
+          alt=""
+          style={{ maxWidth: '40vmin', maxHeight: '40vmin', objectFit: 'contain' }}
+        />
+      </div>
+    );
+  }
 
   // Render pure black screen when blackout is active or not live
   if (isBlackout || !isLive) {

@@ -48,6 +48,7 @@ interface HeaderProps {
   onOpenDiagnosticsModal?: () => void;
   onOpenSettingsModal?: () => void;
   onToggleBlackout: () => void;
+  onToggleLogo?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -69,8 +70,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenDiagnosticsModal,
   onOpenSettingsModal,
   onToggleBlackout,
+  onToggleLogo,
 }) => {
-  const { isLive, isBlackout } = presentationState;
+  const { isLive, isBlackout, isLogo } = presentationState;
 
   return (
     <header
@@ -88,22 +90,11 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Brand & Navigation Tabs */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800,
-              fontSize: '16px',
-              color: '#ffffff',
-            }}
-          >
-            CP
-          </div>
+          <img
+            src="/logo.png"
+            alt="Church Presenter"
+            style={{ width: '32px', height: '32px', borderRadius: '8px' }}
+          />
           <div>
             <div
               style={{
@@ -360,6 +351,28 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Blackout Toggle Button */}
+        {onToggleLogo && (
+          <button
+            type="button"
+            data-testid="toggle-logo-btn"
+            onClick={onToggleLogo}
+            title="Clear to Logo (Shortcut: L)"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '5px 10px',
+              borderRadius: '6px',
+              backgroundColor: isLogo ? '#1d4ed8' : '#1e293b',
+              border: `1px solid ${isLogo ? '#60a5fa' : '#334155'}`,
+              color: isLogo ? '#ffffff' : '#f8fafc',
+              fontSize: '11px',
+              fontWeight: 600,
+            }}
+          >
+            <span>{isLogo ? 'Logo On (L)' : 'Logo (L)'}</span>
+          </button>
+        )}
         <button
           type="button"
           data-testid="toggle-blackout-btn"
