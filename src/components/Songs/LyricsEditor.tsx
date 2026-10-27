@@ -11,7 +11,7 @@ import {
   GripVertical,
 } from 'lucide-react';
 import { SongSection, SectionType } from '../../types';
-import { sectionColor } from './sectionColors';
+import { sectionColor } from '../../services/sectionColors';
 
 interface LyricsEditorProps {
   sections: SongSection[];

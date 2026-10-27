@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowDown, ArrowUp, Plus, Star, Trash2, X } from 'lucide-react';
 import { SongArrangement, SongSection } from '../../types';
-import { sectionColor } from './sectionColors';
+import { sectionColor } from '../../services/sectionColors';
 
 interface ArrangementEditorProps {
   sections: SongSection[];

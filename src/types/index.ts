@@ -28,6 +28,9 @@ export interface Slide {
   verticalAlignment?: 'top' | 'center' | 'bottom' | null;
   fontFamily?: string | null;
   fontWeight?: string | null;
+  /** Song group this slide came from (e.g. "Chorus"), shown as a coloured tag on the card. */
+  groupLabel?: string | null;
+  groupColor?: string | null;
   createdAt: string;
   updatedAt: string;
 }

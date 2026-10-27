@@ -50,6 +50,7 @@ import {
   BibleTranslationInfo,
   SongArrangement,
 } from '../types';
+import { sectionColor } from './sectionColors';
 
 // Detect whether we are running inside native Tauri runtime
 export const isTauri = (): boolean => {
@@ -1356,6 +1357,8 @@ class MockDataStore {
       verticalAlignment: slideData.verticalAlignment || null,
       fontFamily: slideData.fontFamily || null,
       fontWeight: slideData.fontWeight || null,
+      groupLabel: slideData.groupLabel || null,
+      groupColor: slideData.groupColor || null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -2133,6 +2136,8 @@ class MockDataStore {
           verticalAlignment: theme?.verticalAlignment || null,
           fontFamily: theme?.fontFamily || null,
           fontWeight: theme?.fontWeight || null,
+          groupLabel: sec.label,
+          groupColor: sectionColor(sec),
         });
         createdSlides.push(slide);
       }
@@ -2549,6 +2554,8 @@ class MockDataStore {
           verticalAlignment: theme.verticalAlignment,
           fontFamily: theme.fontFamily,
           fontWeight: theme.fontWeight,
+          groupLabel: sec.label,
+          groupColor: sectionColor(sec),
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });

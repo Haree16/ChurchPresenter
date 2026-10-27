@@ -139,6 +139,8 @@ pub async fn create_slide(
         vertical_alignment,
         font_family,
         font_weight,
+        group_label: None,
+        group_color: None,
         created_at: "".to_string(),
         updated_at: "".to_string(),
     };
@@ -187,6 +189,8 @@ pub async fn update_slide(
         vertical_alignment,
         font_family,
         font_weight,
+        group_label: None,
+        group_color: None,
         created_at: "".to_string(),
         updated_at: "".to_string(),
     };
@@ -1753,6 +1757,8 @@ fn image_slide(presentation_id: &str, img_path: &std::path::Path, idx: usize) ->
         vertical_alignment: Some("center".to_string()),
         font_family: None,
         font_weight: None,
+        group_label: None,
+        group_color: None,
         created_at: Utc::now().to_rfc3339(),
         updated_at: Utc::now().to_rfc3339(),
     }

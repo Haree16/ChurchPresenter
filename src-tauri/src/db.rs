@@ -1205,6 +1205,23 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 9: Slide group labels/colours =================
+        if current_version < 9 {
+            let tx = conn.unchecked_transaction()?;
+
+            tx.execute("ALTER TABLE slides ADD COLUMN group_label TEXT;", [])?;
+            tx.execute("ALTER TABLE slides ADD COLUMN group_color TEXT;", [])?;
+            tx.execute("ALTER TABLE service_item_slides ADD COLUMN group_label TEXT;", [])?;
+            tx.execute("ALTER TABLE service_item_slides ADD COLUMN group_color TEXT;", [])?;
+
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (9, ?1);",
+                params![Utc::now().to_rfc3339()],
+            )?;
+
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -1371,8 +1388,8 @@ impl DbManager {
         for slide in slides {
             let new_slide_id = Uuid::new_v4().to_string();
             tx.execute(
-                "INSERT INTO slides (id, presentation_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18);",
+                "INSERT INTO slides (id, presentation_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at, group_label, group_color)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18, ?19, ?20);",
                 params![
                     new_slide_id,
                     new_id,
@@ -1391,7 +1408,9 @@ impl DbManager {
                     slide.vertical_alignment,
                     slide.font_family,
                     slide.font_weight,
-                    now
+                    now,
+                    slide.group_label.clone(),
+                    slide.group_color.clone()
                 ],
             )?;
         }
@@ -1416,7 +1435,7 @@ impl DbManager {
         let mut stmt = conn.prepare(
             "SELECT id, presentation_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override,
                     background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight,
-                    created_at, updated_at
+                    created_at, updated_at, group_label, group_color
              FROM slides
              WHERE presentation_id = ?1
              ORDER BY sort_order ASC;",
@@ -1443,6 +1462,8 @@ impl DbManager {
                 font_weight: row.get(16)?,
                 created_at: row.get(17)?,
                 updated_at: row.get(18)?,
+                group_label: row.get(19)?,
+                group_color: row.get(20)?,
             })
         })?;
 
@@ -1458,7 +1479,7 @@ impl DbManager {
         let mut stmt = conn.prepare(
             "SELECT id, presentation_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override,
                     background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight,
-                    created_at, updated_at
+                    created_at, updated_at, group_label, group_color
              FROM slides
              WHERE id = ?1;",
         )?;
@@ -1484,6 +1505,8 @@ impl DbManager {
                 font_weight: row.get(16)?,
                 created_at: row.get(17)?,
                 updated_at: row.get(18)?,
+                group_label: row.get(19)?,
+                group_color: row.get(20)?,
             })
         })?;
 
@@ -1517,8 +1540,8 @@ impl DbManager {
         let now = Utc::now().to_rfc3339();
 
         conn.execute(
-            "INSERT INTO slides (id, presentation_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18);",
+            "INSERT INTO slides (id, presentation_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at, group_label, group_color)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18, ?19, ?20);",
             params![
                 id,
                 slide.presentation_id,
@@ -1537,7 +1560,9 @@ impl DbManager {
                 slide.vertical_alignment,
                 slide.font_family,
                 slide.font_weight,
-                now
+                now,
+                slide.group_label.clone(),
+                slide.group_color.clone()
             ],
         )?;
 
@@ -1559,6 +1584,8 @@ impl DbManager {
             vertical_alignment: slide.vertical_alignment.clone(),
             font_family: slide.font_family.clone(),
             font_weight: slide.font_weight.clone(),
+            group_label: slide.group_label.clone(),
+            group_color: slide.group_color.clone(),
             created_at: now.clone(),
             updated_at: now,
         })
@@ -1619,6 +1646,8 @@ impl DbManager {
             vertical_alignment: slide.vertical_alignment.clone(),
             font_family: slide.font_family.clone(),
             font_weight: slide.font_weight.clone(),
+            group_label: slide.group_label.clone(),
+            group_color: slide.group_color.clone(),
             created_at,
             updated_at: now,
         })
@@ -1679,8 +1708,8 @@ impl DbManager {
         let now = Utc::now().to_rfc3339();
 
         tx.execute(
-            "INSERT INTO slides (id, presentation_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18);",
+            "INSERT INTO slides (id, presentation_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at, group_label, group_color)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18, ?19, ?20);",
             params![
                 new_id,
                 orig.presentation_id,
@@ -1699,7 +1728,9 @@ impl DbManager {
                 orig.vertical_alignment,
                 orig.font_family,
                 orig.font_weight,
-                now
+                now,
+                orig.group_label.clone(),
+                orig.group_color.clone()
             ],
         )?;
 
@@ -1723,6 +1754,8 @@ impl DbManager {
             vertical_alignment: orig.vertical_alignment,
             font_family: orig.font_family,
             font_weight: orig.font_weight,
+            group_label: orig.group_label,
+            group_color: orig.group_color,
             created_at: now.clone(),
             updated_at: now,
         })
@@ -3070,6 +3103,8 @@ impl DbManager {
                     vertical_alignment: Some(theme.vertical_alignment.clone()),
                     font_family: Some(theme.font_family.clone()),
                     font_weight: Some(theme.font_weight.clone()),
+                    group_label: Some(section.label.clone()),
+                    group_color: Some(section_group_color(&section)),
                     created_at: Utc::now().to_rfc3339(),
                     updated_at: Utc::now().to_rfc3339(),
                 };
@@ -3641,7 +3676,7 @@ impl DbManager {
 
             // Copy item slides
             let mut slide_stmt = tx.prepare(
-                "SELECT sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight
+                "SELECT sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, group_label, group_color
                  FROM service_item_slides WHERE item_id = ?1 ORDER BY sort_order ASC;",
             )?;
 
@@ -3663,6 +3698,8 @@ impl DbManager {
                         r.get::<_, Option<String>>(12)?,
                         r.get::<_, Option<String>>(13)?,
                         r.get::<_, Option<String>>(14)?,
+                        r.get::<_, Option<String>>(15)?,
+                        r.get::<_, Option<String>>(16)?,
                     ))
                 })?
                 .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -3670,8 +3707,8 @@ impl DbManager {
             for s in slides {
                 let new_slide_id = format!("slide-{}", Uuid::new_v4().simple());
                 tx.execute(
-                    "INSERT INTO service_item_slides (id, item_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18);",
+                    "INSERT INTO service_item_slides (id, item_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at, group_label, group_color)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18, ?19, ?20);",
                     params![
                         new_slide_id,
                         new_item_id,
@@ -3690,7 +3727,9 @@ impl DbManager {
                         s.12,
                         s.13,
                         s.14,
-                        now
+                        now,
+                        s.15,
+                        s.16
                     ],
                 )?;
             }
@@ -3854,8 +3893,8 @@ impl DbManager {
                     s.id
                 };
                 conn.execute(
-                    "INSERT INTO service_item_slides (id, item_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18);",
+                    "INSERT INTO service_item_slides (id, item_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at, group_label, group_color)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18, ?19, ?20);",
                     params![
                         slide_id,
                         id,
@@ -3874,7 +3913,9 @@ impl DbManager {
                         s.vertical_alignment,
                         s.font_family,
                         s.font_weight,
-                        now
+                        now,
+                        s.group_label.clone(),
+                        s.group_color.clone()
                     ],
                 )?;
             }
@@ -4016,7 +4057,7 @@ impl DbManager {
         let mut stmt = conn.prepare(
             "SELECT id, item_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override,
                     background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight,
-                    created_at, updated_at
+                    created_at, updated_at, group_label, group_color
              FROM service_item_slides
              WHERE item_id = ?1
              ORDER BY sort_order ASC;",
@@ -4043,6 +4084,8 @@ impl DbManager {
                 font_weight: row.get(16)?,
                 created_at: row.get(17)?,
                 updated_at: row.get(18)?,
+                group_label: row.get(19)?,
+                group_color: row.get(20)?,
             })
         })?;
 
@@ -4072,8 +4115,8 @@ impl DbManager {
             };
 
             tx.execute(
-                "INSERT INTO service_item_slides (id, item_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18);",
+                "INSERT INTO service_item_slides (id, item_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at, group_label, group_color)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18, ?19, ?20);",
                 params![
                     slide_id,
                     item_id,
@@ -4092,7 +4135,9 @@ impl DbManager {
                     s.vertical_alignment,
                     s.font_family,
                     s.font_weight,
-                    now
+                    now,
+                    s.group_label.clone(),
+                    s.group_color.clone()
                 ],
             )?;
 
@@ -4190,6 +4235,8 @@ impl DbManager {
                     vertical_alignment: Some(theme.vertical_alignment.clone()),
                     font_family: Some(theme.font_family.clone()),
                     font_weight: Some(theme.font_weight.clone()),
+                    group_label: Some(sec.label.clone()),
+                    group_color: Some(section_group_color(sec)),
                     created_at: "".to_string(),
                     updated_at: "".to_string(),
                 };
@@ -4218,6 +4265,25 @@ impl DbManager {
 
         self.add_service_item(&item, Some(slides))
     }
+}
+
+/// Colour shown for a song section: its custom colour, else the default for its type.
+/// Keep the defaults in sync with `DEFAULT_SECTION_COLORS` in `src/components/Songs/sectionColors.ts`.
+pub fn section_group_color(section: &SongSection) -> String {
+    if let Some(c) = section.color.as_ref().filter(|c| !c.trim().is_empty()) {
+        return c.clone();
+    }
+    match section.section_type.as_str() {
+        "verse" => "#3b82f6",
+        "chorus" => "#f59e0b",
+        "bridge" => "#a855f7",
+        "pre_chorus" => "#38bdf8",
+        "intro" => "#34d399",
+        "outro" => "#fb7185",
+        "refrain" => "#facc15",
+        _ => "#64748b",
+    }
+    .to_string()
 }
 
 pub fn resolve_book_number(input: &str) -> Option<u32> {
@@ -4788,6 +4854,8 @@ impl DbManager {
                 vertical_alignment: Some(theme.vertical_alignment.clone()),
                 font_family: Some(theme.font_family.clone()),
                 font_weight: Some(theme.font_weight.clone()),
+                group_label: None,
+                group_color: None,
                 created_at: "".to_string(),
                 updated_at: "".to_string(),
             };
@@ -4823,7 +4891,7 @@ impl DbManager {
             let mut stmt = conn.prepare(
                 "SELECT id, presentation_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override,
                         background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight,
-                        created_at, updated_at
+                        created_at, updated_at, group_label, group_color
                  FROM slides
                  ORDER BY presentation_id, sort_order ASC;",
             )?;
@@ -4849,6 +4917,8 @@ impl DbManager {
                     font_weight: row.get(16)?,
                     created_at: row.get(17)?,
                     updated_at: row.get(18)?,
+                    group_label: row.get(19)?,
+                    group_color: row.get(20)?,
                 })
             })?;
 
@@ -5007,8 +5077,8 @@ impl DbManager {
 
             if !exists {
                 tx.execute(
-                    "INSERT INTO slides (id, presentation_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19);",
+                    "INSERT INTO slides (id, presentation_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at, group_label, group_color)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21);",
                     params![
                         s.id,
                         s.presentation_id,
@@ -5028,7 +5098,9 @@ impl DbManager {
                         s.font_family,
                         s.font_weight,
                         s.created_at,
-                        s.updated_at
+                        s.updated_at,
+                        s.group_label.clone(),
+                        s.group_color.clone()
                     ],
                 )?;
                 s_count += 1;
@@ -5262,8 +5334,8 @@ impl DbManager {
 
             if !exists {
                 tx.execute(
-                    "INSERT INTO service_item_slides (id, item_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19);",
+                    "INSERT INTO service_item_slides (id, item_id, sort_order, title, body, background_color, foreground_color, font_size, text_alignment, theme_override, background_image, overlay_color, line_spacing, text_shadow, vertical_alignment, font_family, font_weight, created_at, updated_at, group_label, group_color)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21);",
                     params![
                         sl.id,
                         sl.presentation_id,
@@ -5283,7 +5355,9 @@ impl DbManager {
                         sl.font_family,
                         sl.font_weight,
                         sl.created_at,
-                        sl.updated_at
+                        sl.updated_at,
+                        sl.group_label.clone(),
+                        sl.group_color.clone()
                     ],
                 )?;
             }
@@ -6449,6 +6523,8 @@ mod tests {
             vertical_alignment: None,
             font_family: None,
             font_weight: None,
+            group_label: None,
+            group_color: None,
             created_at: "".to_string(),
             updated_at: "".to_string(),
         };
@@ -6470,6 +6546,8 @@ mod tests {
             vertical_alignment: None,
             font_family: None,
             font_weight: None,
+            group_label: None,
+            group_color: None,
             created_at: "".to_string(),
             updated_at: "".to_string(),
         };
@@ -6491,6 +6569,8 @@ mod tests {
             vertical_alignment: None,
             font_family: None,
             font_weight: None,
+            group_label: None,
+            group_color: None,
             created_at: "".to_string(),
             updated_at: "".to_string(),
         };
@@ -7216,6 +7296,103 @@ mod tests {
         let slides = db.get_service_item_slides(&with.id).unwrap();
         assert_eq!(slides.len(), 3);
         assert_eq!(slides[0].body, slides[1].body);
+    }
+
+    fn blank_service(db: &DbManager, title: &str) -> Service {
+        db.create_service(&Service {
+            id: String::new(),
+            title: title.into(),
+            service_date: Some("2026-11-01".into()),
+            description: None,
+            category: "Sunday".into(),
+            notes: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            item_count: 0,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn test_song_slides_carry_group_label_and_color() {
+        let db = DbManager::new_in_memory().unwrap();
+        let mut secs = db.get_song_sections("song-amazing-grace").unwrap();
+        secs[0].color = Some("#ff0000".to_string());
+        let saved = db.save_song_sections("song-amazing-grace", &secs).unwrap();
+        let (a, b) = (&saved[0], &saved[1]);
+        db.save_song_arrangements("song-amazing-grace", &[arrangement("A B A", &[a.id.as_str(), b.id.as_str(), a.id.as_str()], true)]).unwrap();
+
+        let svc = blank_service(&db, "Groups");
+        let item = db.add_song_to_service(&svc.id, "song-amazing-grace", None, Some(50), None).unwrap();
+        let slides = db.get_service_item_slides(&item.id).unwrap();
+
+        assert_eq!(slides.len(), 3);
+        assert_eq!(slides[0].group_label.as_deref(), Some(a.label.as_str()));
+        assert_eq!(slides[0].group_color.as_deref(), Some("#ff0000")); // custom colour wins
+        assert_eq!(slides[1].group_label.as_deref(), Some(b.label.as_str()));
+        assert_eq!(slides[1].group_color.as_deref(), Some(section_group_color(b).as_str())); // type default
+        assert_eq!(slides[2].group_label, slides[0].group_label); // repeated section, same group
+
+        // survives duplicating the service item
+        let copy = db.duplicate_service_item(&item.id).unwrap();
+        let copied = db.get_service_item_slides(&copy.id).unwrap();
+        assert_eq!(copied[0].group_color.as_deref(), Some("#ff0000"));
+        assert_eq!(copied[1].group_label.as_deref(), Some(b.label.as_str()));
+    }
+
+    #[test]
+    fn test_generated_presentation_slides_carry_group_and_survive_duplicate_and_backup() {
+        let db = DbManager::new_in_memory().unwrap();
+        let (_, slides) = db
+            .generate_slides_from_song(&SlideGenerationOptions {
+                song_id: "song-amazing-grace".into(),
+                section_ids: vec![],
+                arrangement_id: None,
+                target_presentation_id: None,
+                theme_id: None,
+                lines_per_slide: Some(2),
+                custom_delimiter: None,
+                create_new_presentation: true,
+                new_presentation_title: Some("Gen".into()),
+            })
+            .unwrap();
+        assert!(!slides.is_empty());
+        assert!(slides.iter().all(|s| s.group_label.is_some() && s.group_color.as_deref().map_or(false, |c| c.starts_with('#'))));
+
+        let dup = db.duplicate_slide(&slides[0].id).unwrap();
+        assert_eq!(dup.group_label, slides[0].group_label);
+        assert_eq!(dup.group_color, slides[0].group_color);
+
+        let backup = db.export_backup().unwrap();
+        let exported = backup.slides.iter().find(|s| s.id == slides[0].id).unwrap();
+        assert_eq!(exported.group_label, slides[0].group_label);
+        db.import_backup(&backup, "overwrite").unwrap();
+        let reloaded = db.get_slides(&slides[0].presentation_id).unwrap();
+        assert_eq!(reloaded[0].group_label, slides[0].group_label);
+        assert_eq!(reloaded[0].group_color, slides[0].group_color);
+    }
+
+    #[test]
+    fn test_ordinary_and_bible_slides_have_no_group() {
+        let db = DbManager::new_in_memory().unwrap();
+        let svc = blank_service(&db, "Bible");
+        let item = db
+            .add_bible_passage_to_service(
+                &svc.id,
+                &BiblePassageQuery {
+                    translation: "KJV".into(),
+                    book: "John".into(),
+                    chapter: 3,
+                    start_verse: 16,
+                    end_verse: Some(17),
+                    secondary_translation: None,
+                },
+                None,
+                Some(1),
+            )
+            .unwrap();
+        let slides = db.get_service_item_slides(&item.id).unwrap();
+        assert!(slides.iter().all(|s| s.group_label.is_none() && s.group_color.is_none()));
     }
 }
 

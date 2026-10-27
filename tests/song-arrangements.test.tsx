@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { api } from '../src/services/api';
 import { ArrangementEditor } from '../src/components/Songs/ArrangementEditor';
-import { sectionColor, DEFAULT_SECTION_COLORS } from '../src/components/Songs/sectionColors';
+import { sectionColor, DEFAULT_SECTION_COLORS } from '../src/services/sectionColors';
 import { SongArrangement, SongSection } from '../src/types';
 
 const SONG = 'song-amazing-grace';

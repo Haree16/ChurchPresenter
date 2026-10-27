@@ -10,6 +10,7 @@ import {
   Radio,
 } from 'lucide-react';
 import { Slide, Presentation, PresentationState } from '../types';
+import { readableTextColor } from '../services/sectionColors';
 
 interface SlideCardProps {
   slide: Slide;
@@ -153,6 +154,28 @@ export const SlideCard = React.memo<SlideCardProps>(({
           )}
         </div>
       </div>
+
+      {/* Song group tag (Verse 1, Chorus, ...) */}
+      {slide.groupLabel && slide.groupColor && (
+        <div
+          data-testid="slide-group-tag"
+          title={slide.groupLabel}
+          style={{
+            padding: '2px 10px',
+            backgroundColor: slide.groupColor,
+            color: readableTextColor(slide.groupColor),
+            fontSize: '10px',
+            fontWeight: 800,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {slide.groupLabel}
+        </div>
+      )}
 
       {/* Card Footer: Slide Index, Title, and Action Buttons */}
       <div

@@ -27,6 +27,12 @@ pub struct Slide {
     pub font_family: Option<String>,
     #[serde(default)]
     pub font_weight: Option<String>,
+    /// Song group this slide came from (e.g. "Chorus"); None for ordinary slides.
+    #[serde(default)]
+    pub group_label: Option<String>,
+    /// Hex colour of that group.
+    #[serde(default)]
+    pub group_color: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
