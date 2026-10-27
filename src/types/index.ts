@@ -152,7 +152,21 @@ export type MacroStep =
   | { type: 'alert'; message: string; seconds?: number | null }
   | { type: 'prop'; propId: string; mode: 'show' | 'hide' | 'toggle' }
   | { type: 'wait'; seconds: number }
-  | { type: 'autoAdvance'; intervalSeconds: number; loopAtEnd?: boolean };
+  | { type: 'autoAdvance'; intervalSeconds: number; loopAtEnd?: boolean }
+  | { type: 'look'; lookId: string };
+
+/** A saved arrangement of the output layers: logo, blackout and which props are showing. */
+export interface Look {
+  id: string;
+  name: string;
+  logo: boolean;
+  blackout: boolean;
+  /** Props to show, in drawing order. */
+  propIds: string[];
+  sortOrder?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 /** A saved list of steps run with one click. */
 export interface Macro {

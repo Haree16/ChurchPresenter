@@ -55,6 +55,8 @@ pub enum MacroStep {
     Prop { prop_id: String, mode: String },
     Wait { seconds: u32 },
     AutoAdvance { interval_seconds: u32, #[serde(default)] loop_at_end: bool },
+    /// Apply a saved look (logo, blackout and props).
+    Look { look_id: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -102,6 +104,13 @@ pub fn validate_step(step: &MacroStep) -> std::result::Result<(), String> {
                 return Err(format!("unknown prop mode '{}'.", mode));
             }
             Ok(())
+        }
+        MacroStep::Look { look_id } => {
+            if look_id.trim().is_empty() {
+                Err("choose a look.".to_string())
+            } else {
+                Ok(())
+            }
         }
         MacroStep::Wait { seconds } => {
             if (1..=MAX_WAIT_SECONDS).contains(seconds) {
@@ -280,6 +289,14 @@ pub fn apply_step_core(
             if want != on {
                 pres.toggle_prop_core(db, prop_id)?;
             }
+            Ok(StepOutcome::Done)
+        }
+        MacroStep::Look { look_id } => {
+            let look = db
+                .get_look(look_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "That look no longer exists.".to_string())?;
+            pres.apply_look_core(db, &look);
             Ok(StepOutcome::Done)
         }
         MacroStep::Wait { seconds } => Ok(StepOutcome::Wait(*seconds)),
@@ -679,5 +696,24 @@ mod tests {
         assert!(runner.still_current(&second));
         runner.finish(&second);
         assert!(!runner.is_running());
+    }
+
+    #[test]
+    fn look_steps_apply_a_saved_look_and_fail_when_it_is_gone() {
+        let (db, pres) = setup();
+        let saved = db.create_look(&crate::looks::Look {
+            id: String::new(), name: "Pre".into(), logo: true, blackout: false, prop_ids: vec![],
+            sort_order: 0, created_at: String::new(), updated_at: String::new(),
+        }).unwrap();
+        let step = MacroStep::Look { look_id: saved.id.clone() };
+        assert!(validate_step(&step).is_ok());
+        assert_eq!(apply_step_core(&db, &pres, &step, 0).unwrap(), StepOutcome::Done);
+        assert!(pres.get_state().is_logo);
+
+        db.delete_look(&saved.id).unwrap();
+        assert!(apply_step_core(&db, &pres, &step, 0).unwrap_err().contains("no longer exists"));
+        assert!(validate_step(&MacroStep::Look { look_id: " ".into() }).unwrap_err().contains("choose a look"));
+        let json = serde_json::to_value(&step).unwrap();
+        assert_eq!(json, serde_json::json!({"type": "look", "lookId": saved.id}));
     }
 }

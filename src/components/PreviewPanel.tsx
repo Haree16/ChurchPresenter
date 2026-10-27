@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { PropsControl } from './PropsControl';
 import { AutoAdvanceControl } from './AutoAdvanceControl';
+import { LooksControl } from './LooksControl';
 import { MacroControl } from './MacroControl';
 import { SlideElements } from './SlideElements';
 import { composeTextShadow, layoutPaddingPercent } from '../services/slideLayout';
@@ -412,6 +413,8 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
           <AudienceAlertControl alert={presentationState.alert} />
 
           <PropsControl presentationState={presentationState} />
+
+          <LooksControl presentationState={presentationState} />
 
           <AutoAdvanceControl presentationState={presentationState} />
 

@@ -422,6 +422,53 @@ pub async fn stop_macro(
 }
 
 #[tauri::command]
+pub async fn list_looks(db: State<'_, DbManager>) -> Result<Vec<crate::looks::Look>, String> {
+    db.list_looks().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_look(look: crate::looks::Look, db: State<'_, DbManager>) -> Result<crate::looks::Look, String> {
+    db.create_look(&look)
+}
+
+#[tauri::command]
+pub async fn update_look(look: crate::looks::Look, db: State<'_, DbManager>) -> Result<crate::looks::Look, String> {
+    db.update_look(&look)
+}
+
+#[tauri::command]
+pub async fn delete_look(id: String, db: State<'_, DbManager>) -> Result<(), String> {
+    db.delete_look(&id).map_err(|e| e.to_string())
+}
+
+/// Sets the logo, blackout and props to match a saved look. The live slide is not changed.
+#[tauri::command]
+pub async fn apply_look(
+    id: String,
+    db: State<'_, DbManager>,
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    let look = db
+        .get_look(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "That look no longer exists.".to_string())?;
+    let state = pres_mgr.apply_look_core(&db, &look);
+    app.emit("presentation:state-changed", &state).ok();
+    Ok(state)
+}
+
+/// Saves the screen as it is now (logo, blackout, props) as a new look.
+#[tauri::command]
+pub async fn capture_look(
+    name: String,
+    db: State<'_, DbManager>,
+    pres_mgr: State<'_, PresentationManager>,
+) -> Result<crate::looks::Look, String> {
+    db.create_look(&pres_mgr.capture_look_core(name.trim()))
+}
+
+#[tauri::command]
 pub async fn clear_media(
     pres_mgr: State<'_, PresentationManager>,
     app: AppHandle,

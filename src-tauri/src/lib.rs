@@ -5,6 +5,7 @@ mod db;
 mod display;
 mod midi;
 mod layout;
+mod looks;
 mod macros;
 mod models;
 mod net_guard;
@@ -172,6 +173,12 @@ pub fn run() {
             commands::clear_media,
             commands::send_alert,
             commands::start_auto_advance,
+            commands::list_looks,
+            commands::create_look,
+            commands::update_look,
+            commands::delete_look,
+            commands::apply_look,
+            commands::capture_look,
             commands::list_macros,
             commands::create_macro,
             commands::update_macro,

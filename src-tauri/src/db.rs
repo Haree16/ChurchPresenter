@@ -1367,6 +1367,29 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 17: looks =================
+        if current_version < 17 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS looks (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    logo INTEGER NOT NULL DEFAULT 0,
+                    blackout INTEGER NOT NULL DEFAULT 0,
+                    prop_ids TEXT NOT NULL DEFAULT '[]',
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (17, ?1);",
+                params![Utc::now().to_rfc3339()],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -5228,6 +5251,7 @@ impl DbManager {
             props: self.list_props()?,
             slide_templates: self.list_slide_templates()?,
             macros: self.list_macros()?,
+            looks: self.list_looks()?,
             themes,
             media_assets,
             services,
@@ -5270,6 +5294,7 @@ impl DbManager {
             tx.execute("DELETE FROM props;", [])?;
             tx.execute("DELETE FROM slide_templates;", [])?;
             tx.execute("DELETE FROM macros;", [])?;
+            tx.execute("DELETE FROM looks;", [])?;
             tx.execute("DELETE FROM song_sections;", [])?;
             tx.execute("DELETE FROM songs;", [])?;
             tx.execute("DELETE FROM themes WHERE is_built_in = 0;", [])?;
@@ -5497,6 +5522,24 @@ impl DbManager {
                     mac.sort_order,
                     mac.created_at,
                     mac.updated_at
+                ],
+            )?;
+        }
+
+        // Restore looks
+        for lk in &backup.looks {
+            tx.execute(
+                "INSERT OR IGNORE INTO looks (id, name, logo, blackout, prop_ids, sort_order, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);",
+                params![
+                    lk.id,
+                    lk.name,
+                    lk.logo as i32,
+                    lk.blackout as i32,
+                    serde_json::to_string(&lk.prop_ids).unwrap_or_else(|_| "[]".to_string()),
+                    lk.sort_order,
+                    lk.created_at,
+                    lk.updated_at
                 ],
             )?;
         }

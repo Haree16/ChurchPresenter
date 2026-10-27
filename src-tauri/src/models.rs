@@ -354,6 +354,8 @@ pub struct BackupData {
     #[serde(default)]
     pub macros: Vec<crate::macros::Macro>,
     #[serde(default)]
+    pub looks: Vec<crate::looks::Look>,
+    #[serde(default)]
     pub themes: Vec<Theme>,
     #[serde(default)]
     pub media_assets: Vec<MediaAsset>,

@@ -88,10 +88,11 @@ Not done (design notes):
 Done:
 - **Auto-advance**: advance the live slide every 1-3600 s, optionally looping; starts from the live slide only (never puts something on screen by surprise); pauses while blacked out or blank; stops after the last slide unless looping; Clear All and `stop_auto_advance` (OSC `/autoadvance/stop`, opt-in; phone needs the navigation permission) end it. Operator control with presets and a countdown.
 - **Macros** (migration 16): saved lists of up to 30 steps run with one click: any of 17 listed actions, an alert, show/hide/toggle a prop, wait (up to 10 min, 30 min total), start auto-advance. They run on a background thread with progress shown, can be stopped, only one runs at a time, and cannot run other macros. Steps are validated (unknown actions refused). Included in backup/restore. Manager window to build, reorder and delete steps.
+- **Looks** (migration 17): save the output layers (logo on/off, blackout, which props show, in order) and apply them with one click; the live slide is never touched; props that were deleted are skipped. "Save current" captures the screen as it is; the Look matching the screen is highlighted. A macro can apply a Look as a step. Included in backup/restore.
 - Fixed a test-only race: the action repeat-filter (80 ms) was a process-wide static; it now lives in each presentation manager.
 
 Not done:
-- **Looks** (saved screen-state presets) and the **stage layout editor**.
+- The **stage layout editor**.
 - Auto-advance timing is one interval for all slides (no per-slide timing).
 - Macros can only be run from the operator panel (not yet from OSC, MIDI or the phone remote).
 - The scheduler and macro runner threads themselves are untested (they need a live app handle); the logic they call is covered.

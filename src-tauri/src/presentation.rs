@@ -314,6 +314,15 @@ impl PresentationManager {
         (outcome, state.clone())
     }
 
+    /// Sets the logo, blackout and visible props together (used by Looks).
+    pub fn set_layers_core(&self, logo: bool, blackout: bool, props: Vec<crate::props::Prop>) -> PresentationState {
+        let mut state = self.state.lock().unwrap();
+        state.is_logo = logo;
+        state.is_blackout = blackout;
+        state.active_props = props;
+        state.clone()
+    }
+
     pub fn set_running_macro_core(&self, running: Option<crate::models::RunningMacro>) {
         self.state.lock().unwrap().running_macro = running;
     }

@@ -55,9 +55,11 @@ import {
   SlideTemplate,
   Macro,
   MacroStep,
+  Look,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
+import { validateLook } from './looks';
 import { validateProp } from './propLayout';
 import { validateLayout, isEmptyLayout } from './slideLayout';
 import { sectionColor } from './sectionColors';
@@ -1488,6 +1490,68 @@ class MockDataStore {
     return this.state;
   }
 
+  // ---- looks
+  private looks: Look[] = [];
+
+  public async listLooks(): Promise<Look[]> {
+    return this.looks.map((l) => JSON.parse(JSON.stringify(l)));
+  }
+
+  public async createLook(look: Look): Promise<Look> {
+    const problem = validateLook(look);
+    if (problem) throw new Error(problem);
+    if (this.looks.length >= 100) throw new Error('You can keep at most 100 looks.');
+    const now = new Date().toISOString();
+    const saved: Look = {
+      ...JSON.parse(JSON.stringify(look)),
+      id: 'look-' + Math.random().toString(36).substring(2, 9),
+      name: look.name.trim(),
+      sortOrder: this.looks.length,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.looks.push(saved);
+    return JSON.parse(JSON.stringify(saved));
+  }
+
+  public async updateLook(look: Look): Promise<Look> {
+    const problem = validateLook(look);
+    if (problem) throw new Error(problem);
+    const idx = this.looks.findIndex((l) => l.id === look.id);
+    if (idx < 0) throw new Error('That look no longer exists.');
+    this.looks[idx] = { ...this.looks[idx], ...JSON.parse(JSON.stringify(look)), name: look.name.trim(), updatedAt: new Date().toISOString() };
+    return JSON.parse(JSON.stringify(this.looks[idx]));
+  }
+
+  public async deleteLook(id: string): Promise<void> {
+    this.looks = this.looks.filter((l) => l.id !== id);
+  }
+
+  /** Sets the logo, blackout and props to match the look; the live slide is not changed. */
+  public async applyLook(id: string): Promise<PresentationState> {
+    const look = this.looks.find((l) => l.id === id);
+    if (!look) throw new Error('That look no longer exists.');
+    this.state.isLogo = look.logo;
+    this.state.isBlackout = look.blackout;
+    this.state.activeProps = look.propIds
+      .map((pid) => this.props.find((p) => p.id === pid))
+      .filter((p): p is Prop => !!p)
+      .map((p) => ({ ...p }));
+    this.notify();
+    return this.state;
+  }
+
+  /** Saves the screen as it is now as a new look. */
+  public async captureLook(name: string): Promise<Look> {
+    return this.createLook({
+      id: '',
+      name,
+      logo: !!this.state.isLogo,
+      blackout: !!this.state.isBlackout,
+      propIds: (this.state.activeProps || []).map((p) => p.id),
+    });
+  }
+
   // ---- automation (macros and auto-advance)
   private macros: Macro[] = [];
   private autoAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1550,6 +1614,9 @@ class MockDataStore {
       }
       case 'autoAdvance':
         await this.startAutoAdvance(step.intervalSeconds, !!step.loopAtEnd);
+        return;
+      case 'look':
+        await this.applyLook(step.lookId);
         return;
       case 'wait':
         return; // handled by the runner
@@ -4275,6 +4342,51 @@ export const api = {
       });
     }
     return mockStore.setLiveSlide(presentationId, slideId);
+  },
+
+  listLooks: async (): Promise<Look[]> => {
+    if (isTauri()) {
+      return await invoke<Look[]>('list_looks');
+    }
+    return mockStore.listLooks();
+  },
+
+  createLook: async (look: Look): Promise<Look> => {
+    if (isTauri()) {
+      return await invoke<Look>('create_look', { look });
+    }
+    return mockStore.createLook(look);
+  },
+
+  updateLook: async (look: Look): Promise<Look> => {
+    if (isTauri()) {
+      return await invoke<Look>('update_look', { look });
+    }
+    return mockStore.updateLook(look);
+  },
+
+  deleteLook: async (id: string): Promise<void> => {
+    if (isTauri()) {
+      await invoke<void>('delete_look', { id });
+      return;
+    }
+    return mockStore.deleteLook(id);
+  },
+
+  /** Sets the logo, blackout and props to match a saved look. The live slide is not changed. */
+  applyLook: async (id: string): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('apply_look', { id });
+    }
+    return mockStore.applyLook(id);
+  },
+
+  /** Saves the screen as it is now (logo, blackout, props) as a new look. */
+  captureLook: async (name: string): Promise<Look> => {
+    if (isTauri()) {
+      return await invoke<Look>('capture_look', { name });
+    }
+    return mockStore.captureLook(name);
   },
 
   listMacros: async (): Promise<Macro[]> => {
