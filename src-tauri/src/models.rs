@@ -366,6 +366,8 @@ pub struct BackupData {
     #[serde(default)]
     pub song_usage: Vec<crate::ccli::SongUsage>,
     #[serde(default)]
+    pub service_templates: Vec<crate::service_templates::StoredTemplate>,
+    #[serde(default)]
     pub themes: Vec<Theme>,
     #[serde(default)]
     pub media_assets: Vec<MediaAsset>,

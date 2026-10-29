@@ -421,6 +421,38 @@ pub async fn stop_macro(
     Ok(state)
 }
 
+#[tauri::command]
+pub async fn list_service_templates(db: State<'_, DbManager>) -> Result<Vec<crate::service_templates::ServiceTemplateSummary>, String> {
+    db.list_service_templates().map_err(|e| e.to_string())
+}
+
+/// Saves a service's items (and the slides of each) as a named template.
+#[tauri::command]
+pub async fn save_service_as_template(
+    service_id: String,
+    name: String,
+    db: State<'_, DbManager>,
+) -> Result<crate::service_templates::ServiceTemplateSummary, String> {
+    db.save_service_as_template(&service_id, &name)
+}
+
+#[tauri::command]
+pub async fn delete_service_template(id: String, db: State<'_, DbManager>) -> Result<(), String> {
+    db.delete_service_template(&id).map_err(|e| e.to_string())
+}
+
+/// Makes a new service from a template. With `keep_songs` off, songs and scripture become empty slots to fill in.
+#[tauri::command]
+pub async fn create_service_from_template(
+    template_id: String,
+    title: String,
+    service_date: Option<String>,
+    keep_songs: bool,
+    db: State<'_, DbManager>,
+) -> Result<Service, String> {
+    db.create_service_from_template(&template_id, &title, service_date, keep_songs)
+}
+
 /// Songs whose lyrics contain the words, with a short preview of the match (one hit per song).
 #[tauri::command]
 pub async fn search_song_lyrics(

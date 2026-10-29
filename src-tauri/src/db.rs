@@ -1482,6 +1482,27 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 23: service templates =================
+        if current_version < 23 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS service_templates (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    items TEXT NOT NULL DEFAULT '[]',
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (23, ?1);",
+                params![Utc::now().to_rfc3339()],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -5352,6 +5373,7 @@ impl DbManager {
             key_bindings: self.list_key_bindings()?,
             clear_groups: self.list_clear_groups()?,
             song_usage: self.list_all_song_usage()?,
+            service_templates: self.export_service_templates()?,
             themes,
             media_assets,
             services,
@@ -5398,6 +5420,7 @@ impl DbManager {
             tx.execute("DELETE FROM key_bindings;", [])?;
             tx.execute("DELETE FROM clear_groups;", [])?;
             tx.execute("DELETE FROM song_usage;", [])?;
+            tx.execute("DELETE FROM service_templates;", [])?;
             tx.execute("DELETE FROM song_sections;", [])?;
             tx.execute("DELETE FROM songs;", [])?;
             tx.execute("DELETE FROM themes WHERE is_built_in = 0;", [])?;
@@ -5644,6 +5667,15 @@ impl DbManager {
                     lk.created_at,
                     lk.updated_at
                 ],
+            )?;
+        }
+
+        // Restore service templates
+        for t in &backup.service_templates {
+            tx.execute(
+                "INSERT OR IGNORE INTO service_templates (id, name, items, sort_order, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6);",
+                params![t.id, t.name, serde_json::to_string(&t.items).unwrap_or_else(|_| "[]".to_string()), t.sort_order, t.created_at, t.updated_at],
             )?;
         }
 

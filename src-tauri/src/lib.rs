@@ -22,6 +22,7 @@ mod templates;
 mod theme_io;
 mod remote;
 mod search;
+mod service_templates;
 
 use db::DbManager;
 use midi::MidiService;
@@ -180,6 +181,10 @@ pub fn run() {
             commands::send_alert,
             commands::start_auto_advance,
             commands::suggest_bible_references,
+            commands::list_service_templates,
+            commands::save_service_as_template,
+            commands::delete_service_template,
+            commands::create_service_from_template,
             commands::search_song_lyrics,
             commands::search_slide_text,
             commands::get_ccli_licence_number,
