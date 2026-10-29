@@ -331,6 +331,17 @@ fn contrast_for(bg: &str) -> String {
     if luminance(bg) < 0.5 { "#ffffff" } else { "#000000" }.to_string()
 }
 
+/// Smallest difference in brightness between text and what is behind it that still reads clearly.
+const MIN_TEXT_CONTRAST: f64 = 0.35;
+
+/// `color` if it can be read on `bg`, otherwise black or white, whichever suits `bg`.
+fn readable_on(color: Option<&str>, bg: &str) -> String {
+    match color {
+        Some(c) if (luminance(c) - luminance(bg)).abs() >= MIN_TEXT_CONTRAST => c.to_string(),
+        _ => contrast_for(bg),
+    }
+}
+
 /// Theme colours, and which of them the slide master calls "background" and "text".
 #[derive(Debug, Clone, Default)]
 struct Palette {
@@ -534,7 +545,8 @@ impl Warnings {
                     "transitions" => "Transitions and animations were not imported",
                     "chart" => "Charts were left out",
                     "smartart" => "SmartArt diagrams were left out",
-                    "table" => "Tables were left out",
+                    "table" => "Tables that could not be read were left out",
+                    "table_text" => "Tables were imported as plain text, without their grid",
                     "media" => "Video and audio were left out",
                     "graphic" => "Other embedded objects were left out",
                     "image_format" => "Pictures in a format that cannot be shown (such as EMF, WMF, SVG or TIFF) were left out",
@@ -592,11 +604,22 @@ struct SlideCtx<'a> {
     seen: usize,
 }
 
+/// True for a shape PowerPoint does not show (its "hidden" flag is set). Hidden groups hide everything inside them.
+fn is_hidden(shape: &Node) -> bool {
+    ["nvSpPr", "nvPicPr", "nvGrpSpPr", "nvGraphicFramePr", "nvCxnSpPr"]
+        .iter()
+        .filter_map(|nv| shape.find(&[nv, "cNvPr"]))
+        .any(|c| matches!(c.attr("hidden"), Some("1") | Some("true")))
+}
+
 fn walk(tree: &Node, xf: Xf, cx: &mut SlideCtx) {
     for child in &tree.children {
         if cx.seen >= MAX_SHAPES_PER_SLIDE {
             cx.warnings.add("too_complex", cx.slide_no);
             return;
+        }
+        if is_hidden(child) {
+            continue;
         }
         match child.name.as_str() {
             "sp" => {
@@ -614,12 +637,15 @@ fn walk(tree: &Node, xf: Xf, cx: &mut SlideCtx) {
             "graphicFrame" => {
                 cx.seen += 1;
                 let uri = child.find(&["graphic", "graphicData"]).and_then(|g| g.attr("uri")).unwrap_or("");
+                if uri.contains("table") {
+                    let kind = if handle_table(child, xf, cx) { "table_text" } else { "table" };
+                    cx.warnings.add(kind, cx.slide_no);
+                    continue;
+                }
                 let kind = if uri.contains("chart") {
                     "chart"
                 } else if uri.contains("diagram") {
                     "smartart"
-                } else if uri.contains("table") {
-                    "table"
                 } else {
                     "graphic"
                 };
@@ -686,6 +712,40 @@ fn handle_sp(sp: &Node, xf: Xf, cx: &mut SlideCtx) {
             });
         }
     }
+}
+
+/// A table as plain text: one line per row, cells separated by " | ". Returns false if there was nothing to show.
+fn handle_table(frame: &Node, xf: Xf, cx: &mut SlideCtx) -> bool {
+    let Some(tbl) = frame.find(&["graphic", "graphicData", "tbl"]) else { return false };
+    let Some(rect) = frame.child("xfrm").and_then(xfrm_rect).map(|r| xf.apply(r)) else { return false };
+    let (mut size_pt, mut color) = (None, None);
+    let mut rows: Vec<String> = Vec::new();
+    for tr in tbl.kids("tr") {
+        let mut cells: Vec<String> = Vec::new();
+        for tc in tr.kids("tc") {
+            let Some(tx) = tc.child("txBody") else {
+                cells.push(String::new());
+                continue;
+            };
+            let t = read_text(tx, cx.pal);
+            if size_pt.is_none() && !t.text.trim().is_empty() {
+                size_pt = t.size_pt;
+                color = t.color.clone();
+            }
+            cells.push(t.text.split_whitespace().collect::<Vec<_>>().join(" "));
+        }
+        while cells.last().map_or(false, |c| c.is_empty()) {
+            cells.pop();
+        }
+        if !cells.is_empty() {
+            rows.push(cells.join("  |  "));
+        }
+    }
+    if rows.is_empty() {
+        return false;
+    }
+    cx.drafts.push(Draft::Text { rect, text: rows.join("\n"), size_pt: size_pt.unwrap_or(DEFAULT_TEXT_PT), bold: false, color, align: "left".to_string() });
+    true
 }
 
 fn handle_pic(pic: &Node, xf: Xf, cx: &mut SlideCtx) {
@@ -885,6 +945,8 @@ impl<'a, R: Read + Seek> Importer<'a, R> {
 
         // extra items, as slide elements
         let mut elements: Vec<SlideElement> = Vec::new();
+        // coloured shapes drawn so far, so text on a card is judged against the card, not the page
+        let mut cards: Vec<(Rect, String)> = Vec::new();
         for draft in drafts {
             let id = format!("pptx-{}", elements.len() + 1);
             let element = match draft {
@@ -895,16 +957,30 @@ impl<'a, R: Read + Seek> Importer<'a, R> {
                         self.warnings.add("long_text", n);
                     }
                     let size_pct = ((size_pt * EMU_PER_PT / self.sh) * 100.0).clamp(1.0, 30.0);
+                    let (cx_mid, cy_mid) = (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
+                    let behind = cards
+                        .iter()
+                        .rev()
+                        .find(|(r, _)| cx_mid >= r.x && cx_mid <= r.x + r.w && cy_mid >= r.y && cy_mid <= r.y + r.h)
+                        .map(|(_, c)| c.clone())
+                        .unwrap_or_else(|| background_color.clone());
+                    let color = readable_on(color.as_deref(), &behind);
                     place(rect, self.sw, self.sh).map(|(x, y, w, h)| SlideElement {
                         id, kind: "text".into(), x, y, w, h, text: Some(text), font_size_pct: Some((size_pct * 10.0).round() / 10.0),
-                        color: Some(color.unwrap_or_else(|| foreground_color.clone())), align: Some(align),
+                        color: Some(color), align: Some(align),
                         weight: Some(if bold { "bold" } else { "normal" }.into()), image_path: None, shape: None, fill: None, opacity: None,
                     })
                 }
-                Draft::Shape { rect, shape, fill, opacity } => place(rect, self.sw, self.sh).map(|(x, y, w, h)| SlideElement {
+                Draft::Shape { rect, shape, fill, opacity } => {
+                    // a mostly see-through shape does not change what the text on it is read against
+                    if opacity.map_or(true, |o| o >= 0.5) {
+                        cards.push((rect, fill.clone()));
+                    }
+                    place(rect, self.sw, self.sh).map(|(x, y, w, h)| SlideElement {
                     id, kind: "shape".into(), x, y, w, h, text: None, font_size_pct: None, color: None, align: None, weight: None,
                     image_path: None, shape: Some(shape.into()), fill: Some(fill), opacity,
-                }),
+                    })
+                }
                 Draft::Image { rect, part } => match place(rect, self.sw, self.sh) {
                     Some((x, y, w, h)) => self.image(&part, n).map(|path| SlideElement {
                         id, kind: "image".into(), x, y, w, h, text: None, font_size_pct: None, color: None, align: None, weight: None,
@@ -1298,6 +1374,30 @@ mod tests {
     }
 
     #[test]
+    fn text_that_could_not_be_read_is_changed_to_black_or_white_for_what_is_behind_it() {
+        let text = |x: i64, color: &str| format!(
+            r#"<p:sp><p:nvSpPr><p:cNvPr id="3" name="t"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr>{}</p:spPr><p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="en-US" sz="2000">{color}</a:rPr><a:t>Hi</a:t></a:r></a:p></p:txBody></p:sp>"#,
+            xfrm(x, 0, 900_000, 400_000)
+        );
+        let fill = |c: &str| format!(r#"<a:solidFill><a:srgbClr val="{c}"/></a:solidFill>"#);
+        // light grey on the white page: unreadable, so it becomes black; dark blue on white is fine and kept
+        let d = import_one(&format!("{}{}", text(0, &fill("CFD2D9")), text(1_000_000, &fill("1F3864"))));
+        let (grey, blue) = (&d.slides[0].elements[0], &d.slides[0].elements[1]);
+        assert_eq!((grey.color.as_deref(), blue.color.as_deref()), (Some("#000000"), Some("#1f3864")));
+        // text with no colour of its own follows the page
+        assert_eq!(import_one(&text(0, "")).slides[0].elements[0].color.as_deref(), Some("#000000"));
+
+        // on a dark blue card the same grey is readable, black is not, and text with no colour turns white
+        let card = format!(
+            r#"<p:sp><p:nvSpPr><p:cNvPr id="4" name="c"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="rect"/>{}</p:spPr></p:sp>"#,
+            xfrm(0, 0, 3_000_000, 1_000_000), fill("102060")
+        );
+        let d = import_one(&format!("{card}{}{}{}", text(0, &fill("CFD2D9")), text(1_000_000, &fill("000000")), text(2_000_000, "")));
+        let colors: Vec<&str> = d.slides[0].elements.iter().filter(|e| e.kind == "text").map(|e| e.color.as_deref().unwrap()).collect();
+        assert_eq!(colors, vec!["#cfd2d9", "#ffffff", "#ffffff"]);
+    }
+
+    #[test]
     fn shapes_become_filled_rectangles_and_ellipses_and_other_shapes_are_reported() {
         let shape = |prst: &str, fill: &str| format!(r#"<p:sp><p:nvSpPr><p:cNvPr id="4" name="x"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="{prst}"/>{fill}</p:spPr></p:sp>"#, xfrm(0, 0, 4_572_000, 2_571_750));
         let d = import_one(&format!(
@@ -1441,11 +1541,58 @@ mod tests {
             .0
             .unwrap();
         let w = d.warnings.join("\n");
-        for needle in ["Charts were left out (slide 2)", "SmartArt diagrams were left out (slide 2)", "Tables were left out (slide 2)", "Other embedded objects were left out (slide 2)",
+        for needle in ["Charts were left out (slide 2)", "SmartArt diagrams were left out (slide 2)", "Tables that could not be read were left out (slide 2)", "Other embedded objects were left out (slide 2)",
             "Video and audio were left out (slide 2)", "Rotated items are shown unrotated (slide 2)", "Transitions and animations were not imported (slide 2)", "Speaker notes were not imported (slide 2)"] {
             assert!(w.contains(needle), "missing: {needle}\n{w}");
         }
         assert_eq!(d.slides[1].elements.len(), 1); // the rotated shape is still there, unrotated
+    }
+
+    fn table_frame(rows: &[&[&str]], with_xfrm: bool) -> String {
+        let trs: String = rows
+            .iter()
+            .map(|r| {
+                let tcs: String = r.iter().map(|c| format!(r#"<a:tc><a:txBody><a:bodyPr/><a:p>{}</a:p></a:txBody></a:tc>"#, if c.is_empty() { String::new() } else { run(c, r#"sz="1400""#) })).collect();
+                format!("<a:tr>{tcs}</a:tr>")
+            })
+            .collect();
+        let x = if with_xfrm { r#"<p:xfrm><a:off x="914400" y="914400"/><a:ext cx="4572000" cy="1028700"/></p:xfrm>"# } else { "" };
+        format!(r#"<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="7" name="t"/></p:nvGraphicFramePr>{x}<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblGrid/>{trs}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>"#)
+    }
+
+    #[test]
+    fn a_table_becomes_plain_text_with_one_line_per_row() {
+        let d = import_one(&table_frame(&[&["Day", "Event"], &["Wed", "Prayer meeting"], &["Sun", "Worship", ""]], true));
+        let el = &d.slides[0].elements[0];
+        assert_eq!(el.text.as_deref(), Some("Day  |  Event\nWed  |  Prayer meeting\nSun  |  Worship"));
+        assert_eq!((el.x, el.y, el.w), (10.0, 17.8, 50.0)); // from the frame's own position
+        assert_eq!(el.align.as_deref(), Some("left"));
+        assert!(d.warnings.iter().any(|w| w.contains("Tables were imported as plain text") && w.contains("slide 1")));
+        assert!(!d.warnings.iter().any(|w| w.contains("could not be read")));
+    }
+
+    #[test]
+    fn an_empty_or_unplaced_table_is_reported_instead() {
+        for frame in [table_frame(&[&["", ""], &[""]], true), table_frame(&[&["A"]], false), table_frame(&[], true)] {
+            let d = import_one(&frame);
+            assert!(d.slides[0].elements.is_empty());
+            assert!(d.warnings.iter().any(|w| w.contains("Tables that could not be read were left out")), "{:?}", d.warnings);
+        }
+    }
+
+    #[test]
+    fn hidden_shapes_and_everything_in_a_hidden_group_are_skipped() {
+        let shape = |hidden: &str, fill: &str| format!(r#"<p:sp><p:nvSpPr><p:cNvPr id="4" name="x" {hidden}/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="rect"/><a:solidFill><a:srgbClr val="{fill}"/></a:solidFill></p:spPr></p:sp>"#, xfrm(0, 0, 914_400, 914_400));
+        let group = |hidden: &str, inner: &str| format!(r#"<p:grpSp><p:nvGrpSpPr><p:cNvPr id="8" name="g" {hidden}/></p:nvGrpSpPr><p:grpSpPr/>{inner}</p:grpSp>"#);
+        let d = import_one(&format!(
+            "{}{}{}{}",
+            shape("", "111111"),
+            shape(r#"hidden="1""#, "222222"),
+            group(r#"hidden="1""#, &shape("", "333333")),
+            group("", &shape("", "444444")),
+        ));
+        let fills: Vec<&str> = d.slides[0].elements.iter().map(|e| e.fill.as_deref().unwrap()).collect();
+        assert_eq!(fills, vec!["#111111", "#444444"]);
     }
 
     #[test]
@@ -1622,6 +1769,38 @@ mod tests {
         assert!(!folder.exists() || std::fs::read_dir(&folder).unwrap().next().is_none());
         let _ = std::fs::remove_dir_all(data);
         let _ = std::fs::remove_dir_all(app);
+    }
+
+    /// Opt-in check against real PowerPoint files: `PPTX_FILES=/a.pptx:/b.pptx cargo test real_files -- --ignored --nocapture`.
+    /// Prints what each file turned into, and fails if any file cannot be imported or yields an invalid slide.
+    #[test]
+    #[ignore = "set PPTX_FILES to a colon-separated list of real .pptx files"]
+    fn real_files() {
+        let Ok(list) = std::env::var("PPTX_FILES") else { return };
+        for path in list.split(':').filter(|p| !p.is_empty()) {
+            let mut sink = MemSink::default();
+            let file = std::fs::File::open(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let deck = import_pptx(std::io::BufReader::new(file), &mut sink).unwrap_or_else(|e| panic!("{path}: {e}"));
+            println!("== {path}: {} slides, {} pictures stored", deck.slides.len(), sink.stored.len());
+            for (i, s) in deck.slides.iter().enumerate() {
+                println!("  {:>2}. {:<40} bg {} text {} chars, {} items", i + 1, s.title.chars().take(40).collect::<String>(), s.background_color, s.body.chars().count(), s.elements.len());
+                if std::env::var("PPTX_DETAIL").is_ok() {
+                    println!("      body: {:?}", s.body.chars().take(70).collect::<String>());
+                    for e in &s.elements {
+                        println!(
+                            "      - {:<5} x{:>5} y{:>5} w{:>5} h{:>5} {:>4}% {:<7} {}",
+                            e.kind, e.x, e.y, e.w, e.h, e.font_size_pct.map_or(String::new(), |f| f.to_string()),
+                            e.color.clone().or(e.fill.clone()).unwrap_or_default(),
+                            e.text.clone().unwrap_or_default().chars().take(40).collect::<String>().replace('\n', " / ")
+                        );
+                    }
+                }
+                assert!(validate_layout(&SlideLayout { elements: s.elements.clone(), ..Default::default() }).is_ok(), "{path}: slide {} has an invalid layout", i + 1);
+            }
+            for w in &deck.warnings {
+                println!("  ! {w}");
+            }
+        }
     }
 
     #[test]
