@@ -501,6 +501,31 @@ export interface BibleSuggestion {
   endVerse: number | null;
 }
 
+/** Found words with a little text around them, for showing where a search matched. */
+export interface SearchPreview {
+  before: string;
+  matched: string;
+  after: string;
+}
+
+/** A song whose lyrics contain the searched words (its best section). */
+export interface LyricHit extends SearchPreview {
+  songId: string;
+  sectionId: string;
+  sectionLabel: string;
+  /** 0: the whole phrase; 1: every word, but not together. */
+  rank: number;
+}
+
+/** A presentation with a slide containing the searched words (its best slide). */
+export interface SlideHit extends SearchPreview {
+  presentationId: string;
+  slideId: string;
+  /** Position of the slide in its presentation, starting at 1. */
+  slideNumber: number;
+  rank: number;
+}
+
 /** One time a song went live in a service (counted once per song per service per day). */
 export interface SongUsage {
   id: string;

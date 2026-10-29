@@ -61,6 +61,8 @@ import {
   BibleSuggestion,
   SongUsage,
   CcliReport,
+  LyricHit,
+  SlideHit,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
@@ -69,6 +71,7 @@ import { validateKeyBinding, MAX_KEY_BINDINGS } from './keyBindings';
 import { validateClearGroup, MAX_CLEAR_GROUPS } from './clearGroups';
 import { suggestFromVerses } from './bibleSuggest';
 import { validateLicenceNumber, validateReportRange } from './ccliReport';
+import { searchLyrics, searchSlides } from './textSearch';
 import { validatePanels } from './stageLayouts';
 import { validateProp } from './propLayout';
 import { validateLayout, isEmptyLayout } from './slideLayout';
@@ -1483,6 +1486,14 @@ class MockDataStore {
     this.noteItemLive();
     this.notify();
     return this.state;
+  }
+
+  public async searchSongLyrics(query: string, limit?: number): Promise<LyricHit[]> {
+    return searchLyrics(query, this.songSections, (id) => this.songs.find((s) => s.id === id)?.title ?? '', limit);
+  }
+
+  public async searchSlideText(query: string, limit?: number): Promise<SlideHit[]> {
+    return searchSlides(query, this.slides, (id) => this.presentations.find((p) => p.id === id)?.title ?? '', limit);
   }
 
   // ---- CCLI usage log
@@ -6074,6 +6085,22 @@ export const api = {
       throw new Error('Importing Bible files requires the desktop app.');
     }
     return await invoke<number>('import_bible_files', { paths, translation });
+  },
+
+  /** Songs whose lyrics contain the words, one hit per song with a preview of the match. */
+  searchSongLyrics: async (query: string, limit?: number): Promise<LyricHit[]> => {
+    if (isTauri()) {
+      return await invoke<LyricHit[]>('search_song_lyrics', { query, limit });
+    }
+    return mockStore.searchSongLyrics(query, limit);
+  },
+
+  /** Presentations with a slide containing the words, one hit per presentation with a preview. */
+  searchSlideText: async (query: string, limit?: number): Promise<SlideHit[]> => {
+    if (isTauri()) {
+      return await invoke<SlideHit[]>('search_slide_text', { query, limit });
+    }
+    return mockStore.searchSlideText(query, limit);
   },
 
   getCcliLicenceNumber: async (): Promise<string | null> => {

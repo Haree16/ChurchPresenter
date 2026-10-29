@@ -12,7 +12,7 @@ import {
   Check,
   BookOpen,
 } from 'lucide-react';
-import { Song, SongSection, SongArrangement, Presentation } from '../../types';
+import { Song, SongSection, SongArrangement, Presentation, LyricHit } from '../../types';
 import { api } from '../../services/api';
 import { LyricsEditor } from './LyricsEditor';
 import { ArrangementEditor } from './ArrangementEditor';
@@ -20,6 +20,7 @@ import { SlideGeneratorModal } from './SlideGeneratorModal';
 import { SongImportExportModal } from './SongImportExportModal';
 import { SongPasteModal } from './SongPasteModal';
 import { CcliReportModal } from './CcliReportModal';
+import { SearchPreview } from '../SearchPreview';
 
 interface SongLibraryViewProps {
   presentations: Presentation[];
@@ -38,6 +39,8 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
   const [sections, setSections] = useState<SongSection[]>([]);
   const [arrangements, setArrangements] = useState<SongArrangement[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  // lyric matches for the words in `query` (kept with the words, so results for older text are never shown)
+  const [lyricResult, setLyricResult] = useState<{ query: string; hits: Record<string, LyricHit> }>({ query: '', hits: {} });
   const [languageFilter, setLanguageFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'title' | 'updated' | 'language'>('title');
   const [isSaving, setIsSaving] = useState(false);
@@ -98,6 +101,32 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
     };
   }, [selectedSongId]);
 
+  // Search the lyrics a moment after typing stops
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if ([...q].length < 2) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      api
+        .searchSongLyrics(q)
+        .then((hits) => {
+          if (!cancelled) setLyricResult({ query: q, hits: Object.fromEntries(hits.map((h) => [h.songId, h])) });
+        })
+        .catch(() => {
+          if (!cancelled) setLyricResult({ query: q, hits: {} });
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchQuery]);
+
+  const lyricHits = useMemo(
+    () => (lyricResult.query === searchQuery.trim() ? lyricResult.hits : {}),
+    [lyricResult, searchQuery]
+  );
+
   // Search & Filter
   const filteredSongs = useMemo(() => {
     let result = songs;
@@ -116,7 +145,8 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
           (s.alternateTitle && s.alternateTitle.toLowerCase().includes(q)) ||
           s.tags.some((t) => t.toLowerCase().includes(q)) ||
           (s.author && s.author.toLowerCase().includes(q)) ||
-          (s.category && s.category.toLowerCase().includes(q))
+          (s.category && s.category.toLowerCase().includes(q)) ||
+          !!lyricHits[s.id]
       );
     }
 
@@ -130,7 +160,7 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
       }
       return 0;
     });
-  }, [songs, languageFilter, searchQuery, sortBy]);
+  }, [songs, languageFilter, searchQuery, sortBy, lyricHits]);
 
   const showNotification = (msg: string) => {
     setNotification(msg);
@@ -561,6 +591,9 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
                       <span>• {song.sectionsCount} sections</span>
                     )}
                   </div>
+
+                  {/* Where the searched words were found in the lyrics */}
+                  {lyricHits[song.id] && <SearchPreview preview={lyricHits[song.id]} label={lyricHits[song.id].sectionLabel} />}
                 </div>
               );
             })

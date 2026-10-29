@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   Plus,
@@ -14,7 +14,8 @@ import {
   X,
   Upload,
 } from 'lucide-react';
-import { Presentation } from '../types';
+import { Presentation, SlideHit } from '../types';
+import { SearchPreview } from './SearchPreview';
 import { api, isTauri } from '../services/api';
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 
@@ -45,6 +46,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   onDeletePresentation,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  // slide-text matches for the words in `query` (kept with the words, so results for older text are never shown)
+  const [slideResult, setSlideResult] = useState<{ query: string; hits: Record<string, SlideHit> }>({ query: '', hits: {} });
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isCreating, setIsCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -65,13 +68,39 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     'Announcements',
   ];
 
+  // Search the slide text a moment after typing stops
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if ([...q].length < 2) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      api
+        .searchSlideText(q)
+        .then((hits) => {
+          if (!cancelled) setSlideResult({ query: q, hits: Object.fromEntries(hits.map((h) => [h.presentationId, h])) });
+        })
+        .catch(() => {
+          if (!cancelled) setSlideResult({ query: q, hits: {} });
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchQuery]);
+
+  const slideHits = useMemo(
+    () => (slideResult.query === searchQuery.trim() ? slideResult.hits : {}),
+    [slideResult, searchQuery]
+  );
+
   const filteredPresentations = useMemo(() => {
     return presentations.filter((p) => {
-      const matchesSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase()) || !!slideHits[p.id];
       const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
-  }, [presentations, searchQuery, selectedCategory]);
+  }, [presentations, searchQuery, selectedCategory, slideHits]);
 
   const handleStartCreate = () => {
     setNewTitle('');
@@ -559,6 +588,9 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                     </button>
                   </div>
                 </div>
+
+                {/* Where the searched words were found on the slides */}
+                {slideHits[p.id] && <SearchPreview preview={slideHits[p.id]} label={`Slide ${slideHits[p.id].slideNumber}`} />}
 
                 {/* Destructive Delete Confirmation Dialog */}
                 {isConfirmingDelete && (
