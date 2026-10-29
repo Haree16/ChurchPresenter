@@ -7,6 +7,7 @@ import {
   Edit3,
   Sparkles,
   FileJson,
+  ClipboardPaste,
   Check,
   BookOpen,
 } from 'lucide-react';
@@ -16,6 +17,7 @@ import { LyricsEditor } from './LyricsEditor';
 import { ArrangementEditor } from './ArrangementEditor';
 import { SlideGeneratorModal } from './SlideGeneratorModal';
 import { SongImportExportModal } from './SongImportExportModal';
+import { SongPasteModal } from './SongPasteModal';
 
 interface SongLibraryViewProps {
   presentations: Presentation[];
@@ -39,6 +41,7 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isSlideGeneratorOpen, setIsSlideGeneratorOpen] = useState(false);
   const [isImportExportOpen, setIsImportExportOpen] = useState(false);
+  const [isPasteOpen, setIsPasteOpen] = useState(false);
   const [isCreatingSong, setIsCreatingSong] = useState(false);
   const [isEditingMetadata, setIsEditingMetadata] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
@@ -325,6 +328,25 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
               }}
             >
               <Plus size={16} />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsPasteOpen(true)}
+              title="Import lyrics from clipboard"
+              data-testid="song-paste-btn"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '8px',
+                backgroundColor: '#1e293b',
+                color: '#38bdf8',
+                borderRadius: '6px',
+                border: '1px solid #334155',
+              }}
+            >
+              <ClipboardPaste size={16} />
             </button>
 
             <button
@@ -819,6 +841,17 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
         presentations={presentations}
         currentPresentationId={currentPresentationId}
         onSlidesGenerated={onSlidesGenerated}
+      />
+
+      {/* Paste lyrics from clipboard */}
+      <SongPasteModal
+        isOpen={isPasteOpen}
+        onClose={() => setIsPasteOpen(false)}
+        onCreated={async (id, title) => {
+          await loadSongs();
+          setSelectedSongId(id);
+          showNotification(`Created "${title}"`);
+        }}
       />
 
       {/* Import / Export Modal */}

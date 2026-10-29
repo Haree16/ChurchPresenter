@@ -4663,12 +4663,38 @@ export const api = {
     sections?: SongSection[]
   ): Promise<SongWithSections> => {
     if (isTauri()) {
-      const createdSong = await invoke<Song>('create_song', { song });
+      // The desktop command takes a complete record, so fill in what callers leave out.
+      const now = new Date().toISOString();
+      const fullSong: Song = {
+        id: song.id || `song-${crypto.randomUUID()}`,
+        title: song.title?.trim() || 'Untitled Song',
+        alternateTitle: song.alternateTitle ?? null,
+        language: song.language || 'English',
+        author: song.author ?? null,
+        composer: song.composer ?? null,
+        copyright: song.copyright ?? null,
+        ccliNumber: song.ccliNumber ?? null,
+        songKey: song.songKey ?? null,
+        tempo: song.tempo ?? null,
+        tags: song.tags ?? [],
+        category: song.category || 'Worship',
+        defaultThemeId: song.defaultThemeId ?? null,
+        sectionsCount: song.sectionsCount ?? 0,
+        createdAt: song.createdAt || now,
+        updatedAt: song.updatedAt || now,
+      };
+      const createdSong = await invoke<Song>('create_song', { song: fullSong });
       let savedSections: SongSection[] = [];
       if (sections && sections.length > 0) {
         savedSections = await invoke<SongSection[]>('save_song_sections', {
           songId: createdSong.id,
-          sections: sections.map((s, idx) => ({ ...s, songId: createdSong.id, sortOrder: idx })),
+          sections: sections.map((s, idx) => ({
+            ...s,
+            songId: createdSong.id,
+            sortOrder: idx,
+            createdAt: s.createdAt || now,
+            updatedAt: s.updatedAt || now,
+          })),
         });
       }
       return { song: createdSong, sections: savedSections };
@@ -4743,7 +4769,31 @@ export const api = {
 
   createTheme: async (theme: Partial<Theme>): Promise<Theme> => {
     if (isTauri()) {
-      return await invoke<Theme>('create_theme', { theme });
+      // The desktop command takes a complete record, so fill in what callers leave out.
+      const now = new Date().toISOString();
+      const fullTheme: Theme = {
+        id: theme.id || `theme-${crypto.randomUUID()}`,
+        name: theme.name?.trim() || 'Custom Theme',
+        isBuiltIn: false,
+        backgroundColor: theme.backgroundColor || '#0a0f1d',
+        backgroundImageId: theme.backgroundImageId ?? null,
+        backgroundImagePath: theme.backgroundImagePath ?? null,
+        backgroundMode: theme.backgroundMode || 'cover',
+        fontFamily: theme.fontFamily || 'system-ui, -apple-system, sans-serif',
+        fontSize: theme.fontSize || 'large',
+        fontWeight: theme.fontWeight || 'bold',
+        textColor: theme.textColor || '#ffffff',
+        textAlignment: theme.textAlignment || 'center',
+        verticalAlignment: theme.verticalAlignment || 'center',
+        lineSpacing: theme.lineSpacing || 1.35,
+        textMargin: theme.textMargin || 6,
+        textShadow: theme.textShadow ?? null,
+        overlayColor: theme.overlayColor ?? null,
+        layout: theme.layout ?? null,
+        createdAt: theme.createdAt || now,
+        updatedAt: theme.updatedAt || now,
+      };
+      return await invoke<Theme>('create_theme', { theme: fullTheme });
     }
     return mockStore.createTheme(theme);
   },
@@ -4962,7 +5012,20 @@ export const api = {
 
   createService: async (service: Partial<Service>): Promise<Service> => {
     if (isTauri()) {
-      return await invoke<Service>('create_service', { service });
+      // The desktop command takes a complete record, so fill in what callers leave out.
+      const now = new Date().toISOString();
+      const fullService: Service = {
+        id: service.id || `service-${crypto.randomUUID()}`,
+        title: service.title?.trim() || 'Untitled Service',
+        description: service.description ?? null,
+        serviceDate: service.serviceDate ?? null,
+        category: service.category || 'Sunday Worship',
+        notes: service.notes ?? null,
+        createdAt: service.createdAt || now,
+        updatedAt: service.updatedAt || now,
+        itemCount: service.itemCount ?? 0,
+      };
+      return await invoke<Service>('create_service', { service: fullService });
     }
     return mockStore.createService(service);
   },
