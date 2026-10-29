@@ -11,6 +11,7 @@ import {
 import { Theme, FontSize, TextAlignment } from '../../types';
 import { api } from '../../services/api';
 import { mediaService } from '../../services/mediaService';
+import { backgroundImageCss, isVideoBackground } from '../../services/backgroundMedia';
 import { ThemeTransferBar } from './ThemeTransferBar';
 import { ThemeBackgroundControl } from './ThemeBackgroundControl';
 import { LayoutControls, layoutValuesFrom } from '../LayoutControls';
@@ -81,8 +82,9 @@ export const ThemeManagerModal: React.FC<ThemeManagerModalProps> = ({
       await refreshThemes();
       handleSelectTheme(newTheme);
       showNotification('New theme created');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to create theme:', err);
+      alert(typeof err === 'string' ? err : err?.message || 'Failed to create theme');
     }
   };
 
@@ -92,8 +94,9 @@ export const ThemeManagerModal: React.FC<ThemeManagerModalProps> = ({
       await refreshThemes();
       handleSelectTheme(duplicated);
       showNotification('Theme duplicated');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to duplicate theme:', err);
+      alert(typeof err === 'string' ? err : err?.message || 'Failed to duplicate theme');
     }
   };
 
@@ -433,9 +436,7 @@ export const ThemeManagerModal: React.FC<ThemeManagerModalProps> = ({
                     maxHeight: '260px',
                     aspectRatio: '16 / 9',
                     backgroundColor: activeTheme.backgroundColor,
-                    backgroundImage: activeTheme.backgroundImagePath
-                      ? `url("${mediaService.resolveMediaUrl(activeTheme.backgroundImagePath)}")`
-                      : undefined,
+                    backgroundImage: backgroundImageCss(activeTheme.backgroundImagePath, (p) => mediaService.resolveMediaUrl(p)),
                     backgroundSize:
                       activeTheme.backgroundMode === 'stretch' ? '100% 100%' : activeTheme.backgroundMode || 'cover',
                     backgroundPosition: 'center',
@@ -461,6 +462,30 @@ export const ThemeManagerModal: React.FC<ThemeManagerModalProps> = ({
                     boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
                   }}
                 >
+                  {isVideoBackground(activeTheme.backgroundImagePath) && (
+                    <video
+                      data-testid="theme-bg-video-preview"
+                      src={mediaService.resolveMediaUrl(activeTheme.backgroundImagePath)}
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        width: '100%',
+                        height: '100%',
+                        objectFit:
+                          activeTheme.backgroundMode === 'contain'
+                            ? 'contain'
+                            : activeTheme.backgroundMode === 'stretch'
+                            ? 'fill'
+                            : 'cover',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  )}
+
                   {/* Overlay */}
                   {activeTheme.overlayColor && (
                     <div

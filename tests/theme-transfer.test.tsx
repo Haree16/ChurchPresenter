@@ -158,7 +158,7 @@ describe('ThemeTransferBar', () => {
 });
 
 describe('ThemeBackgroundControl', () => {
-  it('offers only images from the media library, sets id and path, and clears with None', async () => {
+  it('offers images and videos from the media library, sets id and path, and clears with None', async () => {
     await api.importMediaAsset('/media/church.png');
     await api.importMediaAsset('/media/intro.mp4');
     const onChange = vi.fn();
@@ -166,13 +166,17 @@ describe('ThemeBackgroundControl', () => {
 
     const select = screen.getByTestId('theme-bg-image') as HTMLSelectElement;
     await waitFor(() => expect(Array.from(select.options).some((o) => o.text.includes('church.png'))).toBe(true));
-    expect(Array.from(select.options).some((o) => o.text.includes('intro.mp4'))).toBe(false);
+    expect(Array.from(select.options).some((o) => o.text.includes('intro.mp4'))).toBe(true);
 
     const option = Array.from(select.options).find((o) => o.text.includes('church.png'))!;
     fireEvent.change(select, { target: { value: option.value } });
     const patch = onChange.mock.calls[0][0];
     expect(patch.backgroundImageId).toBe(option.value);
     expect(patch.backgroundImagePath).toMatch(/church/);
+
+    const video = Array.from(select.options).find((o) => o.text.includes('intro.mp4'))!;
+    fireEvent.change(select, { target: { value: video.value } });
+    expect(onChange.mock.calls[1][0].backgroundImagePath).toMatch(/intro/);
 
     fireEvent.change(select, { target: { value: '' } });
     expect(onChange).toHaveBeenLastCalledWith({ backgroundImageId: null, backgroundImagePath: null });

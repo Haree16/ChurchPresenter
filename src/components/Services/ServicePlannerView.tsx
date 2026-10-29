@@ -30,6 +30,7 @@ import {
   BiblePassageQuery,
   PlaylistItemType,
 } from '../../types';
+import { backgroundImageCss } from '../../services/backgroundMedia';
 import { api } from '../../services/api';
 import { PlaylistPanel } from './PlaylistPanel';
 import { BiblePassageModal } from './BiblePassageModal';
@@ -905,7 +906,7 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
                         width: '100%',
                         backgroundColor: s.backgroundColor || '#000000',
                         color: s.foregroundColor || '#ffffff',
-                        backgroundImage: s.backgroundImage ? `url("${s.backgroundImage}")` : undefined,
+                        backgroundImage: s.backgroundImage ? backgroundImageCss(s.backgroundImage) : undefined,
                         backgroundSize: 'cover',
                         backgroundPosition: 'center',
                         display: 'flex',
@@ -1083,7 +1084,7 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
                 color: presentationState.currentSlide?.foregroundColor || '#ffffff',
                 backgroundImage:
                   !presentationState.isBlackout && presentationState.currentSlide?.backgroundImage
-                    ? `url("${presentationState.currentSlide.backgroundImage}")`
+                    ? backgroundImageCss(presentationState.currentSlide.backgroundImage)
                     : undefined,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
@@ -1127,7 +1128,7 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
                 backgroundColor: presentationState.nextSlide?.backgroundColor || '#0f172a',
                 color: presentationState.nextSlide?.foregroundColor || '#ffffff',
                 backgroundImage: presentationState.nextSlide?.backgroundImage
-                  ? `url("${presentationState.nextSlide.backgroundImage}")`
+                  ? backgroundImageCss(presentationState.nextSlide.backgroundImage)
                   : undefined,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',

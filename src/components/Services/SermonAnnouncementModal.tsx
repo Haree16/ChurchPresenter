@@ -16,6 +16,7 @@ import {
   Palette,
 } from 'lucide-react';
 import { PlaylistItem, Slide, Theme, PlaylistItemType } from '../../types';
+import { backgroundImageCss } from '../../services/backgroundMedia';
 
 interface SermonAnnouncementModalProps {
   isOpen: boolean;
@@ -1009,9 +1010,9 @@ export const SermonAnnouncementModal: React.FC<SermonAnnouncementModalProps> = (
                   backgroundColor: currentTheme.backgroundColor || '#0f172a',
                   color: currentTheme.textColor || '#ffffff',
                   backgroundImage: activeSlide.backgroundImage
-                    ? `url("${activeSlide.backgroundImage}")`
+                    ? backgroundImageCss(activeSlide.backgroundImage)
                     : currentTheme.backgroundImagePath
-                    ? `url("${currentTheme.backgroundImagePath}")`
+                    ? backgroundImageCss(currentTheme.backgroundImagePath)
                     : undefined,
                   backgroundSize: 'cover',
                   backgroundPosition: 'center',

@@ -4,6 +4,7 @@ import { AutoAdvanceControl } from './AutoAdvanceControl';
 import { LooksControl } from './LooksControl';
 import { MacroControl } from './MacroControl';
 import { SlideElements } from './SlideElements';
+import { backgroundImageCss } from '../services/backgroundMedia';
 import { composeTextShadow, layoutPaddingPercent } from '../services/slideLayout';
 import { AudienceAlertControl } from './AudienceAlertControl';
 import { GroupTag } from './GroupTag';
@@ -160,7 +161,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
               backgroundImage: isBlackout
                 ? undefined
                 : currentSlide?.backgroundImage
-                ? `url("${currentSlide.backgroundImage}")`
+                ? backgroundImageCss(currentSlide.backgroundImage)
                 : undefined,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
@@ -264,7 +265,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
               borderRadius: '8px',
               backgroundColor: nextSlide?.backgroundColor || '#0a0f1d',
               backgroundImage: nextSlide?.backgroundImage
-                ? `url("${nextSlide.backgroundImage}")`
+                ? backgroundImageCss(nextSlide.backgroundImage)
                 : undefined,
               backgroundSize: 'cover',
               backgroundPosition: 'center',

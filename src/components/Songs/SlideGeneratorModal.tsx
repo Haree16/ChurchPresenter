@@ -17,6 +17,7 @@ import {
   Presentation,
   SlideGenerationOptions,
 } from '../../types';
+import { backgroundImageCss } from '../../services/backgroundMedia';
 import { api } from '../../services/api';
 
 interface SlideGeneratorModalProps {
@@ -739,7 +740,7 @@ export const SlideGeneratorModal: React.FC<SlideGeneratorModalProps> = ({
                 aspectRatio: '16 / 9',
                 backgroundColor: activeTheme?.backgroundColor || '#0a0f1d',
                 backgroundImage: activeTheme?.backgroundImagePath
-                  ? `url("${activeTheme.backgroundImagePath}")`
+                  ? backgroundImageCss(activeTheme.backgroundImagePath)
                   : undefined,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',

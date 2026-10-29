@@ -17,26 +17,31 @@ const selectStyle: React.CSSProperties = {
   fontSize: '12px',
 };
 
-/** Picks a background image for a theme from the media library, and how it fills the screen. */
+/** Picks a background image or looping video for a theme from the media library, and how it fills the screen. */
 export const ThemeBackgroundControl: React.FC<ThemeBackgroundControlProps> = ({ theme, onChange }) => {
   const [images, setImages] = useState<MediaAsset[]>([]);
+  const [videos, setVideos] = useState<MediaAsset[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     api
       .listMediaAssets()
       .then((assets) => {
-        if (!cancelled) setImages(assets.filter((a) => a.mediaType === 'image'));
+        if (cancelled) return;
+        setImages(assets.filter((a) => a.mediaType === 'image'));
+        setVideos(assets.filter((a) => a.mediaType === 'video'));
       })
       .catch(() => {
-        if (!cancelled) setImages([]);
+        if (cancelled) return;
+        setImages([]);
+        setVideos([]);
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const current = images.find((a) => a.relativePath === theme.backgroundImagePath);
+  const current = [...images, ...videos].find((a) => a.relativePath === theme.backgroundImagePath);
   // an image set some other way (an imported theme) is still shown, just not in the library
   const hasUnlisted = !!theme.backgroundImagePath && !current;
 
@@ -44,7 +49,7 @@ export const ThemeBackgroundControl: React.FC<ThemeBackgroundControlProps> = ({ 
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: '12px' }}>
       <div>
         <label htmlFor="theme-bg-image" style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
-          Background Image
+          Background (image or video)
         </label>
         <select
           id="theme-bg-image"
@@ -53,18 +58,31 @@ export const ThemeBackgroundControl: React.FC<ThemeBackgroundControlProps> = ({ 
           value={current?.id ?? (hasUnlisted ? '__current__' : '')}
           disabled={theme.isBuiltIn}
           onChange={(e) => {
-            const asset = images.find((a) => a.id === e.target.value);
+            const asset = [...images, ...videos].find((a) => a.id === e.target.value);
             if (!asset && e.target.value === '__current__') return;
             onChange({ backgroundImageId: asset?.id ?? null, backgroundImagePath: asset?.relativePath ?? null });
           }}
         >
           <option value="">None (solid colour)</option>
           {hasUnlisted && <option value="__current__">Imported image</option>}
-          {images.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.originalFilename}
-            </option>
-          ))}
+          {images.length > 0 && (
+            <optgroup label="Images">
+              {images.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.originalFilename}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {videos.length > 0 && (
+            <optgroup label="Videos (loop behind the lyrics)">
+              {videos.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.originalFilename}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
       </div>
       <div>
