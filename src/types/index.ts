@@ -490,6 +490,17 @@ export interface BibleVerse {
   text: string;
 }
 
+/** A reference completion offered while typing in the Bible lookup box. */
+export interface BibleSuggestion {
+  /** What goes in the box when chosen, e.g. `John 3:16-17`. */
+  label: string;
+  book: string;
+  bookNumber: number;
+  chapter: number | null;
+  startVerse: number | null;
+  endVerse: number | null;
+}
+
 export interface BibleTranslationInfo {
   translation: string;
   verseCount: number;

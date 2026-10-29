@@ -58,12 +58,14 @@ import {
   Look,
   KeyBinding,
   ClearGroup,
+  BibleSuggestion,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
 import { validateLook } from './looks';
 import { validateKeyBinding, MAX_KEY_BINDINGS } from './keyBindings';
 import { validateClearGroup, MAX_CLEAR_GROUPS } from './clearGroups';
+import { suggestFromVerses } from './bibleSuggest';
 import { validatePanels } from './stageLayouts';
 import { validateProp } from './propLayout';
 import { validateLayout, isEmptyLayout } from './slideLayout';
@@ -4238,6 +4240,10 @@ class MockDataStore {
     );
   }
 
+  public async suggestBibleReferences(input: string, translation: string, limit?: number): Promise<BibleSuggestion[]> {
+    return suggestFromVerses(input, translation, this.bibleVerses, limit);
+  }
+
   public async searchBibleVerses(
     query: string,
     translation?: string,
@@ -5987,6 +5993,14 @@ export const api = {
       throw new Error('Importing Bible files requires the desktop app.');
     }
     return await invoke<number>('import_bible_files', { paths, translation });
+  },
+
+  /** Completions for a reference typed so far ("jo", "ps 2", "john 3:1"), from the imported verses. */
+  suggestBibleReferences: async (input: string, translation: string, limit?: number): Promise<BibleSuggestion[]> => {
+    if (isTauri()) {
+      return await invoke<BibleSuggestion[]>('suggest_bible_references', { input, translation, limit });
+    }
+    return mockStore.suggestBibleReferences(input, translation, limit);
   },
 
   searchBibleVerses: async (

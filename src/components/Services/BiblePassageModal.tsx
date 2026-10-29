@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BookOpen, X, Check, Search, Upload, FileText, CheckCircle2 } from 'lucide-react';
-import { BiblePassageQuery, BiblePassageResult, BibleVerse, Theme } from '../../types';
+import { BiblePassageQuery, BiblePassageResult, BibleSuggestion, BibleVerse, Theme } from '../../types';
 import { api } from '../../services/api';
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 
@@ -13,15 +13,6 @@ interface BiblePassageModalProps {
     versesPerSlide?: number
   ) => Promise<void>;
   themes: Theme[];
-}
-
-interface Suggestion {
-  label: string;
-  book: string;
-  chapter: number;
-  start: number;
-  end: number;
-  translation?: string;
 }
 
 export function parseBibleImportContent(raw: string, defaultTranslation: string = 'KJV'): BibleVerse[] {
@@ -146,7 +137,9 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
   const [versesPerSlide] = useState<number>(1);
   const [selectedThemeId] = useState<string>('theme-builtin-dark');
   const [quickRefInput, setQuickRefInput] = useState<string>('');
-  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<Suggestion[]>([]);
+  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<BibleSuggestion[]>([]);
+  // only the newest suggestion request may update the list (answers can arrive out of order)
+  const suggestionRequest = useRef(0);
 
   // Search keyword state
   const [keywordQuery, setKeywordQuery] = useState<string>('');
@@ -174,35 +167,18 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
     { label: 'Lord\'s Prayer / மத்தேயு 6', en: 'Matthew', ta: 'மத்தேயு', chapter: 6, start: 9, end: 13 },
   ];
 
-  // Autocomplete catalog
-  const knownPassages: Suggestion[] = [
-    { label: 'Psalm 23:1-6 (சங்கீதம் 23)', book: 'Psalms', chapter: 23, start: 1, end: 6 },
-    { label: 'Psalm 100:1-5 (சங்கீதம் 100)', book: 'Psalms', chapter: 100, start: 1, end: 5 },
-    { label: 'Psalm 91:1-16 (சங்கீதம் 91)', book: 'Psalms', chapter: 91, start: 1, end: 16 },
-    { label: 'Psalm 121:1-8 (சங்கீதம் 121)', book: 'Psalms', chapter: 121, start: 1, end: 8 },
-    { label: 'John 3:16-17 (யோவான் 3:16-17)', book: 'John', chapter: 3, start: 16, end: 17 },
-    { label: 'John 14:1-6 (யோவான் 14)', book: 'John', chapter: 14, start: 1, end: 6 },
-    { label: 'Romans 8:38-39 (ரோமர் 8:38-39)', book: 'Romans', chapter: 8, start: 38, end: 39 },
-    { label: 'Matthew 6:9-13 (Lord\'s Prayer / மத்தேயு 6)', book: 'Matthew', chapter: 6, start: 9, end: 13 },
-    { label: 'Genesis 1:1-3 (ஆதியாகமம் 1)', book: 'Genesis', chapter: 1, start: 1, end: 3 },
-    { label: 'Revelation 21:1-4 (வெளிப்படுத்தின விசேஷம் 21)', book: 'Revelation', chapter: 21, start: 1, end: 4 },
-  ];
-
   const handleQuickRefChange = async (val: string) => {
     setQuickRefInput(val);
-    const low = val.trim().toLowerCase();
 
-    if (low.length >= 2) {
-      const matches = knownPassages.filter(
-        (p) =>
-          p.label.toLowerCase().includes(low) ||
-          p.book.toLowerCase().startsWith(low) ||
-          (low.startsWith('ps') && p.book.toLowerCase() === 'psalms') ||
-          (low.startsWith('jn') && p.book.toLowerCase() === 'john') ||
-          (low.startsWith('rom') && p.book.toLowerCase() === 'romans') ||
-          (low.startsWith('mat') && p.book.toLowerCase() === 'matthew')
-      );
-      setAutocompleteSuggestions(matches.slice(0, 4));
+    // suggestions come from the verses imported for the chosen translation
+    const requestId = ++suggestionRequest.current;
+    if (val.trim().length >= 2) {
+      try {
+        const found = await api.suggestBibleReferences(val, translation);
+        if (requestId === suggestionRequest.current) setAutocompleteSuggestions(found);
+      } catch {
+        if (requestId === suggestionRequest.current) setAutocompleteSuggestions([]);
+      }
     } else {
       setAutocompleteSuggestions([]);
     }
@@ -226,13 +202,19 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
     }
   };
 
-  const applySuggestion = (s: Suggestion) => {
-    setBook(translation === 'Tamil' ? (s.book === 'Psalms' ? 'சங்கீதம்' : s.book === 'John' ? 'யோவான்' : s.book) : s.book);
-    setChapter(s.chapter);
-    setStartVerse(s.start);
-    setEndVerse(s.end);
-    setQuickRefInput(`${s.book} ${s.chapter}:${s.start}${s.end !== s.start ? '-' + s.end : ''}`);
-    setAutocompleteSuggestions([]);
+  const applySuggestion = (s: BibleSuggestion) => {
+    if (s.chapter != null && s.startVerse != null) {
+      // a full passage: fill the fields and stop suggesting
+      setBook(s.book);
+      setChapter(s.chapter);
+      setStartVerse(s.startVerse);
+      setEndVerse(s.endVerse ?? s.startVerse);
+      setQuickRefInput(s.label);
+      setAutocompleteSuggestions([]);
+      return;
+    }
+    // a book (then its chapters) or a chapter (then its verses): keep typing from there
+    void handleQuickRefChange(s.chapter == null ? `${s.label} ` : s.label);
   };
 
   const handleLookup = async () => {
