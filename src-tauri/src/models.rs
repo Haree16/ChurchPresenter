@@ -697,6 +697,9 @@ pub struct RemoteDevice {
     pub can_blackout: bool,
     pub can_take_live: bool,
     pub can_control_timer: bool,
+    /// Whether this device may run saved macros. Off by default: a macro can do anything the operator can.
+    #[serde(default)]
+    pub can_run_macros: bool,
     pub paired_at: String,
     pub last_seen_at: String,
 }

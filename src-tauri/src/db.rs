@@ -1444,6 +1444,17 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 21: phone remote may run macros =================
+        if current_version < 21 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute("ALTER TABLE remote_devices ADD COLUMN can_run_macros INTEGER NOT NULL DEFAULT 0;", [])?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (21, ?1);",
+                params![Utc::now().to_rfc3339()],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -6255,7 +6266,7 @@ impl DbManager {
         let mut stmt = conn.prepare(
             "SELECT id, device_name, ip_address, token_hash, is_approved,
                     can_navigate, can_blackout, can_take_live, can_control_timer,
-                    paired_at, last_seen_at
+                    paired_at, last_seen_at, can_run_macros
              FROM remote_devices
              ORDER BY paired_at DESC;",
         )?;
@@ -6271,6 +6282,7 @@ impl DbManager {
                 can_blackout: row.get::<_, i32>(6)? != 0,
                 can_take_live: row.get::<_, i32>(7)? != 0,
                 can_control_timer: row.get::<_, i32>(8)? != 0,
+                can_run_macros: row.get::<_, i32>(11)? != 0,
                 paired_at: row.get(9)?,
                 last_seen_at: row.get(10)?,
             })
@@ -6288,7 +6300,7 @@ impl DbManager {
         let mut stmt = conn.prepare(
             "SELECT id, device_name, ip_address, token_hash, is_approved,
                     can_navigate, can_blackout, can_take_live, can_control_timer,
-                    paired_at, last_seen_at
+                    paired_at, last_seen_at, can_run_macros
              FROM remote_devices
              WHERE token_hash = ?1;",
         )?;
@@ -6304,6 +6316,7 @@ impl DbManager {
                 can_blackout: row.get::<_, i32>(6)? != 0,
                 can_take_live: row.get::<_, i32>(7)? != 0,
                 can_control_timer: row.get::<_, i32>(8)? != 0,
+                can_run_macros: row.get::<_, i32>(11)? != 0,
                 paired_at: row.get(9)?,
                 last_seen_at: row.get(10)?,
             })
@@ -6319,8 +6332,8 @@ impl DbManager {
     pub fn create_or_update_remote_device(&self, device: &RemoteDevice) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO remote_devices (id, device_name, ip_address, token_hash, is_approved, can_navigate, can_blackout, can_take_live, can_control_timer, paired_at, last_seen_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            "INSERT INTO remote_devices (id, device_name, ip_address, token_hash, is_approved, can_navigate, can_blackout, can_take_live, can_control_timer, paired_at, last_seen_at, can_run_macros)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET
                 device_name = excluded.device_name,
                 ip_address = excluded.ip_address,
@@ -6330,6 +6343,7 @@ impl DbManager {
                 can_blackout = excluded.can_blackout,
                 can_take_live = excluded.can_take_live,
                 can_control_timer = excluded.can_control_timer,
+                can_run_macros = excluded.can_run_macros,
                 last_seen_at = excluded.last_seen_at;",
             params![
                 device.id,
@@ -6342,7 +6356,8 @@ impl DbManager {
                 if device.can_take_live { 1 } else { 0 },
                 if device.can_control_timer { 1 } else { 0 },
                 device.paired_at,
-                device.last_seen_at
+                device.last_seen_at,
+                if device.can_run_macros { 1 } else { 0 }
             ],
         )?;
         Ok(())
@@ -6364,18 +6379,20 @@ impl DbManager {
         can_blackout: bool,
         can_take_live: bool,
         can_control_timer: bool,
+        can_run_macros: bool,
     ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE remote_devices
-             SET can_navigate = ?2, can_blackout = ?3, can_take_live = ?4, can_control_timer = ?5
+             SET can_navigate = ?2, can_blackout = ?3, can_take_live = ?4, can_control_timer = ?5, can_run_macros = ?6
              WHERE id = ?1;",
             params![
                 id,
                 if can_navigate { 1 } else { 0 },
                 if can_blackout { 1 } else { 0 },
                 if can_take_live { 1 } else { 0 },
-                if can_control_timer { 1 } else { 0 }
+                if can_control_timer { 1 } else { 0 },
+                if can_run_macros { 1 } else { 0 }
             ],
         )?;
         Ok(())
@@ -7095,12 +7112,18 @@ mod tests {
             can_blackout: false,
             can_take_live: false,
             can_control_timer: true,
+            can_run_macros: false,
             paired_at: Utc::now().to_rfc3339(),
             last_seen_at: Utc::now().to_rfc3339(),
         };
         db.create_or_update_remote_device(&dev).unwrap();
         let fetched_dev = db.get_remote_device_by_token("test-token-hash-123").unwrap().unwrap();
         assert!(!fetched_dev.is_approved);
+        assert!(!fetched_dev.can_run_macros); // macros are off until the operator allows them
+        db.update_remote_device_permissions("dev-iphone-1", true, false, false, true, true).unwrap();
+        assert!(db.get_remote_device_by_token("test-token-hash-123").unwrap().unwrap().can_run_macros);
+        assert!(db.list_remote_devices().unwrap()[0].can_run_macros);
+        db.update_remote_device_permissions("dev-iphone-1", true, false, false, true, false).unwrap();
 
         // Approve and verify
         db.approve_remote_device(&fetched_dev.id, true).unwrap();

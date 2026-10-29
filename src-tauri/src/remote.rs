@@ -68,6 +68,7 @@ pub fn action_permitted(device: &crate::models::RemoteDevice, action: &str) -> b
         }
         "toggle_live" => device.can_take_live,
         "start_timer" | "stop_timer" | "reset_timer" => device.can_control_timer,
+        other if crate::macros::macro_id_from_action(other).is_some() => device.can_run_macros,
         _ => false,
     }
 }
@@ -314,6 +315,7 @@ impl RemoteServerManager {
                                                     can_blackout: true,
                                                     can_take_live: false,
                                                     can_control_timer: true,
+                                                    can_run_macros: false,
                                                     paired_at: now.clone(),
                                                     last_seen_at: now,
                                                 };
@@ -371,7 +373,8 @@ impl RemoteServerManager {
                                                         "canNavigate": device.can_navigate,
                                                         "canBlackout": device.can_blackout,
                                                         "canTakeLive": device.can_take_live,
-                                                        "canControlTimer": device.can_control_timer
+                                                        "canControlTimer": device.can_control_timer,
+                                                        "canRunMacros": device.can_run_macros
                                                     }
                                                 })).unwrap_or_default();
 
@@ -458,6 +461,37 @@ impl RemoteServerManager {
                                         let resp = Response::from_string("{\"error\":\"Unauthorized\"}")
                                             .with_status_code(StatusCode(401));
                                         request.respond(resp).ok();
+                                    }
+                                }
+
+                                // 7a. API: names of the saved macros a device may run (never their steps)
+                                (&Method::Get, "/api/macros") => {
+                                    let token = extract_token(&request, &query_params);
+                                    match db.get_remote_device_by_token(&token) {
+                                        Ok(Some(device)) if device.is_approved && device.can_run_macros => {
+                                            let list: Vec<serde_json::Value> = db
+                                                .list_macros()
+                                                .unwrap_or_default()
+                                                .into_iter()
+                                                .map(|m| serde_json::json!({ "id": m.id, "name": m.name }))
+                                                .collect();
+                                            let resp = Response::from_string(serde_json::to_string(&list).unwrap_or_default())
+                                                .with_header(safe_header("Content-Type", "application/json"))
+                                                .with_header(safe_header("Access-Control-Allow-Origin", "*"));
+                                            request.respond(resp).ok();
+                                        }
+                                        Ok(Some(_)) => {
+                                            let resp = Response::from_string("{\"error\":\"Not permitted for this remote device\"}")
+                                                .with_status_code(StatusCode(403))
+                                                .with_header(safe_header("Content-Type", "application/json"));
+                                            request.respond(resp).ok();
+                                        }
+                                        _ => {
+                                            let resp = Response::from_string("{\"error\":\"Unauthorized or device revoked\"}")
+                                                .with_status_code(StatusCode(401))
+                                                .with_header(safe_header("Content-Type", "application/json"));
+                                            request.respond(resp).ok();
+                                        }
                                     }
                                 }
 
@@ -785,6 +819,12 @@ impl RemoteServerManager {
         <button id="btn-live" class="btn-danger" style="grid-column: span 2;">Go Live</button>
       </div>
 
+      <!-- Macros (only for devices allowed to run them) -->
+      <div class="card" id="macros-card" style="display: none;">
+        <div class="card-title">Macros</div>
+        <div id="macros-container" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
+      </div>
+
       <!-- Audience alert (banner on the main screen) -->
       <div class="card">
         <div class="card-title">Audience Alert (shows on the main screen)</div>
@@ -893,7 +933,36 @@ impl RemoteServerManager {
         document.getElementById('btn-send-alert').disabled = !data.permissions.canBlackout;
         document.getElementById('btn-clear-alert').disabled = !data.permissions.canBlackout;
         document.getElementById('btn-live').disabled = !data.permissions.canTakeLive;
+        document.getElementById('macros-card').style.display = data.permissions.canRunMacros ? 'block' : 'none';
+        if (data.permissions.canRunMacros && !macrosLoaded) loadMacros();
+        if (!data.permissions.canRunMacros) macrosLoaded = false;
       }
+    }
+
+    let macrosLoaded = false;
+    async function loadMacros() {
+      if (!sessionToken) return;
+      macrosLoaded = true;
+      try {
+        const res = await fetch('/api/macros?token=' + encodeURIComponent(sessionToken));
+        if (!res.ok) { macrosLoaded = false; return; }
+        const macros = await res.json();
+        const box = document.getElementById('macros-container');
+        box.innerHTML = '';
+        if (!macros || macros.length === 0) {
+          box.textContent = 'No macros saved';
+          return;
+        }
+        macros.forEach((m) => {
+          const b = document.createElement('button');
+          b.className = 'btn-sec';
+          b.style.cssText = 'padding: 8px 12px; font-size: 13px;';
+          // macro names come from the library: always plain text, never HTML
+          b.textContent = m.name;
+          b.onclick = () => sendAction('run_macro:' + m.id);
+          box.appendChild(b);
+        });
+      } catch (e) { macrosLoaded = false; }
     }
 
     function initSSE() {
@@ -1221,6 +1290,7 @@ mod tests {
             can_blackout: black,
             can_take_live: live,
             can_control_timer: timer,
+            can_run_macros: false,
             paired_at: String::new(),
             last_seen_at: String::new(),
         }
@@ -1256,6 +1326,30 @@ mod tests {
         for a in ["clear_media", "clear_all", "toggle_logo", "clear_alert", "clear_props"] {
             assert!(action_permitted(&black, a), "{a}");
             assert!(!action_permitted(&nav, a), "{a}");
+        }
+    }
+
+    #[test]
+    fn test_running_a_macro_needs_its_own_permission() {
+        let all_but_macros = device(true, true, true, true);
+        for a in ["run_macro:abc", "run_macro:0b8f-1"] {
+            assert!(!action_permitted(&all_but_macros, a), "{a}");
+        }
+        let macros = RemoteDevice { can_run_macros: true, ..device(false, false, false, false) };
+        assert!(action_permitted(&macros, "run_macro:abc"));
+        // the permission covers macros only, and a malformed id is still denied
+        assert!(!action_permitted(&macros, "next_slide"));
+        assert!(!action_permitted(&macros, "clear_all"));
+        for bad in ["run_macro:", "run_macro:a/b", "run_macro", "RUN_MACRO:abc"] {
+            assert!(!action_permitted(&macros, bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn test_remote_page_lists_macros_as_plain_text_buttons() {
+        let html = RemoteServerManager::get_remote_html();
+        for needle in ["id=\"macros-card\"", "/api/macros?token=", "b.textContent = m.name;", "sendAction('run_macro:' + m.id)", "canRunMacros"] {
+            assert!(html.contains(needle), "missing {needle}");
         }
     }
 

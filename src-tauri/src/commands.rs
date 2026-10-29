@@ -1601,9 +1601,10 @@ pub async fn update_remote_device_permissions(
     can_blackout: bool,
     can_take_live: bool,
     can_control_timer: bool,
+    can_run_macros: bool,
     db: State<'_, DbManager>,
 ) -> Result<(), String> {
-    db.update_remote_device_permissions(&id, can_navigate, can_blackout, can_take_live, can_control_timer)
+    db.update_remote_device_permissions(&id, can_navigate, can_blackout, can_take_live, can_control_timer, can_run_macros)
         .map_err(|e| e.to_string())
 }
 
