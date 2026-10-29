@@ -358,6 +358,8 @@ pub struct BackupData {
     #[serde(default)]
     pub key_bindings: Vec<crate::keybindings::KeyBinding>,
     #[serde(default)]
+    pub clear_groups: Vec<crate::clear_groups::ClearGroup>,
+    #[serde(default)]
     pub themes: Vec<Theme>,
     #[serde(default)]
     pub media_assets: Vec<MediaAsset>,

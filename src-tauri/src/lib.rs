@@ -1,5 +1,6 @@
 mod actions;
 mod bible_import;
+mod clear_groups;
 mod commands;
 mod db;
 mod display;
@@ -175,6 +176,11 @@ pub fn run() {
             commands::clear_media,
             commands::send_alert,
             commands::start_auto_advance,
+            commands::list_clear_groups,
+            commands::create_clear_group,
+            commands::update_clear_group,
+            commands::delete_clear_group,
+            commands::run_clear_group,
             commands::list_key_bindings,
             commands::create_key_binding,
             commands::update_key_binding,

@@ -57,6 +57,8 @@ pub enum MacroStep {
     AutoAdvance { interval_seconds: u32, #[serde(default)] loop_at_end: bool },
     /// Apply a saved look (logo, blackout and props).
     Look { look_id: String },
+    /// Clear the layers of a saved clear group.
+    ClearGroup { group_id: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -108,6 +110,13 @@ pub fn validate_step(step: &MacroStep) -> std::result::Result<(), String> {
         MacroStep::Look { look_id } => {
             if look_id.trim().is_empty() {
                 Err("choose a look.".to_string())
+            } else {
+                Ok(())
+            }
+        }
+        MacroStep::ClearGroup { group_id } => {
+            if group_id.trim().is_empty() {
+                Err("choose a clear group.".to_string())
             } else {
                 Ok(())
             }
@@ -297,6 +306,14 @@ pub fn apply_step_core(
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| "That look no longer exists.".to_string())?;
             pres.apply_look_core(db, &look);
+            Ok(StepOutcome::Done)
+        }
+        MacroStep::ClearGroup { group_id } => {
+            let group = db
+                .get_clear_group(group_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "That clear group no longer exists.".to_string())?;
+            pres.clear_group_core(&group.layers);
             Ok(StepOutcome::Done)
         }
         MacroStep::Wait { seconds } => Ok(StepOutcome::Wait(*seconds)),
@@ -715,5 +732,26 @@ mod tests {
         assert!(validate_step(&MacroStep::Look { look_id: " ".into() }).unwrap_err().contains("choose a look"));
         let json = serde_json::to_value(&step).unwrap();
         assert_eq!(json, serde_json::json!({"type": "look", "lookId": saved.id}));
+    }
+
+    #[test]
+    fn clear_group_steps_clear_only_the_chosen_layers_and_fail_when_the_group_is_gone() {
+        let (db, pres) = setup();
+        pres.toggle_logo_core();
+        pres.toggle_blackout_core();
+        let saved = db.create_clear_group(&crate::clear_groups::ClearGroup {
+            id: String::new(), name: "Black".into(), layers: vec!["blackout".into()],
+            sort_order: 0, created_at: String::new(), updated_at: String::new(),
+        }).unwrap();
+        let step = MacroStep::ClearGroup { group_id: saved.id.clone() };
+        assert!(validate_step(&step).is_ok());
+        assert_eq!(apply_step_core(&db, &pres, &step, 0).unwrap(), StepOutcome::Done);
+        let st = pres.get_state();
+        assert!(!st.is_blackout && st.is_logo);
+
+        db.delete_clear_group(&saved.id).unwrap();
+        assert!(apply_step_core(&db, &pres, &step, 0).unwrap_err().contains("no longer exists"));
+        assert!(validate_step(&MacroStep::ClearGroup { group_id: " ".into() }).unwrap_err().contains("choose a clear group"));
+        assert_eq!(serde_json::to_value(&step).unwrap(), serde_json::json!({"type": "clearGroup", "groupId": saved.id}));
     }
 }

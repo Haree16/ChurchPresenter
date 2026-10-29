@@ -17,6 +17,7 @@ pub const TARGET_ACTION: &str = "action";
 pub const TARGET_PROP: &str = "prop";
 pub const TARGET_MACRO: &str = "macro";
 pub const TARGET_LOOK: &str = "look";
+pub const TARGET_CLEAR_GROUP: &str = "clearGroup";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -160,8 +161,8 @@ pub fn validate_binding(b: &KeyBinding) -> std::result::Result<String, String> {
                 return Err("That action cannot be bound to a key.".to_string());
             }
         }
-        TARGET_PROP | TARGET_MACRO | TARGET_LOOK => {}
-        _ => return Err("Choose an action, prop, macro or look.".to_string()),
+        TARGET_PROP | TARGET_MACRO | TARGET_LOOK | TARGET_CLEAR_GROUP => {}
+        _ => return Err("Choose an action, prop, macro, look or clear group.".to_string()),
     }
     Ok(combo)
 }
@@ -193,6 +194,7 @@ impl DbManager {
             TARGET_PROP => self.get_prop(&b.target_id).map_err(|e| e.to_string())?.is_some(),
             TARGET_MACRO => self.get_macro(&b.target_id).map_err(|e| e.to_string())?.is_some(),
             TARGET_LOOK => self.get_look(&b.target_id).map_err(|e| e.to_string())?.is_some(),
+            TARGET_CLEAR_GROUP => self.get_clear_group(&b.target_id).map_err(|e| e.to_string())?.is_some(),
             _ => true,
         })
     }
@@ -317,6 +319,7 @@ mod tests {
         assert!(validate_binding(&bind("F5", "action", "delete_everything")).unwrap_err().contains("cannot be bound"));
         assert!(validate_binding(&bind("F5", "action", " ")).unwrap_err().contains("Choose what"));
         assert!(validate_binding(&bind("F5", "teleport", "x")).unwrap_err().contains("Choose an action"));
+        assert!(validate_binding(&bind("F5", "clearGroup", "g1")).is_ok());
         assert!(validate_binding(&bind("B", "action", "next_slide")).unwrap_err().contains("already used"));
     }
 
@@ -358,6 +361,15 @@ mod tests {
         assert!(db.create_key_binding(&bind("F2", "macro", "ghost")).unwrap_err().contains("no longer exists"));
         assert!(db.create_key_binding(&bind("F2", "prop", "ghost")).unwrap_err().contains("no longer exists"));
         assert!(db.create_key_binding(&bind("F2", "look", "ghost")).unwrap_err().contains("no longer exists"));
+        assert!(db.create_key_binding(&bind("F2", "clearGroup", "ghost")).unwrap_err().contains("no longer exists"));
+        let group = db
+            .create_clear_group(&crate::clear_groups::ClearGroup {
+                id: String::new(), name: "G".into(), layers: vec!["slide".into()],
+                sort_order: 0, created_at: String::new(), updated_at: String::new(),
+            })
+            .unwrap();
+        assert!(db.create_key_binding(&bind("F2", "clearGroup", &group.id)).is_ok());
+        db.delete_key_binding(&db.list_key_bindings().unwrap()[0].id).unwrap();
         assert!(db.update_key_binding(&KeyBinding { id: "ghost".into(), ..bind("F2", "action", "clear_all") }).unwrap_err().contains("no longer exists"));
         assert!(db.list_key_bindings().unwrap().is_empty());
     }

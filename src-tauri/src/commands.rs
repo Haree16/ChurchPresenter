@@ -422,6 +422,49 @@ pub async fn stop_macro(
 }
 
 #[tauri::command]
+pub async fn list_clear_groups(db: State<'_, DbManager>) -> Result<Vec<crate::clear_groups::ClearGroup>, String> {
+    db.list_clear_groups().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_clear_group(
+    group: crate::clear_groups::ClearGroup,
+    db: State<'_, DbManager>,
+) -> Result<crate::clear_groups::ClearGroup, String> {
+    db.create_clear_group(&group)
+}
+
+#[tauri::command]
+pub async fn update_clear_group(
+    group: crate::clear_groups::ClearGroup,
+    db: State<'_, DbManager>,
+) -> Result<crate::clear_groups::ClearGroup, String> {
+    db.update_clear_group(&group)
+}
+
+#[tauri::command]
+pub async fn delete_clear_group(id: String, db: State<'_, DbManager>) -> Result<(), String> {
+    db.delete_clear_group(&id).map_err(|e| e.to_string())
+}
+
+/// Clears the layers of a saved clear group. Everything else on the output stays as it is.
+#[tauri::command]
+pub async fn run_clear_group(
+    id: String,
+    db: State<'_, DbManager>,
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    let group = db
+        .get_clear_group(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "That clear group no longer exists.".to_string())?;
+    let state = pres_mgr.clear_group_core(&group.layers);
+    app.emit("presentation:state-changed", &state).ok();
+    Ok(state)
+}
+
+#[tauri::command]
 pub async fn list_key_bindings(db: State<'_, DbManager>) -> Result<Vec<crate::keybindings::KeyBinding>, String> {
     db.list_key_bindings().map_err(|e| e.to_string())
 }

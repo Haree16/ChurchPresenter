@@ -559,6 +559,24 @@ impl PresentationManager {
         state.clone()
     }
 
+    /// Clears exactly the listed layers (see `clear_groups::CLEAR_LAYERS`) and leaves the rest as it is.
+    pub fn clear_group_core(&self, layers: &[String]) -> PresentationState {
+        let mut state = self.state.lock().unwrap();
+        for layer in layers {
+            match layer.as_str() {
+                "slide" => state.is_live = false,
+                "media" => state.media_playback = None,
+                "logo" => state.is_logo = false,
+                "blackout" => state.is_blackout = false,
+                "alert" => state.alert = None,
+                "props" => state.active_props.clear(),
+                "autoAdvance" => state.auto_advance = None,
+                _ => {}
+            }
+        }
+        state.clone()
+    }
+
     pub fn clear_all(&self, app: &AppHandle) -> PresentationState {
         let cloned = self.clear_all_core();
         app.emit("presentation:state-changed", &cloned).ok();

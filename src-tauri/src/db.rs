@@ -1423,6 +1423,27 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 20: clear groups =================
+        if current_version < 20 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS clear_groups (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    layers TEXT NOT NULL DEFAULT '[]',
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (20, ?1);",
+                params![Utc::now().to_rfc3339()],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -5291,6 +5312,7 @@ impl DbManager {
             macros: self.list_macros()?,
             looks: self.list_looks()?,
             key_bindings: self.list_key_bindings()?,
+            clear_groups: self.list_clear_groups()?,
             themes,
             media_assets,
             services,
@@ -5335,6 +5357,7 @@ impl DbManager {
             tx.execute("DELETE FROM macros;", [])?;
             tx.execute("DELETE FROM looks;", [])?;
             tx.execute("DELETE FROM key_bindings;", [])?;
+            tx.execute("DELETE FROM clear_groups;", [])?;
             tx.execute("DELETE FROM song_sections;", [])?;
             tx.execute("DELETE FROM songs;", [])?;
             tx.execute("DELETE FROM themes WHERE is_built_in = 0;", [])?;
@@ -5580,6 +5603,22 @@ impl DbManager {
                     lk.sort_order,
                     lk.created_at,
                     lk.updated_at
+                ],
+            )?;
+        }
+
+        // Restore clear groups
+        for cg in &backup.clear_groups {
+            tx.execute(
+                "INSERT OR IGNORE INTO clear_groups (id, name, layers, sort_order, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6);",
+                params![
+                    cg.id,
+                    cg.name,
+                    serde_json::to_string(&cg.layers).unwrap_or_else(|_| "[]".to_string()),
+                    cg.sort_order,
+                    cg.created_at,
+                    cg.updated_at
                 ],
             )?;
         }
