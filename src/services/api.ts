@@ -64,6 +64,7 @@ import {
   LyricHit,
   SlideHit,
   ServiceTemplateSummary,
+  PptxImportResult,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
@@ -4455,6 +4456,17 @@ class MockDataStore {
     return true;
   }
 
+  /** Browser store: stands in for the desktop import with a small editable presentation. */
+  public async importPptxNative(filePath: string, title?: string): Promise<PptxImportResult> {
+    if (!/\.pptx$/i.test(filePath.trim())) throw new Error('Only .pptx files can be imported this way.');
+    const name = (title ?? '').trim() || filePath.split(/[\\/]/).pop()!.replace(/\.[^/.]+$/, '') || 'Presentation';
+    const presentation = await this.createPresentation(name, 'Other');
+    for (let i = 1; i <= 2; i++) {
+      await this.createSlide(presentation.id, { title: `Slide ${i}`, body: `Imported slide ${i}` });
+    }
+    return { presentation: (await this.getPresentation(presentation.id)) ?? presentation, slideCount: 2, warnings: [] };
+  }
+
   public async importPresentationDocument(
     filePath: string,
     title?: string
@@ -6272,6 +6284,14 @@ export const api = {
       return await invoke<boolean>('recover_database_from_backup', { backupFile });
     }
     return mockStore.recoverDatabaseFromBackup(backupFile);
+  },
+
+  /** Imports a PowerPoint (.pptx) file into editable slides, without PowerPoint or LibreOffice. */
+  importPptxNative: async (filePath: string, title?: string): Promise<PptxImportResult> => {
+    if (isTauri()) {
+      return await invoke<PptxImportResult>('import_pptx_native', { filePath, title });
+    }
+    return mockStore.importPptxNative(filePath, title);
   },
 
   importPresentationDocument: async (

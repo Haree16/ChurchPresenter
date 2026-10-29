@@ -501,6 +501,14 @@ export interface BibleSuggestion {
   endVerse: number | null;
 }
 
+/** What a PowerPoint import gives back. */
+export interface PptxImportResult {
+  presentation: Presentation;
+  slideCount: number;
+  /** What could not be imported, in plain words. */
+  warnings: string[];
+}
+
 /** A saved service layout that new services can start from. */
 export interface ServiceTemplateSummary {
   id: string;

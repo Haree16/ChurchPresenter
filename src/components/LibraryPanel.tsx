@@ -109,6 +109,46 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   };
 
   const [isImportingPres, setIsImportingPres] = useState(false);
+  // what the last PowerPoint import did (or why it failed), with the file, so it can be redone as pictures
+  const [importNotice, setImportNotice] = useState<{ path: string; title?: string; slideCount?: number; warnings: string[]; error?: string } | null>(null);
+
+  const importFile = async (path: string) => {
+    setIsImportingPres(true);
+    setImportNotice(null);
+    try {
+      if (/\.pptx$/i.test(path.trim())) {
+        // PowerPoint files become editable slides; the pictures route stays available from the notice
+        try {
+          const result = await api.importPptxNative(path);
+          onSelectPresentation(result.presentation.id);
+          setImportNotice({ path, title: result.presentation.title, slideCount: result.slideCount, warnings: result.warnings });
+        } catch (err: any) {
+          setImportNotice({ path, warnings: [], error: typeof err === 'string' ? err : err?.message || 'Failed to import the presentation.' });
+        }
+      } else {
+        const pres = await api.importPresentationDocument(path);
+        onSelectPresentation(pres.id);
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Failed to import presentation');
+    } finally {
+      setIsImportingPres(false);
+    }
+  };
+
+  const importAsPictures = async (path: string) => {
+    setIsImportingPres(true);
+    try {
+      const pres = await api.importPresentationDocument(path);
+      onSelectPresentation(pres.id);
+      setImportNotice(null);
+    } catch (err: any) {
+      setImportNotice({ path, warnings: [], error: typeof err === 'string' ? err : err?.message || 'Failed to import the presentation.' });
+    } finally {
+      setIsImportingPres(false);
+    }
+  };
+
   const handleImportPresentation = async () => {
     try {
       if (typeof window !== 'undefined' && isTauri()) {
@@ -121,23 +161,13 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
             },
           ],
         });
-        if (selected && typeof selected === 'string') {
-          setIsImportingPres(true);
-          const pres = await api.importPresentationDocument(selected);
-          onSelectPresentation(pres.id);
-        }
+        if (selected && typeof selected === 'string') await importFile(selected);
       } else {
         const path = prompt('Enter presentation file path (.pdf or .pptx):', '/path/to/slides.pdf');
-        if (path) {
-          setIsImportingPres(true);
-          const pres = await api.importPresentationDocument(path);
-          onSelectPresentation(pres.id);
-        }
+        if (path) await importFile(path);
       }
     } catch (err: any) {
       alert(err?.message || 'Failed to import presentation');
-    } finally {
-      setIsImportingPres(false);
     }
   };
 
@@ -279,6 +309,53 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
           )}
         </div>
       </div>
+
+      {/* Result of the last PowerPoint import */}
+      {importNotice && (
+        <div
+          data-testid="import-notice"
+          style={{ margin: '8px 12px 0', padding: '8px 10px', borderRadius: '6px', fontSize: '11px', lineHeight: 1.45,
+            backgroundColor: importNotice.error ? 'rgba(239, 68, 68, 0.12)' : 'rgba(34, 197, 94, 0.1)',
+            border: `1px solid ${importNotice.error ? '#ef4444' : '#22c55e'}`, color: '#e2e8f0' }}
+        >
+          {importNotice.error ? (
+            <div data-testid="import-error" style={{ color: '#fca5a5', fontWeight: 600 }}>{importNotice.error}</div>
+          ) : (
+            <div style={{ fontWeight: 600 }}>
+              Imported "{importNotice.title}": {importNotice.slideCount} {importNotice.slideCount === 1 ? 'slide' : 'slides'}, all editable.
+            </div>
+          )}
+          {importNotice.warnings.length > 0 && (
+            <ul data-testid="import-warnings" style={{ margin: '4px 0 0', paddingLeft: '16px', color: '#fde68a' }}>
+              {importNotice.warnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+          )}
+          <div style={{ display: 'flex', gap: '6px', marginTop: '6px', justifyContent: 'flex-end' }}>
+            {/\.pptx$/i.test(importNotice.path) && (
+              <button
+                type="button"
+                data-testid="import-as-pictures"
+                disabled={isImportingPres}
+                onClick={() => importAsPictures(importNotice.path)}
+                title="Make each slide a picture of the PowerPoint slide (needs LibreOffice). Looks exactly like PowerPoint, but cannot be edited."
+                style={{ padding: '3px 8px', borderRadius: '4px', backgroundColor: '#334155', color: '#fff', fontSize: '11px', cursor: 'pointer' }}
+              >
+                Import as pictures instead
+              </button>
+            )}
+            <button
+              type="button"
+              data-testid="import-dismiss"
+              onClick={() => setImportNotice(null)}
+              style={{ padding: '3px 8px', borderRadius: '4px', backgroundColor: '#1e293b', color: '#cbd5e1', fontSize: '11px', cursor: 'pointer' }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Category Filter Pills */}
       <div
