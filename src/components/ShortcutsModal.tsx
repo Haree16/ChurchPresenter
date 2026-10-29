@@ -41,6 +41,16 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
       description: 'Blanks the output: clears the slide, media, logo and blackout. The selected slide is kept so you can go live again.',
     },
     {
+      action: 'Go to Slide Number',
+      keys: ['Type a number', 'Enter'],
+      description: 'Takes that slide of the live item or presentation live. Esc clears the typed number.',
+    },
+    {
+      action: 'Close Audience Window',
+      keys: ['Ctrl + W'],
+      description: 'Closes the audience output window, from either the operator or the audience window.',
+    },
+    {
       action: 'Direct Slide Jump',
       keys: ['Click on any slide card'],
       description: 'Immediately presents the clicked slide to the audience.',

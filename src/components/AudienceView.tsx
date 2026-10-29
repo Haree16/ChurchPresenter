@@ -6,6 +6,8 @@ import { SlideElements } from './SlideElements';
 import { composeTextShadow, layoutPadding } from '../services/slideLayout';
 import { PresentationState } from '../types';
 import { api } from '../services/api';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { goToSlideNumber } from '../services/slideJump';
 import { mediaService, getMediaTypeFromExtension } from '../services/mediaService';
 
 export const AudienceView: React.FC = () => {
@@ -28,6 +30,22 @@ export const AudienceView: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
+  // Keys pressed while the output window has focus control the presentation, as in the
+  // operator window: arrows/space step, a typed number plus Enter jumps to that slide.
+  useKeyboardShortcuts({
+    onNext: () => void api.nextSlide(),
+    onPrevious: () => void api.previousSlide(),
+    onToggleBlackout: () => void api.toggleBlackout(),
+    onToggleLogo: () => void api.toggleLogo(),
+    onClearMedia: () => void api.clearMedia(),
+    onClearAll: () => void api.clearAll(),
+    onCloseAudience: () => void api.closeAudienceWindow(),
+    onGoToSlide: async (n) => {
+      const state = await api.getPresentationState();
+      await goToSlideNumber(state, n);
+    },
+  });
+
   useEffect(() => {
     // Initial fetch of current presentation state
     api.getPresentationState().then((state) => {
@@ -42,17 +60,8 @@ export const AudienceView: React.FC = () => {
       unsubscribe = unsub;
     });
 
-    // Disable keyboard event bubble in audience window to prevent duplicate presentation commands
-    const blockKeys = (e: KeyboardEvent) => {
-      if (e.key === ' ' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-        e.preventDefault();
-      }
-    };
-    window.addEventListener('keydown', blockKeys);
-
     return () => {
       if (unsubscribe) unsubscribe();
-      window.removeEventListener('keydown', blockKeys);
       if (videoRef.current) {
         try {
           videoRef.current.pause();

@@ -23,6 +23,7 @@ import { DiagnosticsModal } from './Production/DiagnosticsModal';
 import { SettingsModal } from './Settings/SettingsModal';
 import { Slide, AudienceWindowStatus, StageWindowStatus, RemoteServerStatus } from '../types';
 import { api } from '../services/api';
+import { goToSlideNumber } from '../services/slideJump';
 import { AlertTriangle, X, Sparkles, Plus, BookOpen } from 'lucide-react';
 
 export const OperatorView: React.FC = () => {
@@ -77,7 +78,15 @@ export const OperatorView: React.FC = () => {
   const refreshAudienceStatus = async () => {
     try {
       const status = await api.getAudienceStatus();
-      setAudienceStatus(status);
+      // Keep the same object when nothing changed so the regular polling doesn't re-render.
+      setAudienceStatus((prev) =>
+        prev.isOpen === status.isOpen &&
+        prev.isFullscreen === status.isFullscreen &&
+        prev.monitorName === status.monitorName &&
+        prev.error === status.error
+          ? prev
+          : status
+      );
     } catch {
       // Ignore in mock/browser
     }
@@ -112,8 +121,14 @@ export const OperatorView: React.FC = () => {
     const interval = setInterval(() => {
       refreshRemoteStatus();
     }, 4000);
+    // The audience window can be closed from outside this window (its own close button,
+    // Alt+F4 or Ctrl+W), so keep the open/closed state in step with the real window.
+    const audienceInterval = setInterval(refreshAudienceStatus, 1000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      clearInterval(audienceInterval);
+    };
   }, []);
 
   useEffect(() => {
@@ -191,6 +206,13 @@ export const OperatorView: React.FC = () => {
     onToggleLogo: toggleLogo,
     onClearMedia: clearMedia,
     onClearAll: clearAll,
+    onCloseAudience: () => {
+      if (audienceStatus.isOpen) void handleToggleAudienceWindow();
+    },
+    onGoToSlide: async (n) => {
+      const state = await api.getPresentationState();
+      if (await goToSlideNumber(state, n)) await refreshPresentationState();
+    },
     onEscape: () => {
       // Dismiss any open modal on Escape
       if (isEditorOpen) setIsEditorOpen(false);
