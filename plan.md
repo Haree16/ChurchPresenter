@@ -15,7 +15,7 @@ Status as of 2026-10-27, after the Phase 0-6 commit plus uncommitted work.
 - Database recovery modal, automatic backups, panic hook
 - Remote: PIN pairing, device permissions, SSE state events, per-connection threads
 - Slide fade transition (250ms) in `AudienceView`
-- PDF import; PPTX import via LibreOffice (clear error if missing)
+- PDF import (needs `pdftoppm`); PPTX import into editable slides with no extra software (see `docs/phases/phase-8-content.md`, 8.4); "Import as pictures" for PPTX and old PPT still uses LibreOffice (clear error if missing)
 - Song import: JSON, OpenLyrics, OpenSong; export: JSON, OpenLyrics
 - Monitor change handling, multiple outputs, OSC and MIDI, OBS lower-third overlay
 
