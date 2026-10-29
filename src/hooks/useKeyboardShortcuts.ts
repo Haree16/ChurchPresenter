@@ -1,5 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api';
+import { bindingForEvent } from '../services/keyBindings';
+import { KeyBinding } from '../types';
 
 interface UseKeyboardShortcutsOptions {
   onNext: () => void;
@@ -13,6 +15,9 @@ interface UseKeyboardShortcutsOptions {
   onGoToSlide?: (slideNumber: number) => void;
   /** Ctrl+W: close the audience window. */
   onCloseAudience?: () => void;
+  /** Shortcuts chosen by the operator; `onBinding` runs the one that matches a key press. */
+  bindings?: KeyBinding[];
+  onBinding?: (binding: KeyBinding) => void;
   enabled?: boolean;
 }
 
@@ -26,6 +31,8 @@ export function useKeyboardShortcuts({
   onEscape,
   onGoToSlide,
   onCloseAudience,
+  bindings,
+  onBinding,
   enabled = true,
 }: UseKeyboardShortcutsOptions) {
   // Digits typed so far, cleared after a pause so a stray key never lingers.
@@ -80,6 +87,15 @@ export function useKeyboardShortcuts({
         if (e.key === 'Escape' && numberBuffer.current) {
           e.preventDefault();
           resetNumber();
+          return;
+        }
+      }
+
+      if (onBinding && !e.repeat) {
+        const binding = bindingForEvent(bindings, e);
+        if (binding) {
+          e.preventDefault();
+          onBinding(binding);
           return;
         }
       }
@@ -153,7 +169,7 @@ export function useKeyboardShortcuts({
           break;
       }
     },
-    [enabled, onNext, onPrevious, onToggleBlackout, onToggleLogo, onClearMedia, onClearAll, onEscape, onGoToSlide, onCloseAudience]
+    [enabled, onNext, onPrevious, onToggleBlackout, onToggleLogo, onClearMedia, onClearAll, onEscape, onGoToSlide, onCloseAudience, bindings, onBinding]
   );
 
   useEffect(() => {

@@ -56,10 +56,12 @@ import {
   Macro,
   MacroStep,
   Look,
+  KeyBinding,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
 import { validateLook } from './looks';
+import { validateKeyBinding, MAX_KEY_BINDINGS } from './keyBindings';
 import { validatePanels } from './stageLayouts';
 import { validateProp } from './propLayout';
 import { validateLayout, isEmptyLayout } from './slideLayout';
@@ -1489,6 +1491,48 @@ class MockDataStore {
     this.state.isLive = false;
     this.notify();
     return this.state;
+  }
+
+  // ---- key bindings
+  private keyBindings: KeyBinding[] = [];
+
+  public async listKeyBindings(): Promise<KeyBinding[]> {
+    return this.keyBindings.map((b) => ({ ...b }));
+  }
+
+  private checkKeyBinding(b: KeyBinding): void {
+    const problem = validateKeyBinding(b);
+    if (problem) throw new Error(problem);
+    const exists =
+      b.targetType === 'prop' ? this.props.some((p) => p.id === b.targetId)
+      : b.targetType === 'macro' ? this.macros.some((m) => m.id === b.targetId)
+      : b.targetType === 'look' ? this.looks.some((l) => l.id === b.targetId)
+      : true;
+    if (!exists) throw new Error('That prop, macro or look no longer exists.');
+    if (this.keyBindings.some((o) => o.combo === b.combo && o.id !== b.id)) {
+      throw new Error(`${b.combo} is already assigned to another shortcut.`);
+    }
+  }
+
+  public async createKeyBinding(b: KeyBinding): Promise<KeyBinding> {
+    this.checkKeyBinding({ ...b, id: '' });
+    if (this.keyBindings.length >= MAX_KEY_BINDINGS) throw new Error(`You can keep at most ${MAX_KEY_BINDINGS} shortcuts.`);
+    const now = new Date().toISOString();
+    const saved: KeyBinding = { ...b, id: 'key-' + Math.random().toString(36).substring(2, 9), createdAt: now, updatedAt: now };
+    this.keyBindings.push(saved);
+    return { ...saved };
+  }
+
+  public async updateKeyBinding(b: KeyBinding): Promise<KeyBinding> {
+    this.checkKeyBinding(b);
+    const idx = this.keyBindings.findIndex((o) => o.id === b.id);
+    if (idx < 0) throw new Error('That shortcut no longer exists.');
+    this.keyBindings[idx] = { ...this.keyBindings[idx], ...b, updatedAt: new Date().toISOString() };
+    return { ...this.keyBindings[idx] };
+  }
+
+  public async deleteKeyBinding(id: string): Promise<void> {
+    this.keyBindings = this.keyBindings.filter((b) => b.id !== id);
   }
 
   // ---- looks
@@ -4360,6 +4404,35 @@ export const api = {
       });
     }
     return mockStore.setLiveSlide(presentationId, slideId);
+  },
+
+  listKeyBindings: async (): Promise<KeyBinding[]> => {
+    if (isTauri()) {
+      return await invoke<KeyBinding[]>('list_key_bindings');
+    }
+    return mockStore.listKeyBindings();
+  },
+
+  createKeyBinding: async (binding: KeyBinding): Promise<KeyBinding> => {
+    if (isTauri()) {
+      return await invoke<KeyBinding>('create_key_binding', { binding });
+    }
+    return mockStore.createKeyBinding(binding);
+  },
+
+  updateKeyBinding: async (binding: KeyBinding): Promise<KeyBinding> => {
+    if (isTauri()) {
+      return await invoke<KeyBinding>('update_key_binding', { binding });
+    }
+    return mockStore.updateKeyBinding(binding);
+  },
+
+  deleteKeyBinding: async (id: string): Promise<void> => {
+    if (isTauri()) {
+      await invoke<void>('delete_key_binding', { id });
+      return;
+    }
+    return mockStore.deleteKeyBinding(id);
   },
 
   listLooks: async (): Promise<Look[]> => {

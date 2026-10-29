@@ -156,6 +156,20 @@ export type MacroStep =
   | { type: 'look'; lookId: string };
 
 /** A saved arrangement of the output layers: logo, blackout and which props are showing. */
+export type KeyBindingTargetType = 'action' | 'prop' | 'macro' | 'look';
+
+/** A keyboard shortcut chosen by the operator, for example `Ctrl+Shift+F5` toggling a prop. */
+export interface KeyBinding {
+  id: string;
+  /** Canonical form: modifiers in the order Ctrl, Alt, Shift, Meta, then the key. */
+  combo: string;
+  targetType: KeyBindingTargetType;
+  /** The action name, or the id of the prop / macro / look. */
+  targetId: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Look {
   id: string;
   name: string;

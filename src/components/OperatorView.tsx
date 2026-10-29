@@ -21,9 +21,10 @@ import { LivestreamOverlayModal } from './Production/LivestreamOverlayModal';
 import { ProductionIntegrationsModal } from './Production/ProductionIntegrationsModal';
 import { DiagnosticsModal } from './Production/DiagnosticsModal';
 import { SettingsModal } from './Settings/SettingsModal';
-import { Slide, AudienceWindowStatus, StageWindowStatus, RemoteServerStatus } from '../types';
+import { Slide, AudienceWindowStatus, StageWindowStatus, RemoteServerStatus, KeyBinding } from '../types';
 import { api } from '../services/api';
 import { goToSlideNumber } from '../services/slideJump';
+import { runKeyBinding } from '../services/runKeyBinding';
 import { AlertTriangle, X, Sparkles, Plus, BookOpen } from 'lucide-react';
 
 export const OperatorView: React.FC = () => {
@@ -170,6 +171,25 @@ export const OperatorView: React.FC = () => {
   const [isDiagnosticsModalOpen, setIsDiagnosticsModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
+  // Shortcuts the operator chose in Settings; reloaded whenever Settings closes.
+  const [keyBindings, setKeyBindings] = useState<KeyBinding[]>([]);
+  const [shortcutError, setShortcutError] = useState<string | null>(null);
+  useEffect(() => {
+    if (isSettingsModalOpen) return;
+    let cancelled = false;
+    api
+      .listKeyBindings()
+      .then((list) => {
+        if (!cancelled) setKeyBindings(list);
+      })
+      .catch(() => {
+        // Not available in a plain browser; the built-in keys keep working.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSettingsModalOpen]);
+
   // Auto-save workspace state on view or selection changes
   useEffect(() => {
     api.saveWorkspaceState({
@@ -212,6 +232,16 @@ export const OperatorView: React.FC = () => {
     onGoToSlide: async (n) => {
       const state = await api.getPresentationState();
       if (await goToSlideNumber(state, n)) await refreshPresentationState();
+    },
+    bindings: keyBindings,
+    onBinding: async (binding) => {
+      try {
+        setShortcutError(null);
+        await runKeyBinding(binding);
+        await refreshPresentationState();
+      } catch (err: any) {
+        setShortcutError(`Shortcut ${binding.combo}: ${typeof err === 'string' ? err : err?.message || 'could not run.'}`);
+      }
     },
     onEscape: () => {
       // Dismiss any open modal on Escape
@@ -312,7 +342,7 @@ export const OperatorView: React.FC = () => {
       />
 
       {/* Global Error Banner */}
-      {error && (
+      {(error || shortcutError) && (
         <div
           style={{
             backgroundColor: '#ef4444',
@@ -327,9 +357,15 @@ export const OperatorView: React.FC = () => {
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <AlertTriangle size={16} />
-            <span>{error}</span>
+            <span>{shortcutError || error}</span>
           </div>
-          <button onClick={clearError} style={{ color: '#ffffff' }}>
+          <button
+            onClick={() => {
+              clearError();
+              setShortcutError(null);
+            }}
+            style={{ color: '#ffffff' }}
+          >
             <X size={15} />
           </button>
         </div>
