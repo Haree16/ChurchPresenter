@@ -421,6 +421,34 @@ pub async fn stop_macro(
     Ok(state)
 }
 
+#[tauri::command]
+pub async fn get_ccli_licence_number(db: State<'_, DbManager>) -> Result<Option<String>, String> {
+    db.get_ccli_licence_number().map_err(|e| e.to_string())
+}
+
+/// Saves the church's CCLI licence number (digits only); an empty value removes it.
+#[tauri::command]
+pub async fn set_ccli_licence_number(number: String, db: State<'_, DbManager>) -> Result<Option<String>, String> {
+    db.set_ccli_licence_number(&number)
+}
+
+/// The songs used between two dates (`YYYY-MM-DD`, both included) and how often.
+#[tauri::command]
+pub async fn get_ccli_report(from: String, to: String, db: State<'_, DbManager>) -> Result<crate::ccli::CcliReport, String> {
+    db.ccli_report(&from, &to)
+}
+
+#[tauri::command]
+pub async fn list_song_usage(from: String, to: String, db: State<'_, DbManager>) -> Result<Vec<crate::ccli::SongUsage>, String> {
+    db.list_song_usage(&from, &to)
+}
+
+/// Removes one logged use of a song, for example one shown by mistake.
+#[tauri::command]
+pub async fn delete_song_usage(id: String, db: State<'_, DbManager>) -> Result<(), String> {
+    db.delete_song_usage(&id).map_err(|e| e.to_string())
+}
+
 /// Reference suggestions for what is typed in the Bible lookup box, from the verses imported for `translation`.
 #[tauri::command]
 pub async fn suggest_bible_references(

@@ -1,6 +1,7 @@
 mod actions;
 mod bible_import;
 mod bible_suggest;
+mod ccli;
 mod clear_groups;
 mod commands;
 mod db;
@@ -178,6 +179,11 @@ pub fn run() {
             commands::send_alert,
             commands::start_auto_advance,
             commands::suggest_bible_references,
+            commands::get_ccli_licence_number,
+            commands::set_ccli_licence_number,
+            commands::get_ccli_report,
+            commands::list_song_usage,
+            commands::delete_song_usage,
             commands::list_clear_groups,
             commands::create_clear_group,
             commands::update_clear_group,

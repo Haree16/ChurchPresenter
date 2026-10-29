@@ -1455,6 +1455,33 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 22: song usage log for CCLI reports =================
+        if current_version < 22 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS song_usage (
+                    id TEXT PRIMARY KEY,
+                    song_id TEXT NOT NULL,
+                    service_id TEXT NOT NULL,
+                    song_title TEXT NOT NULL,
+                    ccli_number TEXT,
+                    author TEXT,
+                    copyright TEXT,
+                    service_title TEXT NOT NULL,
+                    used_on TEXT NOT NULL,
+                    used_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+            tx.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_song_usage_once ON song_usage(service_id, song_id, used_on);", [])?;
+            tx.execute("CREATE INDEX IF NOT EXISTS idx_song_usage_date ON song_usage(used_on);", [])?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (22, ?1);",
+                params![Utc::now().to_rfc3339()],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -5324,6 +5351,7 @@ impl DbManager {
             looks: self.list_looks()?,
             key_bindings: self.list_key_bindings()?,
             clear_groups: self.list_clear_groups()?,
+            song_usage: self.list_all_song_usage()?,
             themes,
             media_assets,
             services,
@@ -5369,6 +5397,7 @@ impl DbManager {
             tx.execute("DELETE FROM looks;", [])?;
             tx.execute("DELETE FROM key_bindings;", [])?;
             tx.execute("DELETE FROM clear_groups;", [])?;
+            tx.execute("DELETE FROM song_usage;", [])?;
             tx.execute("DELETE FROM song_sections;", [])?;
             tx.execute("DELETE FROM songs;", [])?;
             tx.execute("DELETE FROM themes WHERE is_built_in = 0;", [])?;
@@ -5615,6 +5644,15 @@ impl DbManager {
                     lk.created_at,
                     lk.updated_at
                 ],
+            )?;
+        }
+
+        // Restore the song usage log
+        for u in &backup.song_usage {
+            tx.execute(
+                "INSERT OR IGNORE INTO song_usage (id, song_id, service_id, song_title, ccli_number, author, copyright, service_title, used_on, used_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10);",
+                params![u.id, u.song_id, u.service_id, u.song_title, u.ccli_number, u.author, u.copyright, u.service_title, u.used_on, u.used_at],
             )?;
         }
 

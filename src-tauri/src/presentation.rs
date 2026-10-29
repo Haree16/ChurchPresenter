@@ -83,6 +83,8 @@ pub struct PresentationManager {
     state: Arc<Mutex<PresentationState>>,
     /// The last dispatched action and when, for the repeat filter in `ActionDispatcher`.
     last_action: Arc<Mutex<(Option<String>, i64)>>,
+    /// The service item and day last counted for CCLI, so moving between slides does not look it up again.
+    last_counted: Arc<Mutex<Option<(String, String)>>>,
 }
 
 impl PresentationManager {
@@ -90,7 +92,26 @@ impl PresentationManager {
         Self {
             state: Arc::new(Mutex::new(PresentationState::default())),
             last_action: Arc::new(Mutex::new((None, 0))),
+            last_counted: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Counts a song for CCLI the first time its service item goes live (once per service per day).
+    fn note_item_live(&self, db: &DbManager, state: &PresentationState) {
+        if !state.is_live {
+            return;
+        }
+        let (Some(service_id), Some(item_id)) = (&state.current_service_id, &state.current_item_id) else { return };
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        {
+            let mut last = self.last_counted.lock().unwrap();
+            if last.as_ref().map_or(false, |(i, d)| i == item_id && *d == today) {
+                return;
+            }
+            *last = Some((item_id.clone(), today));
+        }
+        // a failure to log must never get in the way of the service
+        let _ = db.log_song_usage_for_item(service_id, item_id);
     }
 
     /// True when `action` is the same as the previous one and came less than 80 ms after it.
@@ -508,6 +529,7 @@ impl PresentationManager {
         state.is_live = true;
         state.is_logo = false;
         self.update_pointers_internal(&mut state, db);
+        self.note_item_live(db, &state);
         state.clone()
     }
 
@@ -657,6 +679,7 @@ impl PresentationManager {
                                     state.is_live = true;
                                     state.is_logo = false;
                                     self.update_pointers_internal(&mut state, db);
+                                    self.note_item_live(db, &state);
                                     break;
                                 }
                             }
@@ -716,6 +739,7 @@ impl PresentationManager {
                                         state.is_live = true;
                                         state.is_logo = false;
                                         self.update_pointers_internal(&mut state, db);
+                                        self.note_item_live(db, &state);
                                         break;
                                     }
                                 }
