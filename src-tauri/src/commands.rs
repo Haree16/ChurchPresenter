@@ -421,6 +421,18 @@ pub async fn stop_macro(
     Ok(state)
 }
 
+/// Reference suggestions for what is typed in the Bible lookup box, from the verses imported for `translation`.
+#[tauri::command]
+pub async fn suggest_bible_references(
+    input: String,
+    translation: String,
+    limit: Option<usize>,
+    db: State<'_, DbManager>,
+) -> Result<Vec<crate::bible_suggest::BibleSuggestion>, String> {
+    db.suggest_bible_references(&input, &translation, limit.unwrap_or(crate::bible_suggest::DEFAULT_SUGGESTION_LIMIT))
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn list_clear_groups(db: State<'_, DbManager>) -> Result<Vec<crate::clear_groups::ClearGroup>, String> {
     db.list_clear_groups().map_err(|e| e.to_string())

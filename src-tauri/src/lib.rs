@@ -1,5 +1,6 @@
 mod actions;
 mod bible_import;
+mod bible_suggest;
 mod clear_groups;
 mod commands;
 mod db;
@@ -176,6 +177,7 @@ pub fn run() {
             commands::clear_media,
             commands::send_alert,
             commands::start_auto_advance,
+            commands::suggest_bible_references,
             commands::list_clear_groups,
             commands::create_clear_group,
             commands::update_clear_group,
