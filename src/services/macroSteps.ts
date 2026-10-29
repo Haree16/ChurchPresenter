@@ -55,6 +55,8 @@ export function validateStep(step: MacroStep): string | null {
         : `the auto-advance interval must be between ${MIN_AUTO_ADVANCE_SECONDS} and ${MAX_AUTO_ADVANCE_SECONDS} seconds.`;
     case 'look':
       return (step.lookId || '').trim() ? null : 'choose a look.';
+    case 'clearGroup':
+      return (step.groupId || '').trim() ? null : 'choose a clear group.';
     default:
       return `unknown step type '${(step as { type: string }).type}'.`;
   }
@@ -81,7 +83,8 @@ export function validateMacro(m: Partial<Macro>): string | null {
 export function stepLabel(
   step: MacroStep,
   propName?: (id: string) => string | undefined,
-  lookName?: (id: string) => string | undefined
+  lookName?: (id: string) => string | undefined,
+  clearGroupName?: (id: string) => string | undefined
 ): string {
   switch (step.type) {
     case 'action':
@@ -94,6 +97,8 @@ export function stepLabel(
       return `Wait ${step.seconds} s`;
     case 'look':
       return `Apply look ${lookName?.(step.lookId) ?? ''}`.trim();
+    case 'clearGroup':
+      return `Clear group ${clearGroupName?.(step.groupId) ?? ''}`.trim();
     case 'autoAdvance':
       return `Auto-advance every ${step.intervalSeconds} s${step.loopAtEnd ? ' (loop)' : ''}`;
   }
@@ -114,5 +119,7 @@ export function newStep(type: MacroStep['type']): MacroStep {
       return { type, intervalSeconds: 8, loopAtEnd: false };
     case 'look':
       return { type, lookId: '' };
+    case 'clearGroup':
+      return { type, groupId: '' };
   }
 }

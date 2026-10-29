@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { PropsControl } from './PropsControl';
 import { AutoAdvanceControl } from './AutoAdvanceControl';
 import { LooksControl } from './LooksControl';
+import { ClearGroupsControl } from './ClearGroupsControl';
 import { MacroControl } from './MacroControl';
 import { SlideElements } from './SlideElements';
 import { backgroundImageCss } from '../services/backgroundMedia';
@@ -416,6 +417,8 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
           <PropsControl presentationState={presentationState} />
 
           <LooksControl presentationState={presentationState} />
+
+          <ClearGroupsControl />
 
           <AutoAdvanceControl presentationState={presentationState} />
 

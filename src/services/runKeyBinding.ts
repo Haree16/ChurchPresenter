@@ -16,5 +16,8 @@ export async function runKeyBinding(b: KeyBinding): Promise<void> {
     case 'look':
       await api.applyLook(b.targetId);
       return;
+    case 'clearGroup':
+      await api.runClearGroup(b.targetId);
+      return;
   }
 }

@@ -153,10 +153,22 @@ export type MacroStep =
   | { type: 'prop'; propId: string; mode: 'show' | 'hide' | 'toggle' }
   | { type: 'wait'; seconds: number }
   | { type: 'autoAdvance'; intervalSeconds: number; loopAtEnd?: boolean }
-  | { type: 'look'; lookId: string };
+  | { type: 'look'; lookId: string }
+  | { type: 'clearGroup'; groupId: string };
 
-/** A saved arrangement of the output layers: logo, blackout and which props are showing. */
-export type KeyBindingTargetType = 'action' | 'prop' | 'macro' | 'look';
+export type KeyBindingTargetType = 'action' | 'prop' | 'macro' | 'look' | 'clearGroup';
+
+export type ClearLayer = 'slide' | 'media' | 'logo' | 'blackout' | 'alert' | 'props' | 'autoAdvance';
+
+/** A named choice of output layers that are cleared together with one click. */
+export interface ClearGroup {
+  id: string;
+  name: string;
+  layers: ClearLayer[];
+  sortOrder?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 /** A keyboard shortcut chosen by the operator, for example `Ctrl+Shift+F5` toggling a prop. */
 export interface KeyBinding {
@@ -170,6 +182,7 @@ export interface KeyBinding {
   updatedAt?: string;
 }
 
+/** A saved arrangement of the output layers: logo, blackout and which props are showing. */
 export interface Look {
   id: string;
   name: string;

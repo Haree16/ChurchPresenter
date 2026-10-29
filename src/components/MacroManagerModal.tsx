@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, Plus, Trash2, X } from 'lucide-react';
 import { api } from '../services/api';
-import { Look, Macro, MacroStep, Prop } from '../types';
+import { ClearGroup, Look, Macro, MacroStep, Prop } from '../types';
 import {
   MACRO_ACTIONS,
   MAX_ALERT_CHARS,
@@ -51,6 +51,7 @@ const STEP_TYPES: { type: MacroStep['type']; label: string }[] = [
   { type: 'prop', label: 'Prop' },
   { type: 'wait', label: 'Wait' },
   { type: 'look', label: 'Look' },
+  { type: 'clearGroup', label: 'Clear group' },
   { type: 'autoAdvance', label: 'Auto-advance' },
 ];
 
@@ -58,6 +59,7 @@ export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, on
   const [macros, setMacros] = useState<Macro[]>([]);
   const [props, setProps] = useState<Prop[]>([]);
   const [looks, setLooks] = useState<Look[]>([]);
+  const [clearGroups, setClearGroups] = useState<ClearGroup[]>([]);
   const [draft, setDraft] = useState<Macro>(blank());
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -66,6 +68,7 @@ export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, on
     setMacros(await api.listMacros());
     setProps(await api.listProps());
     setLooks(await api.listLooks());
+    setClearGroups(await api.listClearGroups());
   };
 
   useEffect(() => {
@@ -176,6 +179,17 @@ export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, on
             ))}
           </select>
         );
+      case 'clearGroup':
+        return (
+          <select data-testid="step-clear-group-id" aria-label="Clear group" style={{ ...field, flex: 1 }} value={step.groupId} onChange={(e) => setStep(i, { type: 'clearGroup', groupId: e.target.value })}>
+            <option value="">Choose a clear group…</option>
+            {clearGroups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+        );
       case 'wait':
         return (
           <label style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -243,7 +257,7 @@ export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, on
           {draft.steps.map((step, i) => (
             <div key={i} data-testid="step-row" style={{ display: 'flex', gap: '6px', alignItems: 'center', padding: '6px', backgroundColor: '#111c33', borderRadius: '6px' }}>
               <span style={{ color: '#64748b', width: '18px', fontSize: '11px' }}>{i + 1}</span>
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#c4b5fd', width: '84px' }} title={stepLabel(step, propName, (id) => looks.find((l) => l.id === id)?.name)}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: '#c4b5fd', width: '84px' }} title={stepLabel(step, propName, (id) => looks.find((l) => l.id === id)?.name, (id) => clearGroups.find((g) => g.id === id)?.name)}>
                 {STEP_TYPES.find((t) => t.type === step.type)?.label}
               </span>
               {renderStepFields(step, i)}

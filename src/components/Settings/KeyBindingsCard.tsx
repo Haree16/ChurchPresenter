@@ -8,9 +8,9 @@ import {
   eventToCombo,
   validateKeyBinding,
 } from '../../services/keyBindings';
-import { KeyBinding, KeyBindingTargetType, Look, Macro, Prop } from '../../types';
+import { ClearGroup, KeyBinding, KeyBindingTargetType, Look, Macro, Prop } from '../../types';
 
-const TARGET_TYPES: KeyBindingTargetType[] = ['action', 'prop', 'macro', 'look'];
+const TARGET_TYPES: KeyBindingTargetType[] = ['action', 'prop', 'macro', 'look', 'clearGroup'];
 
 const fieldStyle: React.CSSProperties = {
   padding: '6px 8px',
@@ -27,6 +27,7 @@ export const KeyBindingsCard: React.FC = () => {
   const [props, setProps] = useState<Prop[]>([]);
   const [macros, setMacros] = useState<Macro[]>([]);
   const [looks, setLooks] = useState<Look[]>([]);
+  const [clearGroups, setClearGroups] = useState<ClearGroup[]>([]);
 
   const [targetType, setTargetType] = useState<KeyBindingTargetType>('action');
   const [targetId, setTargetId] = useState('');
@@ -35,11 +36,14 @@ export const KeyBindingsCard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    const [b, p, m, l] = await Promise.all([api.listKeyBindings(), api.listProps(), api.listMacros(), api.listLooks()]);
+    const [b, p, m, l, c] = await Promise.all([
+      api.listKeyBindings(), api.listProps(), api.listMacros(), api.listLooks(), api.listClearGroups(),
+    ]);
     setBindings(b);
     setProps(p);
     setMacros(m);
     setLooks(l);
+    setClearGroups(c);
   }, []);
 
   useEffect(() => {
@@ -49,7 +53,7 @@ export const KeyBindingsCard: React.FC = () => {
   const targetOptions: { id: string; label: string }[] =
     targetType === 'action'
       ? MACRO_ACTIONS.map((a) => ({ id: a.action, label: a.label }))
-      : (targetType === 'prop' ? props : targetType === 'macro' ? macros : looks).map((t) => ({ id: t.id, label: t.name }));
+      : (targetType === 'prop' ? props : targetType === 'macro' ? macros : targetType === 'clearGroup' ? clearGroups : looks).map((t) => ({ id: t.id, label: t.name }));
 
   const draft = { combo, targetType, targetId };
   const draftProblem = combo || targetId ? validateKeyBinding(draft) : null;
@@ -112,7 +116,7 @@ export const KeyBindingsCard: React.FC = () => {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {bindings.map((b) => {
-            const d = describeBinding(b, { props, macros, looks });
+            const d = describeBinding(b, { props, macros, looks, clearGroups });
             return (
               <div
                 key={b.id}

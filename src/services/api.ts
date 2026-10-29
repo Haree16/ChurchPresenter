@@ -57,11 +57,13 @@ import {
   MacroStep,
   Look,
   KeyBinding,
+  ClearGroup,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
 import { validateLook } from './looks';
 import { validateKeyBinding, MAX_KEY_BINDINGS } from './keyBindings';
+import { validateClearGroup, MAX_CLEAR_GROUPS } from './clearGroups';
 import { validatePanels } from './stageLayouts';
 import { validateProp } from './propLayout';
 import { validateLayout, isEmptyLayout } from './slideLayout';
@@ -1493,6 +1495,67 @@ class MockDataStore {
     return this.state;
   }
 
+  // ---- clear groups
+  private clearGroups: ClearGroup[] = [];
+
+  public async listClearGroups(): Promise<ClearGroup[]> {
+    return this.clearGroups.map((g) => ({ ...g, layers: [...g.layers] }));
+  }
+
+  public async createClearGroup(g: ClearGroup): Promise<ClearGroup> {
+    const problem = validateClearGroup(g);
+    if (problem) throw new Error(problem);
+    if (this.clearGroups.length >= MAX_CLEAR_GROUPS) throw new Error(`You can keep at most ${MAX_CLEAR_GROUPS} clear groups.`);
+    const now = new Date().toISOString();
+    const saved: ClearGroup = {
+      ...g,
+      id: 'clear-' + Math.random().toString(36).substring(2, 9),
+      name: g.name.trim(),
+      layers: [...g.layers],
+      sortOrder: this.clearGroups.length,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.clearGroups.push(saved);
+    return { ...saved, layers: [...saved.layers] };
+  }
+
+  public async updateClearGroup(g: ClearGroup): Promise<ClearGroup> {
+    const problem = validateClearGroup(g);
+    if (problem) throw new Error(problem);
+    const idx = this.clearGroups.findIndex((o) => o.id === g.id);
+    if (idx < 0) throw new Error('That clear group no longer exists.');
+    this.clearGroups[idx] = { ...this.clearGroups[idx], ...g, name: g.name.trim(), layers: [...g.layers], updatedAt: new Date().toISOString() };
+    return { ...this.clearGroups[idx], layers: [...this.clearGroups[idx].layers] };
+  }
+
+  public async deleteClearGroup(id: string): Promise<void> {
+    this.clearGroups = this.clearGroups.filter((g) => g.id !== id);
+  }
+
+  /** Clears the layers of a saved group; everything else on the output stays as it is. */
+  public async runClearGroup(id: string): Promise<PresentationState> {
+    const group = this.clearGroups.find((g) => g.id === id);
+    if (!group) throw new Error('That clear group no longer exists.');
+    for (const layer of group.layers) {
+      switch (layer) {
+        case 'slide': this.state.isLive = false; break;
+        case 'media': this.state.mediaPlayback = null; break;
+        case 'logo': this.state.isLogo = false; break;
+        case 'blackout': this.state.isBlackout = false; break;
+        case 'alert': this.state.alert = null; break;
+        case 'props': this.state.activeProps = []; break;
+        case 'autoAdvance':
+          this.state.autoAdvance = null;
+          if (this.autoAdvanceTimer) clearTimeout(this.autoAdvanceTimer);
+          this.autoAdvanceTimer = null;
+          break;
+      }
+    }
+    this.notify();
+    return this.state;
+  }
+
   // ---- key bindings
   private keyBindings: KeyBinding[] = [];
 
@@ -1507,6 +1570,7 @@ class MockDataStore {
       b.targetType === 'prop' ? this.props.some((p) => p.id === b.targetId)
       : b.targetType === 'macro' ? this.macros.some((m) => m.id === b.targetId)
       : b.targetType === 'look' ? this.looks.some((l) => l.id === b.targetId)
+      : b.targetType === 'clearGroup' ? this.clearGroups.some((g) => g.id === b.targetId)
       : true;
     if (!exists) throw new Error('That prop, macro or look no longer exists.');
     if (this.keyBindings.some((o) => o.combo === b.combo && o.id !== b.id)) {
@@ -1662,6 +1726,9 @@ class MockDataStore {
         return;
       case 'look':
         await this.applyLook(step.lookId);
+        return;
+      case 'clearGroup':
+        await this.runClearGroup(step.groupId);
         return;
       case 'wait':
         return; // handled by the runner
@@ -4404,6 +4471,43 @@ export const api = {
       });
     }
     return mockStore.setLiveSlide(presentationId, slideId);
+  },
+
+  listClearGroups: async (): Promise<ClearGroup[]> => {
+    if (isTauri()) {
+      return await invoke<ClearGroup[]>('list_clear_groups');
+    }
+    return mockStore.listClearGroups();
+  },
+
+  createClearGroup: async (group: ClearGroup): Promise<ClearGroup> => {
+    if (isTauri()) {
+      return await invoke<ClearGroup>('create_clear_group', { group });
+    }
+    return mockStore.createClearGroup(group);
+  },
+
+  updateClearGroup: async (group: ClearGroup): Promise<ClearGroup> => {
+    if (isTauri()) {
+      return await invoke<ClearGroup>('update_clear_group', { group });
+    }
+    return mockStore.updateClearGroup(group);
+  },
+
+  deleteClearGroup: async (id: string): Promise<void> => {
+    if (isTauri()) {
+      await invoke<void>('delete_clear_group', { id });
+      return;
+    }
+    return mockStore.deleteClearGroup(id);
+  },
+
+  /** Clears the layers of a saved clear group. Everything else on the output stays as it is. */
+  runClearGroup: async (id: string): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('run_clear_group', { id });
+    }
+    return mockStore.runClearGroup(id);
   },
 
   listKeyBindings: async (): Promise<KeyBinding[]> => {

@@ -86,9 +86,10 @@ export function validateKeyBinding(b: Pick<KeyBinding, 'combo' | 'targetType' | 
     case 'prop':
     case 'macro':
     case 'look':
+    case 'clearGroup':
       return null;
     default:
-      return 'Choose an action, prop, macro or look.';
+      return 'Choose an action, prop, macro, look or clear group.';
   }
 }
 
@@ -106,21 +107,30 @@ export const TARGET_TYPE_LABELS: Record<KeyBindingTargetType, string> = {
   prop: 'Prop',
   macro: 'Macro',
   look: 'Look',
+  clearGroup: 'Clear group',
 };
 
 /** What a binding does, in words. Targets that no longer exist come back with `missing: true`. */
 export function describeBinding(
   b: KeyBinding,
-  targets: { props: { id: string; name: string }[]; macros: { id: string; name: string }[]; looks: { id: string; name: string }[] }
+  targets: {
+    props: { id: string; name: string }[];
+    macros: { id: string; name: string }[];
+    looks: { id: string; name: string }[];
+    clearGroups?: { id: string; name: string }[];
+  }
 ): { label: string; missing: boolean } {
   if (b.targetType === 'action') {
     const found = MACRO_ACTIONS.find((a) => a.action === b.targetId);
     return found ? { label: found.label, missing: false } : { label: b.targetId, missing: true };
   }
-  const list = b.targetType === 'prop' ? targets.props : b.targetType === 'macro' ? targets.macros : targets.looks;
+  const list =
+    b.targetType === 'prop' ? targets.props
+    : b.targetType === 'macro' ? targets.macros
+    : b.targetType === 'clearGroup' ? targets.clearGroups ?? []
+    : targets.looks;
   const found = list.find((t) => t.id === b.targetId);
   const kind = TARGET_TYPE_LABELS[b.targetType].toLowerCase();
-  return found
-    ? { label: b.targetType === 'prop' ? `Toggle prop: ${found.name}` : b.targetType === 'macro' ? `Run macro: ${found.name}` : `Apply look: ${found.name}`, missing: false }
-    : { label: `(deleted ${kind})`, missing: true };
+  const verb = b.targetType === 'prop' ? 'Toggle prop' : b.targetType === 'macro' ? 'Run macro' : b.targetType === 'clearGroup' ? 'Clear group' : 'Apply look';
+  return found ? { label: `${verb}: ${found.name}`, missing: false } : { label: `(deleted ${kind})`, missing: true };
 }
