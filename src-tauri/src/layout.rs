@@ -67,6 +67,9 @@ pub struct SlideLayout {
     /// Extra text boxes, images and shapes, drawn in order (the last one on top).
     #[serde(default)]
     pub elements: Vec<SlideElement>,
+    /// How long auto-advance keeps this slide up, in seconds; `None` uses the run's own interval.
+    #[serde(default)]
+    pub advance_seconds: Option<u32>,
 }
 
 fn is_hex_color(s: &str) -> bool {
@@ -80,6 +83,7 @@ impl SlideLayout {
             && self.outline_width.is_none()
             && self.outline_color.is_none()
             && self.elements.is_empty()
+            && self.advance_seconds.is_none()
     }
 }
 
@@ -98,6 +102,15 @@ pub fn validate_layout(layout: &SlideLayout) -> Result<(), String> {
     if let Some(c) = &layout.outline_color {
         if !is_hex_color(c) {
             return Err("Outline colour must look like #000000.".to_string());
+        }
+    }
+    if let Some(s) = layout.advance_seconds {
+        if !(crate::presentation::MIN_AUTO_ADVANCE_SECONDS..=crate::presentation::MAX_AUTO_ADVANCE_SECONDS).contains(&s) {
+            return Err(format!(
+                "Auto-advance time must be between {} and {} seconds.",
+                crate::presentation::MIN_AUTO_ADVANCE_SECONDS,
+                crate::presentation::MAX_AUTO_ADVANCE_SECONDS
+            ));
         }
     }
     if layout.elements.len() > MAX_ELEMENTS {
@@ -223,6 +236,27 @@ pub fn layout_from_json(raw: Option<String>) -> Option<SlideLayout> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_slide_time_is_validated_stored_and_counts_as_a_layout() {
+        let only_time = SlideLayout { advance_seconds: Some(20), ..Default::default() };
+        assert!(!only_time.is_empty());
+        assert!(validate_layout(&only_time).is_ok());
+        for bad in [0, 3601, u32::MAX] {
+            let l = SlideLayout { advance_seconds: Some(bad), ..Default::default() };
+            assert!(validate_layout(&l).unwrap_err().contains("between 1 and 3600"), "{bad}");
+        }
+        for ok in [1, 3600] {
+            assert!(validate_layout(&SlideLayout { advance_seconds: Some(ok), ..Default::default() }).is_ok());
+        }
+        // survives the JSON column, and a stored bad value is dropped instead of breaking the slide
+        let json = layout_to_json(&Some(only_time.clone()));
+        assert_eq!(layout_from_json(json), Some(only_time));
+        assert_eq!(layout_from_json(Some("{\"advanceSeconds\":0}".to_string())), None);
+        // older layouts without the field still load
+        let old = layout_from_json(Some("{\"marginPct\":5.0}".to_string())).unwrap();
+        assert_eq!(old.advance_seconds, None);
+    }
 
     fn layout(margin: Option<f64>, width: Option<f64>, color: Option<&str>) -> SlideLayout {
         SlideLayout { margin_pct: margin, outline_width: width, outline_color: color.map(String::from), ..Default::default() }

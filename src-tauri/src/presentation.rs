@@ -37,6 +37,15 @@ pub fn expire_alert(state: &mut PresentationState, now_ms: i64) {
     }
 }
 
+/// How long auto-advance keeps `slide` up: its own time if it has one, else the run's interval.
+fn slide_hold_ms(slide: Option<&crate::models::Slide>, interval_seconds: u32) -> i64 {
+    let secs = slide
+        .and_then(|s| s.layout.as_ref())
+        .and_then(|l| l.advance_seconds)
+        .unwrap_or(interval_seconds);
+    i64::from(secs) * 1000
+}
+
 /// Runs one auto-advance run on a background thread until it is stopped, replaced or finished.
 pub fn spawn_auto_advance_loop(app: AppHandle, db: DbManager, pres: PresentationManager, run_id: String) {
     std::thread::spawn(move || loop {
@@ -211,11 +220,14 @@ impl PresentationManager {
         if !state.is_live || state.current_slide_id.is_none() {
             return Err("Take a slide live first; auto-advance continues from the live slide.".to_string());
         }
+        let hold = slide_hold_ms(state.current_slide.as_ref(), interval_seconds);
+        let slide_id = state.current_slide_id.clone();
         state.auto_advance = Some(AutoAdvanceStatus {
             id: uuid::Uuid::new_v4().to_string(),
             interval_seconds,
             loop_at_end,
-            next_at_ms: now_ms + i64::from(interval_seconds) * 1000,
+            next_at_ms: now_ms + hold,
+            slide_id,
         });
         Ok(state.clone())
     }
@@ -272,12 +284,22 @@ impl PresentationManager {
             let Some(run) = state.auto_advance.clone() else {
                 return (AutoAdvanceTick::Idle, state.clone());
             };
+            let hold = slide_hold_ms(state.current_slide.as_ref(), run.interval_seconds);
+            let current = state.current_slide_id.clone();
+            // The operator moved to another slide: its own time starts now.
+            if run.slide_id != current {
+                if let Some(a) = state.auto_advance.as_mut() {
+                    a.slide_id = current;
+                    a.next_at_ms = now_ms + hold;
+                }
+                return (AutoAdvanceTick::Waiting, state.clone());
+            }
             if now_ms < run.next_at_ms {
                 return (AutoAdvanceTick::Waiting, state.clone());
             }
             if !state.is_live || state.is_blackout {
                 if let Some(a) = state.auto_advance.as_mut() {
-                    a.next_at_ms = now_ms + i64::from(a.interval_seconds) * 1000;
+                    a.next_at_ms = now_ms + hold;
                 }
                 return (AutoAdvanceTick::Waiting, state.clone());
             }
@@ -300,13 +322,17 @@ impl PresentationManager {
         }
 
         let mut state = self.state.lock().unwrap();
+        // the next countdown is for the slide we are on now, using that slide's own time if it has one
+        let hold = slide_hold_ms(state.current_slide.as_ref(), run.interval_seconds);
+        let current = state.current_slide_id.clone();
         // only touch the run if it is still the same one (it may have been stopped or replaced)
         match state.auto_advance.as_mut() {
             Some(a) if a.id == run.id => {
                 if outcome == AutoAdvanceTick::Finished {
                     state.auto_advance = None;
                 } else {
-                    a.next_at_ms = now_ms + i64::from(run.interval_seconds) * 1000;
+                    a.next_at_ms = now_ms + hold;
+                    a.slide_id = current;
                 }
             }
             _ => {}
@@ -994,6 +1020,97 @@ mod tests {
         mgr.next_slide_core(db); // goes live on a slide of the seeded presentation
         assert!(mgr.get_state().is_live);
         mgr
+    }
+
+    /// Goes live on the first slide of the seeded presentation (which has three slides).
+    fn live_on_first_slide(db: &DbManager) -> PresentationManager {
+        let mgr = PresentationManager::new();
+        mgr.init_pointers(db);
+        let pres_id = mgr.get_state().current_presentation_id.unwrap();
+        let first = db.get_slides(&pres_id).unwrap().remove(0);
+        mgr.set_live_slide_core(db, &pres_id, &first.id);
+        assert_eq!(mgr.get_state().current_slide_index, 0);
+        mgr
+    }
+
+    /// Sets how long auto-advance keeps the slides of the seeded presentation from `first` on
+    /// (`None` = use the run's interval).
+    fn set_slide_times(db: &DbManager, first: usize, times: &[Option<u32>]) {
+        let probe = PresentationManager::new();
+        probe.init_pointers(db);
+        let pres_id = probe.get_state().current_presentation_id.unwrap();
+        for (slide, t) in db.get_slides(&pres_id).unwrap().into_iter().skip(first).zip(times) {
+            let layout = crate::layout::SlideLayout { advance_seconds: *t, ..Default::default() };
+            db.update_slide(&crate::models::Slide { layout: Some(layout), ..slide }).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_each_slide_can_have_its_own_time_and_the_run_interval_fills_the_gaps() {
+        let db = DbManager::new_in_memory().unwrap();
+        set_slide_times(&db, 0, &[Some(30), Some(5), None]);
+        let mgr = live_on_first_slide(&db);
+        assert_eq!(mgr.get_state().total_slides, 3);
+
+        // the first slide stays 30 s, not the run's 10 s
+        let run = mgr.start_auto_advance_core(10, false, 0).unwrap().auto_advance.unwrap();
+        assert_eq!(run.next_at_ms, 30_000);
+        assert_eq!(mgr.auto_advance_tick_core(&db, 29_999).0, AutoAdvanceTick::Waiting);
+        assert_eq!(mgr.auto_advance_tick_core(&db, 30_000).0, AutoAdvanceTick::Advanced);
+        // the second slide stays 5 s
+        assert_eq!(mgr.get_state().auto_advance.unwrap().next_at_ms, 35_000);
+        assert_eq!(mgr.auto_advance_tick_core(&db, 35_000).0, AutoAdvanceTick::Advanced);
+        // the third has no time of its own, so the run's 10 s applies
+        assert_eq!(mgr.get_state().auto_advance.unwrap().next_at_ms, 45_000);
+    }
+
+    #[test]
+    fn test_moving_to_another_slide_by_hand_restarts_the_countdown_with_that_slides_time() {
+        let db = DbManager::new_in_memory().unwrap();
+        set_slide_times(&db, 0, &[None, Some(20), None]);
+        let mgr = live_on_first_slide(&db);
+        mgr.start_auto_advance_core(10, false, 0).unwrap();
+
+        mgr.next_slide_core(&db); // the operator steps to the 20 s slide at t = 4 s
+        let (tick, st) = mgr.auto_advance_tick_core(&db, 4_000);
+        assert_eq!(tick, AutoAdvanceTick::Waiting);
+        assert_eq!(st.auto_advance.unwrap().next_at_ms, 24_000);
+        // the old 10 s countdown no longer fires
+        assert_eq!(mgr.auto_advance_tick_core(&db, 10_000).0, AutoAdvanceTick::Waiting);
+        assert_eq!(mgr.auto_advance_tick_core(&db, 23_999).0, AutoAdvanceTick::Waiting);
+        assert_eq!(mgr.auto_advance_tick_core(&db, 24_000).0, AutoAdvanceTick::Advanced);
+    }
+
+    #[test]
+    fn test_a_slide_time_is_kept_while_paused_and_when_looping() {
+        let db = DbManager::new_in_memory().unwrap();
+        let total = {
+            set_slide_times(&db, 0, &[Some(7); 50]); // every slide stays 7 s
+            let probe = live_manager(&db);
+            probe.get_state().total_slides
+        };
+        let mgr = live_manager(&db);
+        mgr.start_auto_advance_core(60, true, 0).unwrap();
+
+        mgr.toggle_blackout_core();
+        let (_, st) = mgr.auto_advance_tick_core(&db, 7_000);
+        assert_eq!(st.auto_advance.unwrap().next_at_ms, 14_000); // pushed back by the slide's 7 s, not 60 s
+        mgr.toggle_blackout_core();
+
+        // after the last slide it loops back to the 7 s slide and uses its time again
+        let mut now = 14_000;
+        let mut looped_at = None;
+        for _ in 0..(total + 2) {
+            let due = mgr.get_state().auto_advance.unwrap().next_at_ms;
+            now = now.max(due);
+            if mgr.auto_advance_tick_core(&db, now).0 == AutoAdvanceTick::Looped {
+                looped_at = Some(now);
+                break;
+            }
+        }
+        let looped_at = looped_at.expect("the run should loop");
+        assert_eq!(mgr.get_state().current_slide_index, 0);
+        assert_eq!(mgr.get_state().auto_advance.unwrap().next_at_ms, looped_at + 7_000);
     }
 
     #[test]

@@ -63,6 +63,10 @@ pub struct AutoAdvanceStatus {
     pub loop_at_end: bool,
     /// Unix ms of the next automatic advance.
     pub next_at_ms: i64,
+    /// The slide the countdown is for. When the operator moves to another slide the countdown restarts
+    /// with that slide's own time.
+    #[serde(default)]
+    pub slide_id: Option<String>,
 }
 
 /// A macro that is currently running (for the progress display).
