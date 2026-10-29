@@ -181,6 +181,17 @@ export const SlideCard = React.memo<SlideCardProps>(({
         </div>
       )}
 
+      {/* This slide's own auto-advance time */}
+      {slide.layout?.advanceSeconds != null && (
+        <div
+          data-testid="slide-time-badge"
+          title="Auto-advance keeps this slide up for this long"
+          style={{ padding: '2px 10px', backgroundColor: '#1e293b', color: '#fbbf24', fontSize: '10px', fontWeight: 700 }}
+        >
+          Auto-advance {slide.layout.advanceSeconds} s
+        </div>
+      )}
+
       {/* Card Footer: Slide Index, Title, and Action Buttons */}
       <div
         style={{

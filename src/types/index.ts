@@ -49,6 +49,8 @@ export interface SlideLayout {
   outlineColor?: string | null;
   /** Extra text boxes, images and shapes, drawn in order (the last one on top). */
   elements?: SlideElement[];
+  /** How long auto-advance keeps this slide up, in seconds (1-3600); unset uses the run's own interval. */
+  advanceSeconds?: number | null;
 }
 
 /** A saved slide look that can be applied to any slide. */
@@ -136,6 +138,8 @@ export interface AutoAdvanceStatus {
   loopAtEnd: boolean;
   /** Unix ms of the next automatic advance. */
   nextAtMs: number;
+  /** The slide the countdown is for; it restarts when the operator moves to another slide. */
+  slideId?: string | null;
 }
 
 /** A macro that is running right now. */

@@ -5,7 +5,7 @@ import { LayoutControls, LayoutValues, layoutValuesFrom } from './LayoutControls
 import { ElementsEditor } from './ElementsEditor';
 import { SlideElements } from './SlideElements';
 import { TemplatePanel } from './TemplatePanel';
-import { buildLayout, composeTextShadow, layoutPaddingPercent, validateLayout } from '../services/slideLayout';
+import { buildLayout, composeTextShadow, layoutPaddingPercent, validateLayout, MIN_ADVANCE_SECONDS, MAX_ADVANCE_SECONDS } from '../services/slideLayout';
 import { clampElement, cloneElements } from '../services/slideElements';
 
 interface SlideEditorModalProps {
@@ -28,6 +28,8 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
   const [fontSize, setFontSize] = useState<FontSize>('large');
   const [textAlignment, setTextAlignment] = useState<TextAlignment>('center');
   const [layoutValues, setLayoutValues] = useState<LayoutValues>(layoutValuesFrom(null));
+  // seconds auto-advance keeps this slide up; empty = use the run's own interval
+  const [advanceText, setAdvanceText] = useState('');
   const [elements, setElements] = useState<SlideElement[]>([]);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
@@ -80,6 +82,7 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
       setFontSize(slide.fontSize || 'large');
       setTextAlignment(slide.textAlignment || 'center');
       setLayoutValues(layoutValuesFrom(slide.layout));
+      setAdvanceText(slide.layout?.advanceSeconds != null ? String(slide.layout.advanceSeconds) : '');
     }
   }, [slide]);
 
@@ -102,7 +105,8 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
     { name: 'Cyan', hex: '#38bdf8' },
   ];
 
-  const previewLayout = buildLayout(layoutValues.marginPct, layoutValues.outlineWidth, layoutValues.outlineColor, elements);
+  const advanceSeconds = advanceText.trim() === '' ? null : Number(advanceText);
+  const previewLayout = buildLayout(layoutValues.marginPct, layoutValues.outlineWidth, layoutValues.outlineColor, elements, advanceSeconds);
 
   const handleSave = async () => {
     const problem = validateLayout(previewLayout);
@@ -581,6 +585,25 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
             </div>
             <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #1e293b' }}>
               <LayoutControls values={layoutValues} onChange={setLayoutValues} />
+            </div>
+            <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #1e293b' }}>
+              <label htmlFor="slide-advance-seconds" style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '4px' }}>
+                Auto-advance time (seconds)
+              </label>
+              <input
+                id="slide-advance-seconds"
+                data-testid="slide-advance-seconds"
+                type="number"
+                min={MIN_ADVANCE_SECONDS}
+                max={MAX_ADVANCE_SECONDS}
+                placeholder="Same as the auto-advance interval"
+                value={advanceText}
+                onChange={(e) => setAdvanceText(e.target.value)}
+                style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#0f172a', color: '#f8fafc', fontSize: '12px' }}
+              />
+              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                How long auto-advance keeps this slide on screen. Leave empty to use the interval chosen when auto-advance starts.
+              </div>
             </div>
           </div>
         </div>

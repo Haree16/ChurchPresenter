@@ -3,6 +3,9 @@ import { validateElements } from './slideElements';
 
 export const MAX_MARGIN_PCT = 25;
 export const MAX_OUTLINE_WIDTH = 20;
+/** Range for a slide's own auto-advance time, same as the run interval. */
+export const MIN_ADVANCE_SECONDS = 1;
+export const MAX_ADVANCE_SECONDS = 3600;
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
@@ -18,6 +21,12 @@ export function validateLayout(l: SlideLayout | null | undefined): string | null
   if (l.outlineColor != null && !HEX.test(l.outlineColor)) {
     return 'Outline colour must look like #000000.';
   }
+  if (l.advanceSeconds != null) {
+    const s = l.advanceSeconds;
+    if (!Number.isInteger(s) || s < MIN_ADVANCE_SECONDS || s > MAX_ADVANCE_SECONDS) {
+      return `Auto-advance time must be a whole number of seconds between ${MIN_ADVANCE_SECONDS} and ${MAX_ADVANCE_SECONDS}.`;
+    }
+  }
   return validateElements(l.elements);
 }
 
@@ -25,19 +34,24 @@ export function validateLayout(l: SlideLayout | null | undefined): string | null
 export function isEmptyLayout(l: SlideLayout | null | undefined): boolean {
   return (
     !l ||
-    (l.marginPct == null && l.outlineWidth == null && l.outlineColor == null && (l.elements?.length ?? 0) === 0)
+    (l.marginPct == null &&
+      l.outlineWidth == null &&
+      l.outlineColor == null &&
+      l.advanceSeconds == null &&
+      (l.elements?.length ?? 0) === 0)
   );
 }
 
 /**
  * Builds a layout from editor values; returns `{}` (which clears a stored layout) when all are default.
- * Pass the slide's existing `elements` so editing margin or outline never drops them.
+ * Pass the slide's existing `elements` and `advanceSeconds` so editing margin or outline never drops them.
  */
 export function buildLayout(
   marginPct: number,
   outlineWidth: number,
   outlineColor: string,
-  elements: SlideElement[] = []
+  elements: SlideElement[] = [],
+  advanceSeconds: number | null = null
 ): SlideLayout {
   const layout: SlideLayout = {};
   if (marginPct > 0) layout.marginPct = marginPct;
@@ -46,6 +60,7 @@ export function buildLayout(
     layout.outlineColor = outlineColor;
   }
   if (elements.length > 0) layout.elements = elements;
+  if (advanceSeconds != null) layout.advanceSeconds = advanceSeconds;
   return layout;
 }
 

@@ -91,7 +91,7 @@ export const AutoAdvanceControl: React.FC<AutoAdvanceControlProps> = ({ presenta
 
       {run ? (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <span style={{ fontSize: '11px', color: '#cbd5e1', flex: 1 }}>
+          <span style={{ fontSize: '11px', color: '#cbd5e1', flex: 1 }} title="Slides that have their own auto-advance time keep it for that long instead">
             Every {run.intervalSeconds} s{run.loopAtEnd ? ', looping' : ', stops after the last slide'}
           </span>
           <button
@@ -128,7 +128,10 @@ export const AutoAdvanceControl: React.FC<AutoAdvanceControlProps> = ({ presenta
             ))}
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <label style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <label
+              title="Slides that have their own auto-advance time (set in the slide editor) keep it for that long instead"
+              style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}
+            >
               Every
               <input
                 data-testid="auto-advance-interval"

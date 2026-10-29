@@ -1787,7 +1787,13 @@ class MockDataStore {
       throw new Error('Take a slide live first; auto-advance continues from the live slide.');
     }
     const runId = 'aa-' + Math.random().toString(36).substring(2, 9);
-    this.state.autoAdvance = { id: runId, intervalSeconds, loopAtEnd, nextAtMs: Date.now() + intervalSeconds * 1000 };
+    this.state.autoAdvance = {
+      id: runId,
+      intervalSeconds,
+      loopAtEnd,
+      nextAtMs: Date.now() + this.slideHoldMs(intervalSeconds),
+      slideId: this.state.currentSlideId,
+    };
     this.notify();
     this.scheduleAutoAdvanceTick(runId);
     return this.state;
@@ -1799,6 +1805,13 @@ class MockDataStore {
     this.autoAdvanceTimer = null;
     this.notify();
     return this.state;
+  }
+
+  /** How long auto-advance keeps the current slide up: its own time if it has one, else the run's interval. */
+  private slideHoldMs(intervalSeconds: number): number {
+    const id = this.state.currentSlideId;
+    const slide = this.slides.find((s) => s.id === id) ?? this.serviceItemSlides.find((s) => s.id === id);
+    return (slide?.layout?.advanceSeconds ?? intervalSeconds) * 1000;
   }
 
   private scheduleAutoAdvanceTick(runId: string): void {
@@ -1823,9 +1836,13 @@ class MockDataStore {
     const run = this.state.autoAdvance;
     if (!run || run.id !== runId) return;
     const now = Date.now();
-    if (now >= run.nextAtMs) {
+    if (run.slideId !== this.state.currentSlideId) {
+      // the operator moved to another slide: its own time starts now
+      run.slideId = this.state.currentSlideId;
+      run.nextAtMs = now + this.slideHoldMs(run.intervalSeconds);
+    } else if (now >= run.nextAtMs) {
       if (!this.state.isLive || this.state.isBlackout) {
-        run.nextAtMs = now + run.intervalSeconds * 1000; // paused while blank or blacked out
+        run.nextAtMs = now + this.slideHoldMs(run.intervalSeconds); // paused while blank or blacked out
       } else {
         const before = this.state.currentSlideId;
         await this.nextSlide();
@@ -1838,7 +1855,8 @@ class MockDataStore {
             return;
           }
         }
-        run.nextAtMs = now + run.intervalSeconds * 1000;
+        run.nextAtMs = now + this.slideHoldMs(run.intervalSeconds);
+        run.slideId = this.state.currentSlideId;
         this.notify();
       }
     }
