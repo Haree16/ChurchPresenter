@@ -1402,6 +1402,27 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 19: custom key bindings =================
+        if current_version < 19 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS key_bindings (
+                    id TEXT PRIMARY KEY,
+                    combo TEXT NOT NULL UNIQUE,
+                    target_type TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (19, ?1);",
+                params![Utc::now().to_rfc3339()],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -5269,6 +5290,7 @@ impl DbManager {
             slide_templates: self.list_slide_templates()?,
             macros: self.list_macros()?,
             looks: self.list_looks()?,
+            key_bindings: self.list_key_bindings()?,
             themes,
             media_assets,
             services,
@@ -5312,6 +5334,7 @@ impl DbManager {
             tx.execute("DELETE FROM slide_templates;", [])?;
             tx.execute("DELETE FROM macros;", [])?;
             tx.execute("DELETE FROM looks;", [])?;
+            tx.execute("DELETE FROM key_bindings;", [])?;
             tx.execute("DELETE FROM song_sections;", [])?;
             tx.execute("DELETE FROM songs;", [])?;
             tx.execute("DELETE FROM themes WHERE is_built_in = 0;", [])?;
@@ -5558,6 +5581,15 @@ impl DbManager {
                     lk.created_at,
                     lk.updated_at
                 ],
+            )?;
+        }
+
+        // Restore key bindings
+        for kb in &backup.key_bindings {
+            tx.execute(
+                "INSERT OR IGNORE INTO key_bindings (id, combo, target_type, target_id, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6);",
+                params![kb.id, kb.combo, kb.target_type, kb.target_id, kb.created_at, kb.updated_at],
             )?;
         }
 

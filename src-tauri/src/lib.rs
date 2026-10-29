@@ -4,6 +4,7 @@ mod commands;
 mod db;
 mod display;
 mod midi;
+mod keybindings;
 mod layout;
 mod looks;
 mod macros;
@@ -174,6 +175,10 @@ pub fn run() {
             commands::clear_media,
             commands::send_alert,
             commands::start_auto_advance,
+            commands::list_key_bindings,
+            commands::create_key_binding,
+            commands::update_key_binding,
+            commands::delete_key_binding,
             commands::list_looks,
             commands::create_look,
             commands::update_look,

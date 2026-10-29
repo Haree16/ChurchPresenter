@@ -422,6 +422,32 @@ pub async fn stop_macro(
 }
 
 #[tauri::command]
+pub async fn list_key_bindings(db: State<'_, DbManager>) -> Result<Vec<crate::keybindings::KeyBinding>, String> {
+    db.list_key_bindings().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_key_binding(
+    binding: crate::keybindings::KeyBinding,
+    db: State<'_, DbManager>,
+) -> Result<crate::keybindings::KeyBinding, String> {
+    db.create_key_binding(&binding)
+}
+
+#[tauri::command]
+pub async fn update_key_binding(
+    binding: crate::keybindings::KeyBinding,
+    db: State<'_, DbManager>,
+) -> Result<crate::keybindings::KeyBinding, String> {
+    db.update_key_binding(&binding)
+}
+
+#[tauri::command]
+pub async fn delete_key_binding(id: String, db: State<'_, DbManager>) -> Result<(), String> {
+    db.delete_key_binding(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn list_looks(db: State<'_, DbManager>) -> Result<Vec<crate::looks::Look>, String> {
     db.list_looks().map_err(|e| e.to_string())
 }
