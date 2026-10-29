@@ -126,6 +126,8 @@ impl DbManager {
             return Ok(vec![]);
         }
         let alias = resolve_book_number(&partial.book).map(|n| n as i32);
+        // "John " (a space after the book) means the book is chosen and a chapter comes next
+        let after_space = input.ends_with(|c: char| c.is_whitespace());
 
         let mut out: Vec<BibleSuggestion> = Vec::new();
         for book in self.bible_books_for(translation)? {
@@ -146,7 +148,13 @@ impl DbManager {
             };
 
             let Some(chapter) = partial.chapter else {
-                out.push(make(book.name.clone(), None, None, None));
+                if after_space {
+                    for c in (1..=book.chapters).take(MAX_NUMBER_CHOICES) {
+                        out.push(make(format!("{} {}", book.name, c), Some(c), None, None));
+                    }
+                } else {
+                    out.push(make(book.name.clone(), None, None, None));
+                }
                 continue;
             };
             if chapter > book.chapters {
@@ -266,6 +274,17 @@ mod tests {
         assert_eq!(labels(&db, "JOHN"), vec!["John"]); // case does not matter
         assert!(labels(&db, "zzz").is_empty());
         assert!(labels(&db, "").is_empty());
+    }
+
+    #[test]
+    fn a_space_after_the_book_offers_its_first_chapters() {
+        let db = db_with_books();
+        assert_eq!(labels(&db, "john"), vec!["John"]);
+        assert_eq!(labels(&db, "john "), vec!["John 1", "John 2", "John 3"]);
+        assert_eq!(labels(&db, "ps "), vec!["Psalms 1", "Psalms 2"]);
+        assert_eq!(labels(&db, "jo "), vec!["Job 1", "Joel 1", "John 1", "John 2", "John 3"]);
+        let first = &db.suggest_bible_references("john ", "TST", 8).unwrap()[0];
+        assert_eq!((first.chapter, first.start_verse), (Some(1), None));
     }
 
     #[test]
