@@ -16,6 +16,7 @@ mod net_guard;
 mod osc;
 mod overlay;
 mod presentation;
+mod pptx_import;
 mod props;
 mod stage_layout;
 mod templates;
@@ -378,6 +379,7 @@ pub fn run() {
             commands::import_bible_text,
             commands::get_database_health,
             commands::recover_database_from_backup,
+            commands::import_pptx_native,
             commands::import_presentation_document,
             commands::set_stage_message,
         ])

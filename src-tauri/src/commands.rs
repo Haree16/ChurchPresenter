@@ -2145,6 +2145,26 @@ pub async fn set_stage_message(
     Ok(pres_mgr.set_stage_message(&app, message))
 }
 
+/// Imports a PowerPoint (.pptx) file directly into editable slides, without PowerPoint or LibreOffice.
+/// The result lists anything that could not be imported.
+#[tauri::command]
+pub async fn import_pptx_native(
+    file_path: String,
+    title: Option<String>,
+    app: AppHandle,
+    db: State<'_, DbManager>,
+) -> Result<crate::pptx_import::PptxImportResult, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| crate::resolve_app_data_path());
+    let db = db.inner().clone();
+    // a large file takes a while: keep it off the thread that serves the window
+    tauri::async_runtime::spawn_blocking(move || crate::pptx_import::import_pptx_file(&db, &app_data_dir, &file_path, title))
+        .await
+        .map_err(|e| format!("The import stopped unexpectedly: {e}"))?
+}
+
 #[tauri::command]
 pub async fn import_presentation_document(
     file_path: String,
