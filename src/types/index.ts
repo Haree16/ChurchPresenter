@@ -658,6 +658,8 @@ export interface RemoteDevice {
   canBlackout: boolean;
   canTakeLive: boolean;
   canControlTimer: boolean;
+  /** May run saved macros from the phone page. Off until the operator allows it. */
+  canRunMacros: boolean;
   pairedAt: string;
   lastSeenAt: string;
 }

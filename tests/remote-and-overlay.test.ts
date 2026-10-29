@@ -119,7 +119,8 @@ describe('Phase 5: Mobile Remote Control & Livestream OBS Overlay', () => {
         true,  // canNavigate
         false, // canBlackout
         false, // canTakeLive
-        true   // canControlTimer
+        true,  // canControlTimer
+        true   // canRunMacros
       );
 
       const updated = (await api.listRemoteDevices()).find((d) => d.id === dev.id);
@@ -127,6 +128,7 @@ describe('Phase 5: Mobile Remote Control & Livestream OBS Overlay', () => {
       expect(updated?.canBlackout).toBe(false);
       expect(updated?.canTakeLive).toBe(false);
       expect(updated?.canControlTimer).toBe(true);
+      expect(updated?.canRunMacros).toBe(true);
     });
   });
 });

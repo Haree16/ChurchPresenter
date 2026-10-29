@@ -3616,6 +3616,7 @@ class MockDataStore {
       canBlackout: true,
       canTakeLive: false,
       canControlTimer: true,
+      canRunMacros: false,
       pairedAt: new Date().toISOString(),
       lastSeenAt: new Date().toISOString(),
     },
@@ -3858,10 +3859,12 @@ class MockDataStore {
     canNavigate: boolean,
     canBlackout: boolean,
     canTakeLive: boolean,
-    canControlTimer: boolean
+    canControlTimer: boolean,
+    canRunMacros: boolean
   ): Promise<void> {
     const dev = this.remoteDevices.find((d) => d.id === id);
     if (dev) {
+      dev.canRunMacros = canRunMacros;
       dev.canNavigate = canNavigate;
       dev.canBlackout = canBlackout;
       dev.canTakeLive = canTakeLive;
@@ -5680,7 +5683,8 @@ export const api = {
     canNavigate: boolean,
     canBlackout: boolean,
     canTakeLive: boolean,
-    canControlTimer: boolean
+    canControlTimer: boolean,
+    canRunMacros: boolean
   ): Promise<void> => {
     if (isTauri()) {
       return await invoke<void>('update_remote_device_permissions', {
@@ -5689,6 +5693,7 @@ export const api = {
         canBlackout,
         canTakeLive,
         canControlTimer,
+        canRunMacros,
       });
     }
     return mockStore.updateRemoteDevicePermissions(
@@ -5696,7 +5701,8 @@ export const api = {
       canNavigate,
       canBlackout,
       canTakeLive,
-      canControlTimer
+      canControlTimer,
+      canRunMacros
     );
   },
 

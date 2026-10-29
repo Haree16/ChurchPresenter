@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../services/api';
 import { NetworkExposureControl, BindMode } from './NetworkExposureControl';
+import { OscMacroAccess } from './OscMacroAccess';
+import { MACRO_ACTIONS } from '../../services/macroSteps';
+import { macroAction, midiActionLabel } from '../../services/macroAccess';
 import {
   RemoteServerStatus,
   RemoteDevice,
@@ -9,6 +12,7 @@ import {
   OscConfig,
   OscStatus,
   ActionMapping,
+  Macro,
 } from '../../types';
 import {
   Smartphone,
@@ -67,6 +71,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const [oscConfig, setOscConfig] = useState<OscConfig | null>(null);
   const [oscStatus, setOscStatus] = useState<OscStatus | null>(null);
   const [oscPort, setOscPort] = useState<number>(8000);
+  const [macros, setMacros] = useState<Macro[]>([]);
 
   // Actions state
   const [actionMappings, setActionMappings] = useState<ActionMapping[]>([]);
@@ -86,7 +91,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode] =
+      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode, savedMacros] =
         await Promise.all([
           api.getRemoteServerStatus(),
           api.listRemoteDevices(),
@@ -96,8 +101,10 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
           api.getOscStatus(),
           api.listActionMappings(),
           api.getNetworkBindMode(),
+          api.listMacros(),
         ]);
 
+      setMacros(savedMacros);
       setBindMode(bMode);
       setRemoteStatus(rStatus);
       setRemotePort(rStatus.port || 8088);
@@ -199,10 +206,11 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
     nav: boolean,
     blackout: boolean,
     live: boolean,
-    timer: boolean
+    timer: boolean,
+    macros: boolean
   ) => {
     try {
-      await api.updateRemoteDevicePermissions(id, nav, blackout, live, timer);
+      await api.updateRemoteDevicePermissions(id, nav, blackout, live, timer, macros);
       const devs = await api.listRemoteDevices();
       setRemoteDevices(devs);
     } catch (err) {
@@ -305,6 +313,16 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
       });
       setOscConfig(updated);
       setStatusMessage(`OSC listening port set to ${oscPort}`);
+    } catch (err) {
+      setStatusMessage(`Error: ${err}`);
+    }
+  };
+
+  const handleChangeOscAllowlist = async (allowlistActions: string) => {
+    if (!oscConfig) return;
+    try {
+      const updated = await api.updateOscConfig({ ...oscConfig, allowlistActions });
+      setOscConfig(updated);
     } catch (err) {
       setStatusMessage(`Error: ${err}`);
     }
@@ -914,7 +932,8 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                                         e.target.checked,
                                         dev.canBlackout,
                                         dev.canTakeLive,
-                                        dev.canControlTimer
+                                        dev.canControlTimer,
+                                        dev.canRunMacros
                                       )
                                     }
                                   />
@@ -930,7 +949,8 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                                         dev.canNavigate,
                                         e.target.checked,
                                         dev.canTakeLive,
-                                        dev.canControlTimer
+                                        dev.canControlTimer,
+                                        dev.canRunMacros
                                       )
                                     }
                                   />
@@ -946,7 +966,8 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                                         dev.canNavigate,
                                         dev.canBlackout,
                                         e.target.checked,
-                                        dev.canControlTimer
+                                        dev.canControlTimer,
+                                        dev.canRunMacros
                                       )
                                     }
                                   />
@@ -962,11 +983,30 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                                         dev.canNavigate,
                                         dev.canBlackout,
                                         dev.canTakeLive,
-                                        e.target.checked
+                                        e.target.checked,
+                                        dev.canRunMacros
                                       )
                                     }
                                   />
                                   <span>Timers</span>
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }} title="Lets this device run any saved macro">
+                                  <input
+                                    type="checkbox"
+                                    data-testid="remote-can-run-macros"
+                                    checked={dev.canRunMacros}
+                                    onChange={(e) =>
+                                      handleUpdatePermissions(
+                                        dev.id,
+                                        dev.canNavigate,
+                                        dev.canBlackout,
+                                        dev.canTakeLive,
+                                        dev.canControlTimer,
+                                        e.target.checked
+                                      )
+                                    }
+                                  />
+                                  <span>Macros</span>
                                 </label>
                               </div>
                             </td>
@@ -1305,12 +1345,20 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                           fontSize: '12px',
                         }}
                       >
-                        <option value="next_slide">Next Slide</option>
-                        <option value="previous_slide">Previous Slide</option>
-                        <option value="toggle_blackout">Toggle Blackout</option>
-                        <option value="toggle_clear">Clear Overlay</option>
-                        <option value="go_live">Go Live</option>
-                        <option value="toggle_timer">Toggle Timer</option>
+                        {MACRO_ACTIONS.map((a) => (
+                          <option key={a.action} value={a.action}>
+                            {a.label}
+                          </option>
+                        ))}
+                        {macros.length > 0 && (
+                          <optgroup label="Macros">
+                            {macros.map((mac) => (
+                              <option key={mac.id} value={macroAction(mac.id)}>
+                                {mac.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
                     </div>
                     <button
@@ -1374,7 +1422,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                             {m.noteOrCc}
                           </td>
                           <td style={{ padding: '10px 14px', color: '#60a5fa', fontWeight: 600 }}>
-                            {m.actionType}
+                            {midiActionLabel(m.actionType, macros, MACRO_ACTIONS)}
                           </td>
                           <td style={{ padding: '10px 14px', textAlign: 'right' }}>
                             <button
@@ -1537,6 +1585,10 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                   </span>
                 )}
               </div>
+
+              {oscConfig && (
+                <OscMacroAccess allowlist={oscConfig.allowlistActions} onChange={handleChangeOscAllowlist} />
+              )}
 
               {/* Supported OSC Commands Reference Card */}
               <div
