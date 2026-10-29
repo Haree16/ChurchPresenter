@@ -21,6 +21,7 @@ mod stage_layout;
 mod templates;
 mod theme_io;
 mod remote;
+mod search;
 
 use db::DbManager;
 use midi::MidiService;
@@ -179,6 +180,8 @@ pub fn run() {
             commands::send_alert,
             commands::start_auto_advance,
             commands::suggest_bible_references,
+            commands::search_song_lyrics,
+            commands::search_slide_text,
             commands::get_ccli_licence_number,
             commands::set_ccli_licence_number,
             commands::get_ccli_report,

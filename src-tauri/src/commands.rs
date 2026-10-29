@@ -421,6 +421,26 @@ pub async fn stop_macro(
     Ok(state)
 }
 
+/// Songs whose lyrics contain the words, with a short preview of the match (one hit per song).
+#[tauri::command]
+pub async fn search_song_lyrics(
+    query: String,
+    limit: Option<usize>,
+    db: State<'_, DbManager>,
+) -> Result<Vec<crate::search::LyricHit>, String> {
+    db.search_song_lyrics(&query, limit.unwrap_or(crate::search::DEFAULT_HIT_LIMIT)).map_err(|e| e.to_string())
+}
+
+/// Presentations with a slide whose title or text contains the words, with a preview (one hit per presentation).
+#[tauri::command]
+pub async fn search_slide_text(
+    query: String,
+    limit: Option<usize>,
+    db: State<'_, DbManager>,
+) -> Result<Vec<crate::search::SlideHit>, String> {
+    db.search_slide_text(&query, limit.unwrap_or(crate::search::DEFAULT_HIT_LIMIT)).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn get_ccli_licence_number(db: State<'_, DbManager>) -> Result<Option<String>, String> {
     db.get_ccli_licence_number().map_err(|e| e.to_string())
