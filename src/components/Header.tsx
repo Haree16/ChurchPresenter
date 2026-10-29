@@ -27,6 +27,24 @@ import {
   RemoteServerStatus,
 } from '../types';
 
+// Shared geometry for every header action button: same height, padding and
+// type, with the label kept on one line so text always fits.
+const headerBtn: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '6px',
+  height: '28px',
+  padding: '0 10px',
+  boxSizing: 'border-box',
+  borderRadius: '6px',
+  fontSize: '11px',
+  fontWeight: 600,
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
+  flexShrink: 0,
+};
+
 export type OperatorActiveView = 'services' | 'presentations' | 'songs' | 'themes';
 
 interface HeaderProps {
@@ -135,6 +153,8 @@ export const Header: React.FC<HeaderProps> = ({
               alignItems: 'center',
               gap: '6px',
               padding: '6px 12px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
               borderRadius: '6px',
               fontSize: '12px',
               fontWeight: 600,
@@ -160,6 +180,8 @@ export const Header: React.FC<HeaderProps> = ({
               alignItems: 'center',
               gap: '6px',
               padding: '6px 12px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
               borderRadius: '6px',
               fontSize: '12px',
               fontWeight: 600,
@@ -186,6 +208,8 @@ export const Header: React.FC<HeaderProps> = ({
               alignItems: 'center',
               gap: '6px',
               padding: '6px 12px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
               borderRadius: '6px',
               fontSize: '12px',
               fontWeight: 600,
@@ -211,6 +235,8 @@ export const Header: React.FC<HeaderProps> = ({
               alignItems: 'center',
               gap: '6px',
               padding: '6px 12px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
               borderRadius: '6px',
               fontSize: '12px',
               fontWeight: 600,
@@ -238,7 +264,11 @@ export const Header: React.FC<HeaderProps> = ({
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '4px 10px',
+              height: '28px',
+              boxSizing: 'border-box',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              padding: '0 10px',
               borderRadius: '6px',
               backgroundColor: 'rgba(239, 68, 68, 0.2)',
               border: '1px solid #ef4444',
@@ -258,7 +288,11 @@ export const Header: React.FC<HeaderProps> = ({
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '4px 10px',
+              height: '28px',
+              boxSizing: 'border-box',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              padding: '0 10px',
               borderRadius: '6px',
               backgroundColor: '#dc2626',
               color: '#ffffff',
@@ -276,7 +310,11 @@ export const Header: React.FC<HeaderProps> = ({
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '4px 10px',
+              height: '28px',
+              boxSizing: 'border-box',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              padding: '0 10px',
               borderRadius: '6px',
               backgroundColor: '#1e293b',
               color: '#94a3b8',
@@ -296,7 +334,11 @@ export const Header: React.FC<HeaderProps> = ({
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '4px 10px',
+              height: '28px',
+              boxSizing: 'border-box',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              padding: '0 10px',
               borderRadius: '6px',
               backgroundColor: 'rgba(34, 197, 94, 0.15)',
               border: '1px solid #22c55e',
@@ -325,11 +367,7 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onOpenDisplayModal}
           title="Configure Displays and Audience Window"
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '5px 10px',
-            borderRadius: '6px',
+            ...headerBtn,
             backgroundColor: audienceStatus.isOpen
               ? 'rgba(16, 185, 129, 0.15)'
               : '#1e293b',
@@ -337,8 +375,6 @@ export const Header: React.FC<HeaderProps> = ({
               audienceStatus.isOpen ? '#059669' : '#334155'
             }`,
             color: audienceStatus.isOpen ? '#34d399' : '#cbd5e1',
-            fontSize: '11px',
-            fontWeight: 500,
           }}
         >
           <Tv size={14} />
@@ -363,13 +399,10 @@ export const Header: React.FC<HeaderProps> = ({
             disabled={!presentationState.mediaPlayback}
             title="Stop media on the output (Shortcut: M)"
             style={{
-              padding: '5px 10px',
-              borderRadius: '6px',
+              ...headerBtn,
               backgroundColor: '#1e293b',
               border: '1px solid #334155',
               color: presentationState.mediaPlayback ? '#f8fafc' : '#64748b',
-              fontSize: '11px',
-              fontWeight: 600,
               cursor: presentationState.mediaPlayback ? 'pointer' : 'default',
             }}
           >
@@ -383,13 +416,10 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onClearAll}
             title="Clear slide, media, logo and blackout: blank output (Shortcut: C)"
             style={{
-              padding: '5px 10px',
-              borderRadius: '6px',
+              ...headerBtn,
               backgroundColor: '#1e293b',
               border: '1px solid #334155',
               color: '#f8fafc',
-              fontSize: '11px',
-              fontWeight: 600,
               cursor: 'pointer',
             }}
           >
@@ -405,16 +435,10 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onToggleLogo}
             title="Clear to Logo (Shortcut: L)"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '5px 10px',
-              borderRadius: '6px',
+              ...headerBtn,
               backgroundColor: isLogo ? '#1d4ed8' : '#1e293b',
               border: `1px solid ${isLogo ? '#60a5fa' : '#334155'}`,
               color: isLogo ? '#ffffff' : '#f8fafc',
-              fontSize: '11px',
-              fontWeight: 600,
             }}
           >
             <span>{isLogo ? 'Logo On (L)' : 'Logo (L)'}</span>
@@ -426,16 +450,10 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onToggleBlackout}
           title="Toggle Black Screen (Shortcut: B)"
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '5px 10px',
-            borderRadius: '6px',
+            ...headerBtn,
             backgroundColor: isBlackout ? '#b91c1c' : '#1e293b',
             border: `1px solid ${isBlackout ? '#ef4444' : '#334155'}`,
             color: isBlackout ? '#ffffff' : '#f8fafc',
-            fontSize: '11px',
-            fontWeight: 600,
           }}
         >
           <EyeOff size={13} />
@@ -450,14 +468,9 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onOpenMediaModal}
           title="Manage Local Background Images & Videos"
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '5px 9px',
-            borderRadius: '6px',
+            ...headerBtn,
             backgroundColor: '#1e293b',
             color: '#cbd5e1',
-            fontSize: '11px',
             border: '1px solid #334155',
           }}
         >
@@ -471,16 +484,11 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onOpenTimerModal}
           title="Service & Stage Timers"
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '5px 9px',
-            borderRadius: '6px',
+            ...headerBtn,
             backgroundColor: presentationState.timerState?.isRunning
               ? 'rgba(56, 189, 248, 0.2)'
               : '#1e293b',
             color: presentationState.timerState?.isRunning ? '#38bdf8' : '#cbd5e1',
-            fontSize: '11px',
             border: `1px solid ${
               presentationState.timerState?.isRunning ? '#38bdf8' : '#334155'
             }`,
@@ -496,16 +504,11 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onOpenStageModal}
           title="Stage / Confidence Display Preview"
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '5px 9px',
-            borderRadius: '6px',
+            ...headerBtn,
             backgroundColor: stageStatus?.isOpen
               ? 'rgba(34, 197, 94, 0.2)'
               : '#1e293b',
             color: stageStatus?.isOpen ? '#4ade80' : '#cbd5e1',
-            fontSize: '11px',
             border: `1px solid ${stageStatus?.isOpen ? '#22c55e' : '#334155'}`,
           }}
         >
@@ -520,14 +523,9 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenOutputModal}
             title="Configure Independent Outputs"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '5px 9px',
-              borderRadius: '6px',
+              ...headerBtn,
               backgroundColor: '#1e293b',
               color: '#cbd5e1',
-              fontSize: '11px',
               border: '1px solid #334155',
             }}
           >
@@ -543,14 +541,9 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenOverlayModal}
             title="Livestream & OBS Overlay Settings"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '5px 9px',
-              borderRadius: '6px',
+              ...headerBtn,
               backgroundColor: '#1e293b',
               color: '#cbd5e1',
-              fontSize: '11px',
               border: '1px solid #334155',
             }}
           >
@@ -566,14 +559,9 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenIntegrationsModal}
             title="Remote, MIDI, OSC & Action Integrations"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '5px 9px',
-              borderRadius: '6px',
+              ...headerBtn,
               backgroundColor: '#1e293b',
               color: '#cbd5e1',
-              fontSize: '11px',
               border: '1px solid #334155',
             }}
           >
@@ -589,14 +577,9 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenDiagnosticsModal}
             title="System Diagnostics & Output Health"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '5px 9px',
-              borderRadius: '6px',
+              ...headerBtn,
               backgroundColor: '#1e293b',
               color: '#cbd5e1',
-              fontSize: '11px',
               border: '1px solid #334155',
             }}
           >
@@ -610,14 +593,9 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onOpenBackupModal}
           title="Local Database Backup & Restore"
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '5px 9px',
-            borderRadius: '6px',
+            ...headerBtn,
             backgroundColor: '#1e293b',
             color: '#cbd5e1',
-            fontSize: '11px',
             border: '1px solid #334155',
           }}
         >
@@ -632,14 +610,9 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenSettingsModal}
             title="Application Settings & Diagnostics"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '5px 9px',
-              borderRadius: '6px',
+              ...headerBtn,
               backgroundColor: '#1e293b',
               color: '#cbd5e1',
-              fontSize: '11px',
               border: '1px solid #334155',
             }}
           >
@@ -653,14 +626,9 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onOpenShortcutsModal}
           title="Keyboard Shortcuts Cheat Sheet"
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '5px 9px',
-            borderRadius: '6px',
+            ...headerBtn,
             backgroundColor: '#1e293b',
             color: '#cbd5e1',
-            fontSize: '11px',
             border: '1px solid #334155',
           }}
         >

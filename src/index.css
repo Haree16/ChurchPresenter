@@ -73,6 +73,23 @@ input, textarea, select {
   -webkit-user-select: text;
 }
 
+/* Dark defaults so dropdowns stay readable; inline styles still override. */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  color-scheme: dark;
+  background-color: #1e293b;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px !important;
+  color: #f8fafc;
+}
+select option {
+  background-color: #1e293b;
+  color: #f8fafc;
+}
+
 /* Layout Utilities */
 .app-container {
   display: flex;
