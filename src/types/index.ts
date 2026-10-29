@@ -501,6 +501,41 @@ export interface BibleSuggestion {
   endVerse: number | null;
 }
 
+/** One time a song went live in a service (counted once per song per service per day). */
+export interface SongUsage {
+  id: string;
+  songId: string;
+  serviceId: string;
+  songTitle: string;
+  ccliNumber?: string | null;
+  author?: string | null;
+  copyright?: string | null;
+  serviceTitle: string;
+  /** Local date, YYYY-MM-DD. */
+  usedOn: string;
+  usedAt: string;
+}
+
+export interface CcliReportRow {
+  songId: string;
+  songTitle: string;
+  ccliNumber?: string | null;
+  author?: string | null;
+  copyright?: string | null;
+  timesUsed: number;
+  dates: string[];
+}
+
+export interface CcliReport {
+  from: string;
+  to: string;
+  licenceNumber?: string | null;
+  /** Most used first, then by title. */
+  rows: CcliReportRow[];
+  /** Songs in the range that have no CCLI number, so they cannot be reported to CCLI. */
+  songsWithoutNumber: number;
+}
+
 export interface BibleTranslationInfo {
   translation: string;
   verseCount: number;

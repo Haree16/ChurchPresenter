@@ -59,6 +59,8 @@ import {
   KeyBinding,
   ClearGroup,
   BibleSuggestion,
+  SongUsage,
+  CcliReport,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
@@ -66,6 +68,7 @@ import { validateLook } from './looks';
 import { validateKeyBinding, MAX_KEY_BINDINGS } from './keyBindings';
 import { validateClearGroup, MAX_CLEAR_GROUPS } from './clearGroups';
 import { suggestFromVerses } from './bibleSuggest';
+import { validateLicenceNumber, validateReportRange } from './ccliReport';
 import { validatePanels } from './stageLayouts';
 import { validateProp } from './propLayout';
 import { validateLayout, isEmptyLayout } from './slideLayout';
@@ -1477,8 +1480,84 @@ class MockDataStore {
     this.state.currentSlideId = slideId;
     this.state.isLive = true;
     this.state.isLogo = false;
+    this.noteItemLive();
     this.notify();
     return this.state;
+  }
+
+  // ---- CCLI usage log
+  private songUsage: SongUsage[] = [];
+
+  /** Counts the song of the live service item for CCLI: once per song per service per day. */
+  private noteItemLive(): void {
+    const { currentServiceId, currentItemId } = this.state;
+    const item = this.serviceItems.find((i) => i.id === currentItemId);
+    if (!currentServiceId || !item || item.itemType !== 'song' || item.serviceId !== currentServiceId || !item.sourceId) return;
+    const song = this.songs.find((s) => s.id === item.sourceId);
+    if (!song) return;
+    const now = new Date();
+    const usedOn = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    if (this.songUsage.some((u) => u.serviceId === currentServiceId && u.songId === song.id && u.usedOn === usedOn)) return;
+    this.songUsage.push({
+      id: 'use-' + Math.random().toString(36).substring(2, 9),
+      songId: song.id,
+      serviceId: currentServiceId,
+      songTitle: song.title,
+      ccliNumber: song.ccliNumber?.trim() || null,
+      author: song.author ?? null,
+      copyright: song.copyright ?? null,
+      serviceTitle: this.services.find((s) => s.id === currentServiceId)?.title ?? '',
+      usedOn,
+      usedAt: now.toISOString(),
+    });
+  }
+
+  public async getCcliLicenceNumber(): Promise<string | null> {
+    return this.settings['ccli_licence_number'] || null;
+  }
+
+  public async setCcliLicenceNumber(raw: string): Promise<string | null> {
+    const problem = validateLicenceNumber(raw);
+    if (problem) throw new Error(problem);
+    const n = raw.replace(/\s/g, '');
+    this.settings['ccli_licence_number'] = n;
+    return n || null;
+  }
+
+  public async listSongUsage(from: string, to: string): Promise<SongUsage[]> {
+    const problem = validateReportRange(from, to);
+    if (problem) throw new Error(problem);
+    return this.songUsage
+      .filter((u) => u.usedOn >= from.trim() && u.usedOn <= to.trim())
+      .sort((a, b) => (a.usedOn === b.usedOn ? b.usedAt.localeCompare(a.usedAt) : b.usedOn.localeCompare(a.usedOn)))
+      .map((u) => ({ ...u }));
+  }
+
+  public async deleteSongUsage(id: string): Promise<void> {
+    this.songUsage = this.songUsage.filter((u) => u.id !== id);
+  }
+
+  public async getCcliReport(from: string, to: string): Promise<CcliReport> {
+    const usage = await this.listSongUsage(from, to); // newest first
+    const rows: CcliReport['rows'] = [];
+    for (const u of usage) {
+      const row = rows.find((r) => r.songId === u.songId);
+      if (row) {
+        row.timesUsed += 1;
+        row.dates.push(u.usedOn);
+      } else {
+        rows.push({
+          songId: u.songId, songTitle: u.songTitle, ccliNumber: u.ccliNumber ?? null, author: u.author ?? null,
+          copyright: u.copyright ?? null, timesUsed: 1, dates: [u.usedOn],
+        });
+      }
+    }
+    rows.forEach((r) => r.dates.sort());
+    rows.sort((a, b) => b.timesUsed - a.timesUsed || a.songTitle.toLowerCase().localeCompare(b.songTitle.toLowerCase()));
+    return {
+      from: from.trim(), to: to.trim(), licenceNumber: await this.getCcliLicenceNumber(), rows,
+      songsWithoutNumber: rows.filter((r) => !r.ccliNumber).length,
+    };
   }
 
   public async setSelectedServiceItem(
@@ -2054,6 +2133,7 @@ class MockDataStore {
               this.state.currentSlideId = nextSlides[0].id;
               this.state.isLive = true;
               this.state.isLogo = false;
+              this.noteItemLive();
               this.notify();
               break;
             }
@@ -2105,6 +2185,7 @@ class MockDataStore {
               this.state.currentSlideId = prevSlides[prevSlides.length - 1].id;
               this.state.isLive = true;
               this.state.isLogo = false;
+              this.noteItemLive();
               this.notify();
               break;
             }
@@ -5993,6 +6074,45 @@ export const api = {
       throw new Error('Importing Bible files requires the desktop app.');
     }
     return await invoke<number>('import_bible_files', { paths, translation });
+  },
+
+  getCcliLicenceNumber: async (): Promise<string | null> => {
+    if (isTauri()) {
+      return await invoke<string | null>('get_ccli_licence_number');
+    }
+    return mockStore.getCcliLicenceNumber();
+  },
+
+  /** Saves the church's CCLI licence number (digits only); an empty value removes it. */
+  setCcliLicenceNumber: async (number: string): Promise<string | null> => {
+    if (isTauri()) {
+      return await invoke<string | null>('set_ccli_licence_number', { number });
+    }
+    return mockStore.setCcliLicenceNumber(number);
+  },
+
+  /** The songs used between two dates (YYYY-MM-DD, both included) and how often. */
+  getCcliReport: async (from: string, to: string): Promise<CcliReport> => {
+    if (isTauri()) {
+      return await invoke<CcliReport>('get_ccli_report', { from, to });
+    }
+    return mockStore.getCcliReport(from, to);
+  },
+
+  listSongUsage: async (from: string, to: string): Promise<SongUsage[]> => {
+    if (isTauri()) {
+      return await invoke<SongUsage[]>('list_song_usage', { from, to });
+    }
+    return mockStore.listSongUsage(from, to);
+  },
+
+  /** Removes one logged use of a song, for example one shown by mistake. */
+  deleteSongUsage: async (id: string): Promise<void> => {
+    if (isTauri()) {
+      await invoke<void>('delete_song_usage', { id });
+      return;
+    }
+    return mockStore.deleteSongUsage(id);
   },
 
   /** Completions for a reference typed so far ("jo", "ps 2", "john 3:1"), from the imported verses. */

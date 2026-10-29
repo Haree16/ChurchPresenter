@@ -17,6 +17,7 @@ import { api } from '../../services/api';
 import { LogoSettingsCard } from './LogoSettingsCard';
 import { StageLayoutEditor } from '../Stage/StageLayoutEditor';
 import { KeyBindingsCard } from './KeyBindingsCard';
+import { CcliSettingsCard } from './CcliSettingsCard';
 import { AppInfo, AppDiagnosticEntry, AppDiagnosticFilter } from '../../types';
 
 interface SettingsModalProps {
@@ -342,6 +343,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activeTab === 'general' && (
             <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <LogoSettingsCard />
+              <CcliSettingsCard />
               <KeyBindingsCard />
               <div
                 data-testid="stage-layout-card"

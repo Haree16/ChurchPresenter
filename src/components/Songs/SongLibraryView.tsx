@@ -8,6 +8,7 @@ import {
   Sparkles,
   FileJson,
   ClipboardPaste,
+  FileText,
   Check,
   BookOpen,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ import { ArrangementEditor } from './ArrangementEditor';
 import { SlideGeneratorModal } from './SlideGeneratorModal';
 import { SongImportExportModal } from './SongImportExportModal';
 import { SongPasteModal } from './SongPasteModal';
+import { CcliReportModal } from './CcliReportModal';
 
 interface SongLibraryViewProps {
   presentations: Presentation[];
@@ -42,6 +44,7 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
   const [isSlideGeneratorOpen, setIsSlideGeneratorOpen] = useState(false);
   const [isImportExportOpen, setIsImportExportOpen] = useState(false);
   const [isPasteOpen, setIsPasteOpen] = useState(false);
+  const [isCcliReportOpen, setIsCcliReportOpen] = useState(false);
   const [isCreatingSong, setIsCreatingSong] = useState(false);
   const [isEditingMetadata, setIsEditingMetadata] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
@@ -365,6 +368,25 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
               }}
             >
               <FileJson size={16} />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsCcliReportOpen(true)}
+              title="CCLI report: songs used in a date range"
+              data-testid="ccli-report-btn"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '8px',
+                backgroundColor: '#1e293b',
+                color: '#38bdf8',
+                borderRadius: '6px',
+                border: '1px solid #334155',
+              }}
+            >
+              <FileText size={16} />
             </button>
           </div>
 
@@ -854,6 +876,8 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
         }}
       />
 
+      <CcliReportModal isOpen={isCcliReportOpen} onClose={() => setIsCcliReportOpen(false)} />
+
       {/* Import / Export Modal */}
       <SongImportExportModal
         isOpen={isImportExportOpen}
@@ -1219,6 +1243,36 @@ export const SongLibraryView: React.FC<SongLibraryViewProps> = ({
                     padding: '8px 10px',
                     fontSize: '13px',
                   }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label htmlFor="song-ccli-number" style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '4px' }}>
+                  CCLI song number
+                </label>
+                <input
+                  id="song-ccli-number"
+                  data-testid="song-ccli-number"
+                  type="text"
+                  inputMode="numeric"
+                  value={currentSong.ccliNumber || ''}
+                  onChange={(e) => setCurrentSong({ ...currentSong, ccliNumber: e.target.value })}
+                  style={{ width: '100%', backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '6px', color: '#f8fafc', padding: '8px 10px', fontSize: '13px' }}
+                />
+              </div>
+              <div>
+                <label htmlFor="song-copyright" style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '4px' }}>
+                  Copyright
+                </label>
+                <input
+                  id="song-copyright"
+                  data-testid="song-copyright"
+                  type="text"
+                  value={currentSong.copyright || ''}
+                  onChange={(e) => setCurrentSong({ ...currentSong, copyright: e.target.value })}
+                  style={{ width: '100%', backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '6px', color: '#f8fafc', padding: '8px 10px', fontSize: '13px' }}
                 />
               </div>
             </div>
