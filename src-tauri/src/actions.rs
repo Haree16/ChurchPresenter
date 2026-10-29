@@ -116,6 +116,17 @@ impl ActionDispatcher {
         pres_mgr: &PresentationManager,
         action_name: &str,
     ) -> Result<PresentationState, String> {
+        // `run_macro:<id>` starts a macro on its own thread; it needs the app handle, so it is not part of dispatch_core.
+        if let Some(id) = crate::macros::macro_id_from_action(action_name) {
+            crate::macros::run_macro_by_id(app, db, pres_mgr, id)?;
+            app.emit(
+                "action:dispatched",
+                serde_json::json!({ "action": action_name, "timestamp": Utc::now().to_rfc3339() }),
+            )
+            .ok();
+            return Ok(pres_mgr.get_state());
+        }
+
         let result_state = Self::dispatch_core(db, pres_mgr, action_name)?;
 
         // Broadcast updated presentation state across all windows

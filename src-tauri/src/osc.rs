@@ -174,6 +174,11 @@ impl OscService {
             if is_action_allowed(&osc_cfg.allowlist_actions, action) {
                 let _ = ActionDispatcher::dispatch(app, db, pres_mgr, action);
             }
+        } else if let Some(action) = osc_macro_action(path) {
+            // Macros are opt-in one by one (`run_macro:<id>`) or all at once (`run_macro:*`).
+            if is_action_allowed(&osc_cfg.allowlist_actions, &action) {
+                let _ = ActionDispatcher::dispatch(app, db, pres_mgr, &action);
+            }
         }
     }
 }
@@ -201,9 +206,18 @@ fn osc_path_to_action(path: &str) -> Option<&'static str> {
     }
 }
 
-/// True when `action` appears in the comma-separated allowlist.
+/// `/macro/<id>` runs the saved macro with that id; the action is `run_macro:<id>`.
+fn osc_macro_action(path: &str) -> Option<String> {
+    let id = path.strip_prefix("/macro/")?;
+    let action = format!("{}{}", crate::macros::RUN_MACRO_PREFIX, id);
+    crate::macros::macro_id_from_action(&action).is_some().then_some(action)
+}
+
+/// True when `action` appears in the comma-separated allowlist. `run_macro:*` allows every macro.
 fn is_action_allowed(allowlist: &str, action: &str) -> bool {
-    allowlist.split(',').map(|s| s.trim()).any(|a| a == action)
+    allowlist.split(',').map(|s| s.trim()).any(|a| {
+        a == action || (a == "run_macro:*" && crate::macros::macro_id_from_action(action).is_some())
+    })
 }
 
 #[cfg(test)]
@@ -234,6 +248,22 @@ mod tests {
         for a in ["toggle_logo", "clear_media", "clear_all", "clear_alert", "clear_props"] {
             assert!(!is_action_allowed(default, a));
         }
+    }
+
+    #[test]
+    fn macro_paths_carry_the_macro_id_and_are_opt_in() {
+        assert_eq!(osc_macro_action("/macro/abc-123").as_deref(), Some("run_macro:abc-123"));
+        for bad in ["/macro/", "/macro", "/macro/a/b", "/macros/abc", "macro/abc", "/MACRO/abc", "/macro/ "] {
+            assert_eq!(osc_macro_action(bad), None, "{bad:?}");
+        }
+        let default = "next_slide,prev_slide,next_item,prev_item,toggle_blackout,toggle_live,start_timer,stop_timer,reset_timer,clear_overlay";
+        assert!(!is_action_allowed(default, "run_macro:abc"));
+        assert!(is_action_allowed("next_slide,run_macro:abc", "run_macro:abc"));
+        assert!(!is_action_allowed("next_slide,run_macro:abc", "run_macro:other"));
+        assert!(is_action_allowed("run_macro:*", "run_macro:anything"));
+        // the wildcard covers macros only, and a bad id is never allowed
+        assert!(!is_action_allowed("run_macro:*", "clear_all"));
+        assert!(!is_action_allowed("run_macro:*", "run_macro:"));
     }
 
     #[test]

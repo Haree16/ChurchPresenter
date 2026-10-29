@@ -24,6 +24,25 @@ pub const MAX_WAIT_SECONDS: u32 = 600;
 pub const MAX_TOTAL_WAIT_SECONDS: u32 = 1800;
 pub const MAX_MACROS: usize = 100;
 
+/// Control paths (OSC, MIDI, the phone remote) run a macro with the action `run_macro:<id>`.
+pub const RUN_MACRO_PREFIX: &str = "run_macro:";
+
+/// The macro id in a `run_macro:<id>` action, if `action` is one.
+pub fn macro_id_from_action(action: &str) -> Option<&str> {
+    action.strip_prefix(RUN_MACRO_PREFIX).filter(|id| !id.trim().is_empty() && id.len() <= 64 && !id.contains('/'))
+}
+
+/// Starts a saved macro in the background, as the operator panel does. Only one macro runs at a time.
+pub fn run_macro_by_id(app: &AppHandle, db: &DbManager, pres: &PresentationManager, id: &str) -> std::result::Result<(), String> {
+    use tauri::Manager;
+    let m = db
+        .get_macro(id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "That macro no longer exists.".to_string())?;
+    let runner = app.try_state::<MacroRunner>().ok_or_else(|| "Macros are not available.".to_string())?;
+    runner.run(app.clone(), db.clone(), pres.clone(), m)
+}
+
 /// Actions a macro step may run. Anything not listed here is refused.
 pub const MACRO_ACTIONS: [&str; 17] = [
     "next_slide",
@@ -732,6 +751,19 @@ mod tests {
         assert!(validate_step(&MacroStep::Look { look_id: " ".into() }).unwrap_err().contains("choose a look"));
         let json = serde_json::to_value(&step).unwrap();
         assert_eq!(json, serde_json::json!({"type": "look", "lookId": saved.id}));
+    }
+
+    #[test]
+    fn run_macro_actions_carry_a_plain_macro_id() {
+        assert_eq!(macro_id_from_action("run_macro:abc-123"), Some("abc-123"));
+        for bad in ["run_macro:", "run_macro: ", "run_macro:a/b", "next_slide", "RUN_MACRO:abc", "run_macro", "  run_macro:abc"] {
+            assert_eq!(macro_id_from_action(bad), None, "{bad:?}");
+        }
+        assert_eq!(macro_id_from_action(&format!("run_macro:{}", "x".repeat(65))), None);
+        // a macro step can never start another macro: the step runner only knows the listed actions
+        assert!(!MACRO_ACTIONS.iter().any(|a| a.starts_with(RUN_MACRO_PREFIX)));
+        let (db, pres) = setup();
+        assert!(ActionDispatcher::dispatch_core(&db, &pres, "run_macro:abc").unwrap_err().contains("Unsupported"));
     }
 
     #[test]
