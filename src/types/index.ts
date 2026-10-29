@@ -501,6 +501,16 @@ export interface BibleSuggestion {
   endVerse: number | null;
 }
 
+/** A saved service layout that new services can start from. */
+export interface ServiceTemplateSummary {
+  id: string;
+  name: string;
+  itemCount: number;
+  /** Songs and scripture: the items that can be left as empty slots. */
+  slotCount: number;
+  createdAt: string;
+}
+
 /** Found words with a little text around them, for showing where a search matched. */
 export interface SearchPreview {
   before: string;

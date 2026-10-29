@@ -3,6 +3,7 @@ import {
   Plus,
   Search,
   Copy,
+  BookmarkPlus,
   Trash2,
   Edit,
   CheckCircle2,
@@ -36,6 +37,7 @@ import { PlaylistPanel } from './PlaylistPanel';
 import { BiblePassageModal } from './BiblePassageModal';
 import { SermonAnnouncementModal } from './SermonAnnouncementModal';
 import { ServiceMetadataModal } from './ServiceMetadataModal';
+import { ServiceTemplatesModal, SaveServiceTemplateDialog } from './ServiceTemplatesModal';
 
 interface ServicePlannerViewProps {
   presentationState: PresentationState;
@@ -72,6 +74,8 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
 
   // UI / Modal States
   const [isNewServiceOpen, setIsNewServiceOpen] = useState(false);
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [templateSource, setTemplateSource] = useState<Service | null>(null);
   const [isEditServiceOpen, setIsEditServiceOpen] = useState(false);
   const [isBibleModalOpen, setIsBibleModalOpen] = useState(false);
   const [isSermonModalOpen, setIsSermonModalOpen] = useState(false);
@@ -247,6 +251,13 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
     } catch (err: any) {
       setStatusMessage(`Error deleting service: ${err.message}`);
     }
+  };
+
+  const handleServiceFromTemplate = async (service: Service) => {
+    await loadServices();
+    setSelectedServiceId(service.id);
+    setStatusMessage(`Service "${service.title}" created from a template.`);
+    setTimeout(() => setStatusMessage(null), 3000);
   };
 
   const handleDuplicateService = async (id: string) => {
@@ -596,6 +607,27 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
             </span>
             <button
               type="button"
+              data-testid="from-template-btn"
+              onClick={() => setIsTemplatesOpen(true)}
+              title="Start a new service from a template"
+              style={{
+                padding: '4px 8px',
+                backgroundColor: '#1e293b',
+                border: '1px solid #334155',
+                borderRadius: '5px',
+                color: '#cbd5e1',
+                fontSize: '11px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '3px',
+                cursor: 'pointer',
+              }}
+            >
+              <Layers size={12} /> Templates
+            </button>
+            <button
+              type="button"
               onClick={() => setIsNewServiceOpen(true)}
               style={{
                 padding: '4px 8px',
@@ -717,6 +749,18 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '10px', color: '#64748b' }}>
                       <span>{s.category}</span>
                       <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          type="button"
+                          data-testid="save-as-template-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTemplateSource(s);
+                          }}
+                          title="Save as template"
+                          style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 0 }}
+                        >
+                          <BookmarkPlus size={11} />
+                        </button>
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1286,6 +1330,16 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
         }}
         service={isEditServiceOpen ? currentService : null}
         onSave={isEditServiceOpen ? handleUpdateService : handleCreateService}
+      />
+
+      <ServiceTemplatesModal isOpen={isTemplatesOpen} onClose={() => setIsTemplatesOpen(false)} onCreated={handleServiceFromTemplate} />
+      <SaveServiceTemplateDialog
+        service={templateSource}
+        onClose={() => setTemplateSource(null)}
+        onSaved={(t) => {
+          setStatusMessage(`Saved template "${t.name}".`);
+          setTimeout(() => setStatusMessage(null), 3000);
+        }}
       />
 
       {/* 2. Scripture Lookup Modal */}

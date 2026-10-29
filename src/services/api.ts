@@ -63,6 +63,7 @@ import {
   CcliReport,
   LyricHit,
   SlideHit,
+  ServiceTemplateSummary,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
@@ -72,6 +73,7 @@ import { validateClearGroup, MAX_CLEAR_GROUPS } from './clearGroups';
 import { suggestFromVerses } from './bibleSuggest';
 import { validateLicenceNumber, validateReportRange } from './ccliReport';
 import { searchLyrics, searchSlides } from './textSearch';
+import { MAX_TEMPLATES, MAX_TEMPLATE_ITEMS, isSlot, slotTitle, validateServiceTitle, validateTemplateName } from './serviceTemplates';
 import { validatePanels } from './stageLayouts';
 import { validateProp } from './propLayout';
 import { validateLayout, isEmptyLayout } from './slideLayout';
@@ -1494,6 +1496,67 @@ class MockDataStore {
 
   public async searchSlideText(query: string, limit?: number): Promise<SlideHit[]> {
     return searchSlides(query, this.slides, (id) => this.presentations.find((p) => p.id === id)?.title ?? '', limit);
+  }
+
+  // ---- service templates
+  private serviceTemplates: { summary: ServiceTemplateSummary; items: { item: PlaylistItem; slides: Slide[] }[] }[] = [];
+
+  public async listServiceTemplates(): Promise<ServiceTemplateSummary[]> {
+    return this.serviceTemplates.map((t) => ({ ...t.summary }));
+  }
+
+  public async saveServiceAsTemplate(serviceId: string, name: string): Promise<ServiceTemplateSummary> {
+    const problem = validateTemplateName(name);
+    if (problem) throw new Error(problem);
+    if (!this.services.some((s) => s.id === serviceId)) throw new Error('That service no longer exists.');
+    if (this.serviceTemplates.length >= MAX_TEMPLATES) throw new Error(`You can keep at most ${MAX_TEMPLATES} templates.`);
+    const items = this.serviceItems.filter((i) => i.serviceId === serviceId).sort((a, b) => a.sortOrder - b.sortOrder);
+    if (items.length === 0) throw new Error('The service has no items to save.');
+    if (items.length > MAX_TEMPLATE_ITEMS) throw new Error(`A template can have at most ${MAX_TEMPLATE_ITEMS} items.`);
+    const copy = items.map((item) => ({
+      item: JSON.parse(JSON.stringify(item)) as PlaylistItem,
+      slides: this.serviceItemSlides
+        .filter((s) => s.presentationId === item.id)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((s) => JSON.parse(JSON.stringify(s)) as Slide),
+    }));
+    const summary: ServiceTemplateSummary = {
+      id: 'tpl-' + Math.random().toString(36).substring(2, 9),
+      name: name.trim(),
+      itemCount: copy.length,
+      slotCount: copy.filter((c) => isSlot(c.item.itemType)).length,
+      createdAt: new Date().toISOString(),
+    };
+    this.serviceTemplates.push({ summary, items: copy });
+    return { ...summary };
+  }
+
+  public async deleteServiceTemplate(id: string): Promise<void> {
+    this.serviceTemplates = this.serviceTemplates.filter((t) => t.summary.id !== id);
+  }
+
+  public async createServiceFromTemplate(templateId: string, title: string, serviceDate: string | null, keepSongs: boolean): Promise<Service> {
+    const problem = validateServiceTitle(title);
+    if (problem) throw new Error(problem);
+    const template = this.serviceTemplates.find((t) => t.summary.id === templateId);
+    if (!template) throw new Error('That template no longer exists.');
+    const service = await this.createService({ title: title.trim(), serviceDate: serviceDate?.trim() || null });
+    for (const { item, slides } of template.items) {
+      const slot = isSlot(item.itemType) && !keepSongs;
+      await this.addServiceItem(
+        {
+          serviceId: service.id,
+          itemType: slot ? 'divider' : item.itemType,
+          title: slot ? slotTitle(item.itemType) : item.title,
+          notes: slot ? 'Add the item here' : item.notes,
+          sourceId: slot ? null : item.sourceId,
+          themeId: item.themeId,
+          durationSeconds: item.durationSeconds,
+        },
+        slot ? undefined : slides.map((s) => ({ ...JSON.parse(JSON.stringify(s)), id: '' }))
+      );
+    }
+    return (await this.getService(service.id)) ?? service;
   }
 
   // ---- CCLI usage log
@@ -6085,6 +6148,42 @@ export const api = {
       throw new Error('Importing Bible files requires the desktop app.');
     }
     return await invoke<number>('import_bible_files', { paths, translation });
+  },
+
+  listServiceTemplates: async (): Promise<ServiceTemplateSummary[]> => {
+    if (isTauri()) {
+      return await invoke<ServiceTemplateSummary[]>('list_service_templates');
+    }
+    return mockStore.listServiceTemplates();
+  },
+
+  /** Saves a service's items (and the slides of each) as a named template. */
+  saveServiceAsTemplate: async (serviceId: string, name: string): Promise<ServiceTemplateSummary> => {
+    if (isTauri()) {
+      return await invoke<ServiceTemplateSummary>('save_service_as_template', { serviceId, name });
+    }
+    return mockStore.saveServiceAsTemplate(serviceId, name);
+  },
+
+  deleteServiceTemplate: async (id: string): Promise<void> => {
+    if (isTauri()) {
+      await invoke<void>('delete_service_template', { id });
+      return;
+    }
+    return mockStore.deleteServiceTemplate(id);
+  },
+
+  /** Makes a new service from a template. With `keepSongs` off, songs and scripture become empty slots to fill in. */
+  createServiceFromTemplate: async (
+    templateId: string,
+    title: string,
+    serviceDate: string | null,
+    keepSongs: boolean
+  ): Promise<Service> => {
+    if (isTauri()) {
+      return await invoke<Service>('create_service_from_template', { templateId, title, serviceDate, keepSongs });
+    }
+    return mockStore.createServiceFromTemplate(templateId, title, serviceDate, keepSongs);
   },
 
   /** Songs whose lyrics contain the words, one hit per song with a preview of the match. */
