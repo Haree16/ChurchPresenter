@@ -85,36 +85,46 @@ fn squash(s: &str) -> String {
     s.chars().filter(|c| !c.is_whitespace() && *c != '.').flat_map(|c| c.to_lowercase()).collect()
 }
 
-/// Numbers from 1 to `max` whose digits start with `typed`, smallest first (typing 1 offers 1, 10, 11 ...).
-fn numbers_starting_with(typed: i32, max: i32) -> Vec<i32> {
+/// Numbers from `available` whose digits start with `typed`, smallest first (typing 1 offers 1, 10, 11 ...).
+fn numbers_starting_with(typed: i32, available: &[i32]) -> Vec<i32> {
     let prefix = typed.to_string();
-    (1..=max).filter(|n| n.to_string().starts_with(&prefix)).take(MAX_NUMBER_CHOICES).collect()
+    available.iter().copied().filter(|n| n.to_string().starts_with(&prefix)).take(MAX_NUMBER_CHOICES).collect()
 }
 
 struct BookInfo {
     number: i32,
     name: String,
-    chapters: i32,
+    /// The chapters that have verses imported, in order (a partial import can have gaps).
+    chapters: Vec<i32>,
 }
 
 impl DbManager {
     fn bible_books_for(&self, translation: &str) -> Result<Vec<BookInfo>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT book_number, MIN(book), MAX(chapter) FROM bible_verses
-             WHERE LOWER(translation) = LOWER(?1) GROUP BY book_number ORDER BY book_number;",
+            "SELECT book_number, MIN(book), chapter FROM bible_verses
+             WHERE LOWER(translation) = LOWER(?1) GROUP BY book_number, chapter ORDER BY book_number, chapter;",
         )?;
-        let rows = stmt.query_map(params![translation], |r| Ok(BookInfo { number: r.get(0)?, name: r.get(1)?, chapters: r.get(2)? }))?;
-        rows.collect()
+        let rows = stmt.query_map(params![translation], |r| Ok((r.get::<_, i32>(0)?, r.get::<_, String>(1)?, r.get::<_, i32>(2)?)))?;
+        let mut books: Vec<BookInfo> = Vec::new();
+        for row in rows {
+            let (number, name, chapter) = row?;
+            match books.last_mut() {
+                Some(b) if b.number == number => b.chapters.push(chapter),
+                _ => books.push(BookInfo { number, name, chapters: vec![chapter] }),
+            }
+        }
+        Ok(books)
     }
 
-    fn bible_verse_count(&self, translation: &str, book_number: i32, chapter: i32) -> Result<i32> {
+    /// The verse numbers that exist in a chapter, in order.
+    fn bible_verses_in_chapter(&self, translation: &str, book_number: i32, chapter: i32) -> Result<Vec<i32>> {
         let conn = self.conn.lock().unwrap();
-        conn.query_row(
-            "SELECT COALESCE(MAX(verse), 0) FROM bible_verses WHERE LOWER(translation) = LOWER(?1) AND book_number = ?2 AND chapter = ?3;",
-            params![translation, book_number, chapter],
-            |r| r.get(0),
-        )
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT verse FROM bible_verses WHERE LOWER(translation) = LOWER(?1) AND book_number = ?2 AND chapter = ?3 ORDER BY verse;",
+        )?;
+        let rows = stmt.query_map(params![translation, book_number, chapter], |r| r.get(0))?;
+        rows.collect()
     }
 
     /// Suggestions for what is typed so far, from the books, chapters and verses imported for `translation`.
@@ -149,7 +159,7 @@ impl DbManager {
 
             let Some(chapter) = partial.chapter else {
                 if after_space {
-                    for c in (1..=book.chapters).take(MAX_NUMBER_CHOICES) {
+                    for c in book.chapters.iter().copied().take(MAX_NUMBER_CHOICES) {
                         out.push(make(format!("{} {}", book.name, c), Some(c), None, None));
                     }
                 } else {
@@ -157,38 +167,38 @@ impl DbManager {
                 }
                 continue;
             };
-            if chapter > book.chapters {
-                continue;
-            }
             if !partial.in_verse {
-                for c in numbers_starting_with(chapter, book.chapters) {
+                for c in numbers_starting_with(chapter, &book.chapters) {
                     out.push(make(format!("{} {}", book.name, c), Some(c), None, None));
                 }
                 continue;
             }
+            if !book.chapters.contains(&chapter) {
+                continue;
+            }
 
-            let verses = self.bible_verse_count(translation, book.number, chapter)?;
+            let verses = self.bible_verses_in_chapter(translation, book.number, chapter)?;
             match (partial.start_verse, partial.in_range, partial.end_verse) {
                 (None, _, _) => {
-                    for v in (1..=verses).take(MAX_NUMBER_CHOICES) {
+                    for v in verses.iter().copied().take(MAX_NUMBER_CHOICES) {
                         out.push(make(format!("{} {}:{}", book.name, chapter, v), Some(chapter), Some(v), Some(v)));
                     }
                 }
                 (Some(start), false, _) => {
-                    for v in numbers_starting_with(start, verses) {
+                    for v in numbers_starting_with(start, &verses) {
                         out.push(make(format!("{} {}:{}", book.name, chapter, v), Some(chapter), Some(v), Some(v)));
                     }
                 }
                 (Some(start), true, None) => {
-                    if start <= verses {
-                        // "john 3:16-" offers the end of the range
-                        for v in (start..=verses).take(MAX_NUMBER_CHOICES) {
+                    // "john 3:16-" offers the end of the range
+                    if verses.contains(&start) {
+                        for v in verses.iter().copied().filter(|v| *v >= start).take(MAX_NUMBER_CHOICES) {
                             out.push(make(format!("{} {}:{}-{}", book.name, chapter, start, v), Some(chapter), Some(start), Some(v)));
                         }
                     }
                 }
                 (Some(start), true, Some(end)) => {
-                    if start <= end && end <= verses {
+                    if start <= end && verses.contains(&start) && verses.contains(&end) {
                         out.push(make(format!("{} {}:{}-{}", book.name, chapter, start, end), Some(chapter), Some(start), Some(end)));
                     }
                 }
@@ -331,6 +341,30 @@ mod tests {
         assert_eq!(labels(&db, "john 1:2-"), vec!["John 1:2-2", "John 1:2-3", "John 1:2-4", "John 1:2-5"]);
         let first = &db.suggest_bible_references("john 3:16-17", "TST", 8).unwrap()[0];
         assert_eq!((first.chapter, first.start_verse, first.end_verse, first.book_number), (Some(3), Some(16), Some(17), 43));
+    }
+
+    #[test]
+    fn a_partial_import_only_offers_what_it_has() {
+        let db = DbManager::new_in_memory().unwrap();
+        // John 3:16-18 and Psalms 23:1, 23:4 and 100:1 only, like a small sample
+        let vs = [(43, "John", 3, 16), (43, "John", 3, 17), (43, "John", 3, 18), (19, "Psalms", 23, 1), (19, "Psalms", 23, 4), (19, "Psalms", 100, 1)]
+            .map(|(n, b, c, v)| verse("TST", b, n, c, v));
+        db.import_bible_verses(&vs).unwrap();
+        assert_eq!(labels(&db, "john 3:"), vec!["John 3:16", "John 3:17", "John 3:18"]);
+        assert_eq!(labels(&db, "john 3:1"), vec!["John 3:16", "John 3:17", "John 3:18"]); // no 1, 10-15
+        assert!(labels(&db, "john 3:2").is_empty());
+        assert!(labels(&db, "john 2").is_empty()); // only chapter 3 is there
+        assert!(labels(&db, "john 2:1").is_empty());
+        assert_eq!(labels(&db, "john 3"), vec!["John 3"]);
+        assert_eq!(labels(&db, "john "), vec!["John 3"]);
+        assert_eq!(labels(&db, "ps 2"), vec!["Psalms 23"]);
+        assert_eq!(labels(&db, "ps 1"), vec!["Psalms 100"]);
+        assert_eq!(labels(&db, "ps 23:"), vec!["Psalms 23:1", "Psalms 23:4"]); // a gap between them
+        assert_eq!(labels(&db, "john 3:16-"), vec!["John 3:16-16", "John 3:16-17", "John 3:16-18"]);
+        assert_eq!(labels(&db, "john 3:16-18"), vec!["John 3:16-18"]);
+        assert!(labels(&db, "john 3:16-19").is_empty());
+        assert_eq!(labels(&db, "ps 23:1-4"), vec!["Psalms 23:1-4"]); // both ends exist
+        assert!(labels(&db, "ps 23:1-3").is_empty()); // verse 3 is not imported
     }
 
     #[test]
