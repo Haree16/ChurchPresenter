@@ -2,7 +2,7 @@ use crate::db::DbManager;
 use crate::models::PresentationState;
 use crate::presentation::PresentationManager;
 use chrono::Utc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 pub struct ActionDispatcher;
 
@@ -104,6 +104,9 @@ impl ActionDispatcher {
                 let _ = db.set_overlay_cleared(new_cleared);
                 pres_mgr.get_state()
             }
+            "start_recording" | "stop_recording" | "toggle_recording" => {
+                pres_mgr.get_state()
+            }
             unknown => return Err(format!("Unsupported action '{}'", unknown)),
         };
 
@@ -119,6 +122,47 @@ impl ActionDispatcher {
         // `run_macro:<id>` starts a macro on its own thread; it needs the app handle, so it is not part of dispatch_core.
         if let Some(id) = crate::macros::macro_id_from_action(action_name) {
             crate::macros::run_macro_by_id(app, db, pres_mgr, id)?;
+            app.emit(
+                "action:dispatched",
+                serde_json::json!({ "action": action_name, "timestamp": Utc::now().to_rfc3339() }),
+            )
+            .ok();
+            return Ok(pres_mgr.get_state());
+        }
+
+        if action_name == "start_recording" || action_name == "stop_recording" || action_name == "toggle_recording" {
+            if let Some(recorder) = app.try_state::<std::sync::Arc<crate::recorder::RecorderService>>() {
+                let status = recorder.get_status(db);
+                if action_name == "start_recording" {
+                    if !status.is_recording {
+                        let sid = format!("rec-{}", Utc::now().timestamp_millis());
+                        if let Ok(st) = recorder.start_recording(db, sid, None) {
+                            app.emit("recording:status-changed", &st).ok();
+                        }
+                    }
+                } else if action_name == "stop_recording" {
+                    if status.is_recording {
+                        if let Ok(file) = recorder.stop_recording(None) {
+                            let new_st = recorder.get_status(db);
+                            app.emit("recording:status-changed", &new_st).ok();
+                            app.emit("recording:completed", &file).ok();
+                        }
+                    }
+                } else if action_name == "toggle_recording" {
+                    if status.is_recording {
+                        if let Ok(file) = recorder.stop_recording(None) {
+                            let new_st = recorder.get_status(db);
+                            app.emit("recording:status-changed", &new_st).ok();
+                            app.emit("recording:completed", &file).ok();
+                        }
+                    } else {
+                        let sid = format!("rec-{}", Utc::now().timestamp_millis());
+                        if let Ok(st) = recorder.start_recording(db, sid, None) {
+                            app.emit("recording:status-changed", &st).ok();
+                        }
+                    }
+                }
+            }
             app.emit(
                 "action:dispatched",
                 serde_json::json!({ "action": action_name, "timestamp": Utc::now().to_rfc3339() }),

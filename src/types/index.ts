@@ -972,7 +972,7 @@ export interface ActionMapping {
   id: string;
   actionName: string;
   displayLabel: string;
-  category: 'presentation' | 'service' | 'display' | 'timer';
+  category: 'presentation' | 'service' | 'display' | 'timer' | 'recording';
   keyboardShortcut?: string | null;
   isEnabled: boolean;
   createdAt: string;
@@ -1060,6 +1060,37 @@ export interface UpdateInstallResult {
   success: boolean;
   message: string;
   restarted: boolean;
+}
+
+// Phase 11.1: Audience Output Recording
+export interface RecordingConfig {
+  outputDirectory?: string | null;
+  containerFormat: 'webm' | 'mp4';
+  resolution: '1080p' | '720p' | '4k' | 'native';
+  videoBitrate: number;
+  frameRate: number;
+  includeAudio: boolean;
+}
+
+export interface RecordingStatus {
+  isRecording: boolean;
+  isPaused: boolean;
+  sessionId?: string | null;
+  startedAt?: string | null;
+  elapsedSeconds: number;
+  currentFilePath?: string | null;
+  currentFileSizeBytes: number;
+  totalFramesRecorded: number;
+  outputDirectory: string;
+}
+
+export interface RecordedFile {
+  filename: string;
+  fullPath: string;
+  fileSizeBytes: number;
+  durationSeconds: number;
+  createdAt: string;
+  containerFormat: string;
 }
 
 

@@ -27,6 +27,7 @@ mod service_templates;
 pub mod planning_center;
 pub mod dmx;
 pub mod updater;
+pub mod recorder;
 
 use db::DbManager;
 use midi::MidiService;
@@ -159,6 +160,7 @@ pub fn run() {
             app.manage(MidiService::new());
             app.manage(OscService::new());
             app.manage(dmx::DmxService::new());
+            app.manage(std::sync::Arc::new(recorder::RecorderService::new(app_data_dir.clone())));
 
             Ok(())
         })
@@ -414,6 +416,18 @@ pub fn run() {
             commands::save_updater_config,
             commands::check_for_updates,
             commands::install_update,
+            // Phase 11.1: Audience Output Recording
+            commands::get_recording_config,
+            commands::update_recording_config,
+            commands::start_recording,
+            commands::append_recording_chunk,
+            commands::pause_recording,
+            commands::resume_recording,
+            commands::stop_recording,
+            commands::get_recording_status,
+            commands::list_recordings,
+            commands::delete_recording,
+            commands::open_recording_folder,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

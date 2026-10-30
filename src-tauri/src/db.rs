@@ -1650,6 +1650,48 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 30: Audience Output Recording Configuration & Actions =================
+        if current_version < 30 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS recording_configs (
+                    id TEXT PRIMARY KEY,
+                    output_directory TEXT,
+                    container_format TEXT NOT NULL DEFAULT 'webm',
+                    resolution TEXT NOT NULL DEFAULT '1080p',
+                    video_bitrate INTEGER NOT NULL DEFAULT 5000000,
+                    frame_rate INTEGER NOT NULL DEFAULT 30,
+                    include_audio INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+
+            let now = Utc::now().to_rfc3339();
+            tx.execute(
+                "INSERT OR IGNORE INTO recording_configs (id, output_directory, container_format, resolution, video_bitrate, frame_rate, include_audio, created_at, updated_at)
+                 VALUES ('default', NULL, 'webm', '1080p', 5000000, 30, 1, ?1, ?1);",
+                params![now],
+            )?;
+
+            // Seed recording actions in action_mappings
+            tx.execute(
+                "INSERT OR IGNORE INTO action_mappings (id, action_name, display_label, category, keyboard_shortcut, is_enabled, created_at, updated_at)
+                 VALUES
+                 ('act-start-recording', 'start_recording', 'Start Audience Recording', 'recording', NULL, 1, ?1, ?1),
+                 ('act-stop-recording', 'stop_recording', 'Stop Audience Recording', 'recording', NULL, 1, ?1, ?1),
+                 ('act-toggle-recording', 'toggle_recording', 'Toggle Audience Recording', 'recording', NULL, 1, ?1, ?1);",
+                params![now],
+            )?;
+
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (30, ?1);",
+                params![now],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -6923,6 +6965,57 @@ impl DbManager {
         self.set_setting("remote_tls_fingerprint", fingerprint)
     }
 
+    // ================= Phase 11.1: Audience Output Recording Config =================
+
+    pub fn get_recording_config(&self) -> Result<crate::models::RecordingConfig> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT output_directory, container_format, resolution, video_bitrate, frame_rate, include_audio
+             FROM recording_configs
+             WHERE id = 'default';",
+        )?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            Ok(crate::models::RecordingConfig {
+                output_directory: row.get(0)?,
+                container_format: row.get(1)?,
+                resolution: row.get(2)?,
+                video_bitrate: row.get::<_, u32>(3)?,
+                frame_rate: row.get::<_, u32>(4)?,
+                include_audio: row.get::<_, i64>(5)? != 0,
+            })
+        } else {
+            Ok(crate::models::RecordingConfig::default())
+        }
+    }
+
+    pub fn update_recording_config(&self, cfg: &crate::models::RecordingConfig) -> Result<crate::models::RecordingConfig> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO recording_configs (id, output_directory, container_format, resolution, video_bitrate, frame_rate, include_audio, created_at, updated_at)
+             VALUES ('default', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+             ON CONFLICT(id) DO UPDATE SET
+                output_directory = excluded.output_directory,
+                container_format = excluded.container_format,
+                resolution = excluded.resolution,
+                video_bitrate = excluded.video_bitrate,
+                frame_rate = excluded.frame_rate,
+                include_audio = excluded.include_audio,
+                updated_at = excluded.updated_at;",
+            params![
+                cfg.output_directory,
+                cfg.container_format,
+                cfg.resolution,
+                cfg.video_bitrate,
+                cfg.frame_rate,
+                if cfg.include_audio { 1 } else { 0 },
+                now
+            ],
+        )?;
+        Ok(cfg.clone())
+    }
+
     // ================= Phase 10.2: DMX Lighting Config =================
 
     pub fn get_dmx_config(&self) -> Result<crate::models::DmxConfig> {
@@ -7057,7 +7150,10 @@ impl DbManager {
              ('act-clear-all', 'clear_all', 'Clear All (blank output)', 'display', 'C', 1, ?1, ?1),
              ('act-clear-alert', 'clear_alert', 'Clear Audience Alert', 'display', NULL, 1, ?1, ?1),
              ('act-clear-props', 'clear_props', 'Clear Props', 'display', NULL, 1, ?1, ?1),
-             ('act-stop-auto-advance', 'stop_auto_advance', 'Stop Auto-Advance', 'presentation', NULL, 1, ?1, ?1);",
+             ('act-stop-auto-advance', 'stop_auto_advance', 'Stop Auto-Advance', 'presentation', NULL, 1, ?1, ?1),
+             ('act-start-recording', 'start_recording', 'Start Audience Recording', 'recording', NULL, 1, ?1, ?1),
+             ('act-stop-recording', 'stop_recording', 'Stop Audience Recording', 'recording', NULL, 1, ?1, ?1),
+             ('act-toggle-recording', 'toggle_recording', 'Toggle Audience Recording', 'recording', NULL, 1, ?1, ?1);",
             params![now],
         )?;
         Ok(())

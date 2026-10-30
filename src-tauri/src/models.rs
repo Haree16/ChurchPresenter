@@ -1062,4 +1062,55 @@ pub struct UpdateInstallResult {
     pub restarted: bool,
 }
 
+// ================= Phase 11.1: Audience Output Recording Models =================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingConfig {
+    pub output_directory: Option<String>,
+    pub container_format: String,
+    pub resolution: String,
+    pub video_bitrate: u32,
+    pub frame_rate: u32,
+    pub include_audio: bool,
+}
+
+impl Default for RecordingConfig {
+    fn default() -> Self {
+        Self {
+            output_directory: None,
+            container_format: "webm".to_string(),
+            resolution: "1080p".to_string(),
+            video_bitrate: 5_000_000,
+            frame_rate: 30,
+            include_audio: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingStatus {
+    pub is_recording: bool,
+    pub is_paused: bool,
+    pub session_id: Option<String>,
+    pub started_at: Option<String>,
+    pub elapsed_seconds: u64,
+    pub current_file_path: Option<String>,
+    pub current_file_size_bytes: u64,
+    pub total_frames_recorded: u64,
+    pub output_directory: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordedFile {
+    pub filename: String,
+    pub full_path: String,
+    pub file_size_bytes: u64,
+    pub duration_seconds: u64,
+    pub created_at: String,
+    pub container_format: String,
+}
+
 

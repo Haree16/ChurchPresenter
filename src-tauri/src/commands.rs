@@ -2603,6 +2603,112 @@ pub async fn install_update(
     Ok(res)
 }
 
+// ================= Phase 11.1: Audience Output Recording Commands =================
+
+#[tauri::command]
+pub async fn get_recording_config(
+    db: State<'_, DbManager>,
+) -> Result<crate::models::RecordingConfig, String> {
+    db.get_recording_config().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_recording_config(
+    db: State<'_, DbManager>,
+    config: crate::models::RecordingConfig,
+) -> Result<crate::models::RecordingConfig, String> {
+    db.update_recording_config(&config).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn start_recording(
+    app: AppHandle,
+    recorder: State<'_, std::sync::Arc<crate::recorder::RecorderService>>,
+    db: State<'_, DbManager>,
+    session_id: String,
+    filename: Option<String>,
+) -> Result<crate::models::RecordingStatus, String> {
+    let status = recorder.start_recording(&db, session_id, filename)?;
+    app.emit("recording:status-changed", &status).ok();
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn append_recording_chunk(
+    recorder: State<'_, std::sync::Arc<crate::recorder::RecorderService>>,
+    session_id: String,
+    chunk: Vec<u8>,
+) -> Result<(), String> {
+    recorder.append_chunk(&session_id, &chunk)
+}
+
+#[tauri::command]
+pub async fn pause_recording(
+    app: AppHandle,
+    recorder: State<'_, std::sync::Arc<crate::recorder::RecorderService>>,
+) -> Result<crate::models::RecordingStatus, String> {
+    let status = recorder.pause_recording()?;
+    app.emit("recording:status-changed", &status).ok();
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn resume_recording(
+    app: AppHandle,
+    recorder: State<'_, std::sync::Arc<crate::recorder::RecorderService>>,
+) -> Result<crate::models::RecordingStatus, String> {
+    let status = recorder.resume_recording()?;
+    app.emit("recording:status-changed", &status).ok();
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn stop_recording(
+    app: AppHandle,
+    recorder: State<'_, std::sync::Arc<crate::recorder::RecorderService>>,
+    db: State<'_, DbManager>,
+    session_id: Option<String>,
+) -> Result<crate::models::RecordedFile, String> {
+    let file = recorder.stop_recording(session_id)?;
+    let status = recorder.get_status(&db);
+    app.emit("recording:status-changed", &status).ok();
+    app.emit("recording:completed", &file).ok();
+    Ok(file)
+}
+
+#[tauri::command]
+pub async fn get_recording_status(
+    recorder: State<'_, std::sync::Arc<crate::recorder::RecorderService>>,
+    db: State<'_, DbManager>,
+) -> Result<crate::models::RecordingStatus, String> {
+    Ok(recorder.get_status(&db))
+}
+
+#[tauri::command]
+pub async fn list_recordings(
+    recorder: State<'_, std::sync::Arc<crate::recorder::RecorderService>>,
+    db: State<'_, DbManager>,
+) -> Result<Vec<crate::models::RecordedFile>, String> {
+    recorder.list_recordings(&db)
+}
+
+#[tauri::command]
+pub async fn delete_recording(
+    recorder: State<'_, std::sync::Arc<crate::recorder::RecorderService>>,
+    db: State<'_, DbManager>,
+    filename: String,
+) -> Result<(), String> {
+    recorder.delete_recording(&db, &filename)
+}
+
+#[tauri::command]
+pub async fn open_recording_folder(
+    recorder: State<'_, std::sync::Arc<crate::recorder::RecorderService>>,
+    db: State<'_, DbManager>,
+) -> Result<(), String> {
+    recorder.open_recording_folder(&db)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -20,12 +20,14 @@ import {
   Activity,
   Settings,
   Sliders,
+  Video,
 } from 'lucide-react';
 import {
   PresentationState,
   AudienceWindowStatus,
   StageWindowStatus,
   RemoteServerStatus,
+  RecordingStatus,
 } from '../types';
 
 // Shared geometry for every header action button: same height, padding and
@@ -53,6 +55,7 @@ interface HeaderProps {
   audienceStatus: AudienceWindowStatus;
   stageStatus?: StageWindowStatus;
   remoteServerStatus?: RemoteServerStatus;
+  recordingStatus?: RecordingStatus;
   activeView: OperatorActiveView;
   onChangeView: (view: OperatorActiveView) => void;
   onOpenDisplayModal: () => void;
@@ -64,6 +67,7 @@ interface HeaderProps {
   onOpenOutputModal?: () => void;
   onOpenMultiViewerModal?: () => void;
   onOpenOverlayModal?: () => void;
+  onOpenRecordingModal?: () => void;
   onOpenIntegrationsModal?: () => void;
   onOpenHardwareModal?: () => void;
   onOpenDiagnosticsModal?: () => void;
@@ -79,6 +83,7 @@ export const Header: React.FC<HeaderProps> = ({
   audienceStatus,
   stageStatus,
   remoteServerStatus,
+  recordingStatus,
   activeView,
   onChangeView,
   onOpenDisplayModal,
@@ -90,6 +95,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenOutputModal,
   onOpenMultiViewerModal,
   onOpenOverlayModal,
+  onOpenRecordingModal,
   onOpenIntegrationsModal,
   onOpenHardwareModal,
   onOpenDiagnosticsModal,
@@ -572,6 +578,32 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Eye size={14} />
             <span>Overlay</span>
+          </button>
+        )}
+
+        {onOpenRecordingModal && (
+          <button
+            type="button"
+            data-testid="header-recording-btn"
+            onClick={onOpenRecordingModal}
+            title={recordingStatus?.isRecording ? "Audience Output Recording Active - Click to Manage" : "Audience Output Recording"}
+            style={{
+              ...headerBtn,
+              backgroundColor: recordingStatus?.isRecording ? '#dc2626' : '#1e293b',
+              color: recordingStatus?.isRecording ? '#ffffff' : '#cbd5e1',
+              border: recordingStatus?.isRecording ? '1px solid #ef4444' : '1px solid #334155',
+            }}
+          >
+            <Video size={14} color={recordingStatus?.isRecording ? '#ffffff' : '#cbd5e1'} />
+            <span>
+              {recordingStatus?.isRecording
+                ? `REC ${Math.floor((recordingStatus.elapsedSeconds || 0) / 60)
+                    .toString()
+                    .padStart(2, '0')}:${((recordingStatus.elapsedSeconds || 0) % 60)
+                    .toString()
+                    .padStart(2, '0')}`
+                : 'Record'}
+            </span>
           </button>
         )}
 

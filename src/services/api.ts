@@ -75,6 +75,9 @@ import {
   UpdaterConfig,
   UpdateCheckResult,
   UpdateInstallResult,
+  RecordingConfig,
+  RecordingStatus,
+  RecordedFile,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
@@ -4478,6 +4481,23 @@ class MockDataStore {
       case 'clear_overlay':
         this.overlayConfig.isCleared = !this.overlayConfig.isCleared;
         return this.getPresentationState();
+      case 'start_recording':
+        if (!this.recordingStatus.isRecording) {
+          await this.startRecording(`rec-${Date.now()}`);
+        }
+        return this.getPresentationState();
+      case 'stop_recording':
+        if (this.recordingStatus.isRecording) {
+          await this.stopRecording();
+        }
+        return this.getPresentationState();
+      case 'toggle_recording':
+        if (this.recordingStatus.isRecording) {
+          await this.stopRecording();
+        } else {
+          await this.startRecording(`rec-${Date.now()}`);
+        }
+        return this.getPresentationState();
       default:
         return this.getPresentationState();
     }
@@ -5064,6 +5084,140 @@ class MockDataStore {
       message: 'Update verified and staged. The application is ready to restart.',
       restarted: false,
     };
+  }
+
+  // Phase 11.1: Audience Output Recording
+  private recordingConfig: RecordingConfig = {
+    outputDirectory: null,
+    containerFormat: 'webm',
+    resolution: '1080p',
+    videoBitrate: 5000000,
+    frameRate: 30,
+    includeAudio: true,
+  };
+  private recordingStatus: RecordingStatus = {
+    isRecording: false,
+    isPaused: false,
+    sessionId: null,
+    startedAt: null,
+    elapsedSeconds: 0,
+    currentFilePath: null,
+    currentFileSizeBytes: 0,
+    totalFramesRecorded: 0,
+    outputDirectory: '/mock/videos/recordings',
+  };
+  private recordedFiles: RecordedFile[] = [];
+
+  public async getRecordingConfig(): Promise<RecordingConfig> {
+    return { ...this.recordingConfig };
+  }
+
+  public async updateRecordingConfig(config: RecordingConfig): Promise<RecordingConfig> {
+    this.recordingConfig = { ...config };
+    return { ...this.recordingConfig };
+  }
+
+  public async startRecording(sessionId: string, filename?: string): Promise<RecordingStatus> {
+    if (this.recordingStatus.isRecording) {
+      throw new Error('A recording session is already active');
+    }
+    const now = new Date().toISOString();
+    const ext = this.recordingConfig.containerFormat === 'mp4' ? 'mp4' : 'webm';
+    const name = filename || `Service-Recording-${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`;
+    this.recordingStatus = {
+      isRecording: true,
+      isPaused: false,
+      sessionId,
+      startedAt: now,
+      elapsedSeconds: 0,
+      currentFilePath: `/mock/videos/recordings/${name}`,
+      currentFileSizeBytes: 0,
+      totalFramesRecorded: 0,
+      outputDirectory: '/mock/videos/recordings',
+    };
+    return { ...this.recordingStatus };
+  }
+
+  public async appendRecordingChunk(sessionId: string, chunk: Uint8Array): Promise<void> {
+    if (!this.recordingStatus.isRecording || this.recordingStatus.sessionId !== sessionId) {
+      throw new Error('Invalid recording session');
+    }
+    if (!this.recordingStatus.isPaused) {
+      this.recordingStatus.currentFileSizeBytes += chunk.byteLength || chunk.length || 0;
+      this.recordingStatus.totalFramesRecorded += 1;
+    }
+  }
+
+  public async pauseRecording(): Promise<RecordingStatus> {
+    if (!this.recordingStatus.isRecording) {
+      throw new Error('No active recording session to pause');
+    }
+    this.recordingStatus.isPaused = true;
+    return { ...this.recordingStatus };
+  }
+
+  public async resumeRecording(): Promise<RecordingStatus> {
+    if (!this.recordingStatus.isRecording) {
+      throw new Error('No active recording session to resume');
+    }
+    this.recordingStatus.isPaused = false;
+    return { ...this.recordingStatus };
+  }
+
+  public async stopRecording(sessionId?: string): Promise<RecordedFile> {
+    if (!this.recordingStatus.isRecording) {
+      throw new Error('No active recording session to stop');
+    }
+    if (sessionId && this.recordingStatus.sessionId !== sessionId) {
+      throw new Error('Session ID mismatch');
+    }
+    const now = new Date().toISOString();
+    const duration = this.recordingStatus.startedAt
+      ? Math.max(1, Math.floor((new Date(now).getTime() - new Date(this.recordingStatus.startedAt).getTime()) / 1000))
+      : 60;
+    const filename = this.recordingStatus.currentFilePath
+      ? this.recordingStatus.currentFilePath.split('/').pop() || 'recording.webm'
+      : 'recording.webm';
+
+    const recorded: RecordedFile = {
+      filename,
+      fullPath: this.recordingStatus.currentFilePath || `/mock/videos/recordings/${filename}`,
+      fileSizeBytes: Math.max(1024, this.recordingStatus.currentFileSizeBytes),
+      durationSeconds: duration,
+      createdAt: this.recordingStatus.startedAt || now,
+      containerFormat: this.recordingConfig.containerFormat,
+    };
+
+    this.recordedFiles.unshift(recorded);
+    this.recordingStatus = {
+      isRecording: false,
+      isPaused: false,
+      sessionId: null,
+      startedAt: null,
+      elapsedSeconds: 0,
+      currentFilePath: null,
+      currentFileSizeBytes: 0,
+      totalFramesRecorded: 0,
+      outputDirectory: '/mock/videos/recordings',
+    };
+
+    return recorded;
+  }
+
+  public async getRecordingStatus(): Promise<RecordingStatus> {
+    return { ...this.recordingStatus };
+  }
+
+  public async listRecordings(): Promise<RecordedFile[]> {
+    return [...this.recordedFiles];
+  }
+
+  public async deleteRecording(filename: string): Promise<void> {
+    this.recordedFiles = this.recordedFiles.filter((f) => f.filename !== filename);
+  }
+
+  public async openRecordingFolder(): Promise<void> {
+    // Mock open folder
   }
 }
 
@@ -7111,6 +7265,114 @@ export const api = {
     if (isTauri()) {
       let unlisten: UnlistenFn | undefined;
       listen<UpdateInstallResult>('updater:installed', (event) => {
+        callback(event.payload);
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        if (unlisten) unlisten();
+      };
+    }
+    return () => {};
+  },
+
+  // Phase 11.1: Audience Output Recording
+  getRecordingConfig: async (): Promise<RecordingConfig> => {
+    if (isTauri()) {
+      return await invoke<RecordingConfig>('get_recording_config');
+    }
+    return mockStore.getRecordingConfig();
+  },
+
+  updateRecordingConfig: async (config: RecordingConfig): Promise<RecordingConfig> => {
+    if (isTauri()) {
+      return await invoke<RecordingConfig>('update_recording_config', { config });
+    }
+    return mockStore.updateRecordingConfig(config);
+  },
+
+  startRecording: async (sessionId: string, filename?: string): Promise<RecordingStatus> => {
+    if (isTauri()) {
+      return await invoke<RecordingStatus>('start_recording', { sessionId, filename });
+    }
+    return mockStore.startRecording(sessionId, filename);
+  },
+
+  appendRecordingChunk: async (sessionId: string, chunk: Uint8Array): Promise<void> => {
+    if (isTauri()) {
+      return await invoke<void>('append_recording_chunk', { sessionId, chunk: Array.from(chunk) });
+    }
+    return mockStore.appendRecordingChunk(sessionId, chunk);
+  },
+
+  pauseRecording: async (): Promise<RecordingStatus> => {
+    if (isTauri()) {
+      return await invoke<RecordingStatus>('pause_recording');
+    }
+    return mockStore.pauseRecording();
+  },
+
+  resumeRecording: async (): Promise<RecordingStatus> => {
+    if (isTauri()) {
+      return await invoke<RecordingStatus>('resume_recording');
+    }
+    return mockStore.resumeRecording();
+  },
+
+  stopRecording: async (sessionId?: string): Promise<RecordedFile> => {
+    if (isTauri()) {
+      return await invoke<RecordedFile>('stop_recording', { sessionId });
+    }
+    return mockStore.stopRecording(sessionId);
+  },
+
+  getRecordingStatus: async (): Promise<RecordingStatus> => {
+    if (isTauri()) {
+      return await invoke<RecordingStatus>('get_recording_status');
+    }
+    return mockStore.getRecordingStatus();
+  },
+
+  listRecordings: async (): Promise<RecordedFile[]> => {
+    if (isTauri()) {
+      return await invoke<RecordedFile[]>('list_recordings');
+    }
+    return mockStore.listRecordings();
+  },
+
+  deleteRecording: async (filename: string): Promise<void> => {
+    if (isTauri()) {
+      return await invoke<void>('delete_recording', { filename });
+    }
+    return mockStore.deleteRecording(filename);
+  },
+
+  openRecordingFolder: async (): Promise<void> => {
+    if (isTauri()) {
+      return await invoke<void>('open_recording_folder');
+    }
+    return mockStore.openRecordingFolder();
+  },
+
+  onRecordingStatusChanged: (callback: (status: RecordingStatus) => void): (() => void) => {
+    if (isTauri()) {
+      let unlisten: UnlistenFn | undefined;
+      listen<RecordingStatus>('recording:status-changed', (event) => {
+        callback(event.payload);
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        if (unlisten) unlisten();
+      };
+    }
+    return () => {};
+  },
+
+  onRecordingCompleted: (callback: (file: RecordedFile) => void): (() => void) => {
+    if (isTauri()) {
+      let unlisten: UnlistenFn | undefined;
+      listen<RecordedFile>('recording:completed', (event) => {
         callback(event.payload);
       }).then((fn) => {
         unlisten = fn;

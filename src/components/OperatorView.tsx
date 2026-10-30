@@ -23,7 +23,8 @@ import { DiagnosticsModal } from './Production/DiagnosticsModal';
 import { MultiViewerModal } from './Production/MultiViewerModal';
 import { SettingsModal } from './Settings/SettingsModal';
 import { StreamDeckDmxModal } from './StreamDeckDmxModal';
-import { Slide, SlideTemplate, AudienceWindowStatus, StageWindowStatus, RemoteServerStatus, KeyBinding } from '../types';
+import { RecordingModal } from './Broadcast/RecordingModal';
+import { Slide, SlideTemplate, AudienceWindowStatus, StageWindowStatus, RemoteServerStatus, RecordingStatus, KeyBinding } from '../types';
 import { cloneElements } from '../services/slideElements';
 import { api } from '../services/api';
 import { goToSlideNumber } from '../services/slideJump';
@@ -78,6 +79,7 @@ export const OperatorView: React.FC = () => {
   });
 
   const [remoteServerStatus, setRemoteServerStatus] = useState<RemoteServerStatus | undefined>(undefined);
+  const [recordingStatus, setRecordingStatus] = useState<RecordingStatus | undefined>(undefined);
 
   const refreshAudienceStatus = async () => {
     try {
@@ -186,10 +188,21 @@ export const OperatorView: React.FC = () => {
   const [isOutputModalOpen, setIsOutputModalOpen] = useState(false);
   const [isMultiViewerModalOpen, setIsMultiViewerModalOpen] = useState(false);
   const [isOverlayModalOpen, setIsOverlayModalOpen] = useState(false);
+  const [isRecordingModalOpen, setIsRecordingModalOpen] = useState(false);
   const [isIntegrationsModalOpen, setIsIntegrationsModalOpen] = useState(false);
   const [isHardwareModalOpen, setIsHardwareModalOpen] = useState(false);
   const [isDiagnosticsModalOpen, setIsDiagnosticsModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+
+  useEffect(() => {
+    api.getRecordingStatus().then(setRecordingStatus).catch(() => {});
+    const unlisten = api.onRecordingStatusChanged((st) => {
+      setRecordingStatus(st);
+    });
+    return () => {
+      unlisten();
+    };
+  }, []);
 
   // Shortcuts the operator chose in Settings; reloaded whenever Settings closes.
   const [keyBindings, setKeyBindings] = useState<KeyBinding[]>([]);
@@ -236,6 +249,7 @@ export const OperatorView: React.FC = () => {
     isOutputModalOpen ||
     isMultiViewerModalOpen ||
     isOverlayModalOpen ||
+    isRecordingModalOpen ||
     isIntegrationsModalOpen ||
     isHardwareModalOpen ||
     isDiagnosticsModalOpen ||
@@ -277,6 +291,7 @@ export const OperatorView: React.FC = () => {
       else if (isStagePreviewOpen) setIsStagePreviewOpen(false);
       else if (isOutputModalOpen) setIsOutputModalOpen(false);
       else if (isOverlayModalOpen) setIsOverlayModalOpen(false);
+      else if (isRecordingModalOpen) setIsRecordingModalOpen(false);
       else if (isIntegrationsModalOpen) setIsIntegrationsModalOpen(false);
       else if (isHardwareModalOpen) setIsHardwareModalOpen(false);
       else if (isDiagnosticsModalOpen) setIsDiagnosticsModalOpen(false);
@@ -354,6 +369,7 @@ export const OperatorView: React.FC = () => {
         audienceStatus={audienceStatus}
         stageStatus={stageStatus}
         remoteServerStatus={remoteServerStatus}
+        recordingStatus={recordingStatus}
         activeView={activeView}
         onChangeView={(view) => {
           if (view === 'themes') {
@@ -371,6 +387,7 @@ export const OperatorView: React.FC = () => {
         onOpenOutputModal={() => setIsOutputModalOpen(true)}
         onOpenMultiViewerModal={() => setIsMultiViewerModalOpen(true)}
         onOpenOverlayModal={() => setIsOverlayModalOpen(true)}
+        onOpenRecordingModal={() => setIsRecordingModalOpen(true)}
         onOpenIntegrationsModal={() => setIsIntegrationsModalOpen(true)}
         onOpenHardwareModal={() => setIsHardwareModalOpen(true)}
         onOpenDiagnosticsModal={() => setIsDiagnosticsModalOpen(true)}
@@ -783,6 +800,12 @@ export const OperatorView: React.FC = () => {
       <LivestreamOverlayModal
         isOpen={isOverlayModalOpen}
         onClose={() => setIsOverlayModalOpen(false)}
+      />
+
+      {/* Phase 11.1: Audience Output Recording Modal */}
+      <RecordingModal
+        isOpen={isRecordingModalOpen}
+        onClose={() => setIsRecordingModalOpen(false)}
       />
 
       {/* Phase 5: Remote Control, MIDI, OSC & Action Registry Modal */}
