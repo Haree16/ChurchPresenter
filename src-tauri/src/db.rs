@@ -1735,6 +1735,53 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 32: Live Video Input (Capture Devices & IMAG) =================
+        if current_version < 32 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS live_video_configs (
+                    id TEXT PRIMARY KEY,
+                    is_enabled INTEGER NOT NULL DEFAULT 1,
+                    is_active INTEGER NOT NULL DEFAULT 0,
+                    selected_device_id TEXT,
+                    resolution TEXT NOT NULL DEFAULT '1080p',
+                    frame_rate INTEGER NOT NULL DEFAULT 30,
+                    aspect_ratio TEXT NOT NULL DEFAULT '16:9',
+                    fit_mode TEXT NOT NULL DEFAULT 'cover',
+                    flip_horizontal INTEGER NOT NULL DEFAULT 0,
+                    opacity REAL NOT NULL DEFAULT 1.0,
+                    display_mode TEXT NOT NULL DEFAULT 'background_imag',
+                    pip_position TEXT NOT NULL DEFAULT 'bottom_right',
+                    pip_size_percent INTEGER NOT NULL DEFAULT 25,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+
+            let now = Utc::now().to_rfc3339();
+            tx.execute(
+                "INSERT OR IGNORE INTO live_video_configs (id, is_enabled, is_active, selected_device_id, resolution, frame_rate, aspect_ratio, fit_mode, flip_horizontal, opacity, display_mode, pip_position, pip_size_percent, created_at, updated_at)
+                 VALUES ('default-live-video', 1, 0, NULL, '1080p', 30, '16:9', 'cover', 0, 1.0, 'background_imag', 'bottom_right', 25, ?1, ?1);",
+                params![now],
+            )?;
+
+            // Seed Live Video actions in action_mappings
+            tx.execute(
+                "INSERT OR IGNORE INTO action_mappings (id, action_name, display_label, category, keyboard_shortcut, is_enabled, created_at, updated_at)
+                 VALUES
+                 ('act-toggle-live-camera', 'toggle_live_camera', 'Toggle Live Camera Background', 'broadcast', NULL, 1, ?1, ?1),
+                 ('act-switch-next-camera', 'switch_next_camera', 'Switch Next Camera Device', 'broadcast', NULL, 1, ?1, ?1);",
+                params![now],
+            )?;
+
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (32, ?1);",
+                params![now],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -5671,6 +5718,8 @@ impl DbManager {
         let dmx_configs = vec![dmx_config];
         let obs_config = self.get_obs_config()?;
         let obs_configs = vec![obs_config];
+        let live_video_config = self.get_live_video_config()?;
+        let live_video_configs = vec![live_video_config];
         let action_mappings = self.list_action_mappings()?;
 
         let settings = {
@@ -5721,6 +5770,7 @@ impl DbManager {
             osc_configs,
             dmx_configs,
             obs_configs,
+            live_video_configs,
             action_mappings,
             workspace_state,
             settings,
@@ -6422,6 +6472,45 @@ impl DbManager {
                     if obs.switch_scene_on_service_item { 1 } else { 0 },
                     obs.created_at,
                     obs.updated_at
+                ],
+            )?;
+        }
+
+        // Restore Live Video configs
+        for lv in &backup.live_video_configs {
+            tx.execute(
+                "INSERT INTO live_video_configs (id, is_enabled, is_active, selected_device_id, resolution, frame_rate, aspect_ratio, fit_mode, flip_horizontal, opacity, display_mode, pip_position, pip_size_percent, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                 ON CONFLICT(id) DO UPDATE SET
+                    is_enabled = excluded.is_enabled,
+                    is_active = excluded.is_active,
+                    selected_device_id = excluded.selected_device_id,
+                    resolution = excluded.resolution,
+                    frame_rate = excluded.frame_rate,
+                    aspect_ratio = excluded.aspect_ratio,
+                    fit_mode = excluded.fit_mode,
+                    flip_horizontal = excluded.flip_horizontal,
+                    opacity = excluded.opacity,
+                    display_mode = excluded.display_mode,
+                    pip_position = excluded.pip_position,
+                    pip_size_percent = excluded.pip_size_percent,
+                    updated_at = excluded.updated_at;",
+                params![
+                    lv.id,
+                    if lv.is_enabled { 1 } else { 0 },
+                    if lv.is_active { 1 } else { 0 },
+                    lv.selected_device_id,
+                    lv.resolution,
+                    lv.frame_rate as i32,
+                    lv.aspect_ratio,
+                    lv.fit_mode,
+                    if lv.flip_horizontal { 1 } else { 0 },
+                    lv.opacity,
+                    lv.display_mode,
+                    lv.pip_position,
+                    lv.pip_size_percent as i32,
+                    lv.created_at,
+                    lv.updated_at
                 ],
             )?;
         }
@@ -7137,6 +7226,78 @@ impl DbManager {
                 cfg.password,
                 if cfg.auto_connect { 1 } else { 0 },
                 if cfg.switch_scene_on_service_item { 1 } else { 0 },
+                now
+            ],
+        )?;
+        Ok(cfg.clone())
+    }
+
+    // ================= Phase 11.3: Live Video Input Config =================
+
+    pub fn get_live_video_config(&self) -> Result<crate::models::LiveVideoConfig> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, is_enabled, is_active, selected_device_id, resolution, frame_rate, aspect_ratio, fit_mode, flip_horizontal, opacity, display_mode, pip_position, pip_size_percent, created_at, updated_at
+             FROM live_video_configs
+             WHERE id = 'default-live-video';",
+        )?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            Ok(crate::models::LiveVideoConfig {
+                id: row.get(0)?,
+                is_enabled: row.get::<_, i64>(1)? != 0,
+                is_active: row.get::<_, i64>(2)? != 0,
+                selected_device_id: row.get(3)?,
+                resolution: row.get(4)?,
+                frame_rate: row.get::<_, u32>(5)?,
+                aspect_ratio: row.get(6)?,
+                fit_mode: row.get(7)?,
+                flip_horizontal: row.get::<_, i64>(8)? != 0,
+                opacity: row.get::<_, f64>(9)?,
+                display_mode: row.get(10)?,
+                pip_position: row.get(11)?,
+                pip_size_percent: row.get::<_, u32>(12)?,
+                created_at: row.get(13)?,
+                updated_at: row.get(14)?,
+            })
+        } else {
+            Ok(crate::models::LiveVideoConfig::default())
+        }
+    }
+
+    pub fn update_live_video_config(&self, cfg: &crate::models::LiveVideoConfig) -> Result<crate::models::LiveVideoConfig> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO live_video_configs (id, is_enabled, is_active, selected_device_id, resolution, frame_rate, aspect_ratio, fit_mode, flip_horizontal, opacity, display_mode, pip_position, pip_size_percent, created_at, updated_at)
+             VALUES ('default-live-video', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)
+             ON CONFLICT(id) DO UPDATE SET
+                is_enabled = excluded.is_enabled,
+                is_active = excluded.is_active,
+                selected_device_id = excluded.selected_device_id,
+                resolution = excluded.resolution,
+                frame_rate = excluded.frame_rate,
+                aspect_ratio = excluded.aspect_ratio,
+                fit_mode = excluded.fit_mode,
+                flip_horizontal = excluded.flip_horizontal,
+                opacity = excluded.opacity,
+                display_mode = excluded.display_mode,
+                pip_position = excluded.pip_position,
+                pip_size_percent = excluded.pip_size_percent,
+                updated_at = excluded.updated_at;",
+            params![
+                if cfg.is_enabled { 1 } else { 0 },
+                if cfg.is_active { 1 } else { 0 },
+                cfg.selected_device_id,
+                cfg.resolution,
+                cfg.frame_rate,
+                cfg.aspect_ratio,
+                cfg.fit_mode,
+                if cfg.flip_horizontal { 1 } else { 0 },
+                cfg.opacity,
+                cfg.display_mode,
+                cfg.pip_position,
+                cfg.pip_size_percent,
                 now
             ],
         )?;

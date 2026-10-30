@@ -24,7 +24,7 @@ import { MultiViewerModal } from './Production/MultiViewerModal';
 import { SettingsModal } from './Settings/SettingsModal';
 import { StreamDeckDmxModal } from './StreamDeckDmxModal';
 import { RecordingModal } from './Broadcast/RecordingModal';
-import { Slide, SlideTemplate, AudienceWindowStatus, StageWindowStatus, RemoteServerStatus, RecordingStatus, KeyBinding } from '../types';
+import { Slide, SlideTemplate, AudienceWindowStatus, StageWindowStatus, RemoteServerStatus, RecordingStatus, KeyBinding, LiveVideoConfig } from '../types';
 import { cloneElements } from '../services/slideElements';
 import { api } from '../services/api';
 import { goToSlideNumber } from '../services/slideJump';
@@ -80,6 +80,7 @@ export const OperatorView: React.FC = () => {
 
   const [remoteServerStatus, setRemoteServerStatus] = useState<RemoteServerStatus | undefined>(undefined);
   const [recordingStatus, setRecordingStatus] = useState<RecordingStatus | undefined>(undefined);
+  const [liveVideoConfig, setLiveVideoConfig] = useState<LiveVideoConfig | null>(null);
 
   const refreshAudienceStatus = async () => {
     try {
@@ -131,9 +132,15 @@ export const OperatorView: React.FC = () => {
     // Alt+F4 or Ctrl+W), so keep the open/closed state in step with the real window.
     const audienceInterval = setInterval(refreshAudienceStatus, 1000);
 
+    api.getLiveVideoConfig().then(setLiveVideoConfig).catch(() => {});
+    const unlistenLiveVideo = api.onLiveVideoConfigUpdated((cfg) => {
+      setLiveVideoConfig(cfg);
+    });
+
     return () => {
       clearInterval(interval);
       clearInterval(audienceInterval);
+      if (unlistenLiveVideo) unlistenLiveVideo();
     };
   }, []);
 
@@ -396,6 +403,11 @@ export const OperatorView: React.FC = () => {
         onToggleLogo={toggleLogo}
         onClearMedia={clearMedia}
         onClearAll={clearAll}
+        isLiveCameraActive={liveVideoConfig?.isActive}
+        onToggleLiveCamera={async () => {
+          const active = await api.toggleLiveCamera();
+          setLiveVideoConfig((prev) => (prev ? { ...prev, isActive: active } : null));
+        }}
       />
 
       {/* Live Media Controls Bar (when media is active) */}

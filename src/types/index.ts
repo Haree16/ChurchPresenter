@@ -253,6 +253,11 @@ export type MacroStep =
       type: 'obs';
       command: 'set_scene' | 'start_stream' | 'stop_stream' | 'start_record' | 'stop_record';
       sceneName?: string;
+    }
+  | {
+      type: 'camera';
+      command: 'enable' | 'disable' | 'toggle' | 'select_device';
+      deviceId?: string;
     };
 
 export type KeyBindingTargetType = 'action' | 'prop' | 'macro' | 'look' | 'clearGroup';
@@ -559,6 +564,7 @@ export interface BackupData {
   midiMappings?: MidiMapping[];
   oscConfigs?: OscConfig[];
   obsConfigs?: ObsConfig[];
+  liveVideoConfigs?: LiveVideoConfig[];
   actionMappings?: ActionMapping[];
   workspaceState?: WorkspaceState | null;
   settings: Record<string, string>;
@@ -1122,6 +1128,40 @@ export interface ObsStatus {
   isVirtualCamActive: boolean;
   error?: string | null;
   obsVersion?: string | null;
+}
+
+// Phase 11.3: Live Video Input (Capture Devices & IMAG)
+export interface CameraDeviceInfo {
+  deviceId: string;
+  label: string;
+  isDefault: boolean;
+}
+
+export interface LiveVideoConfig {
+  id: string;
+  isEnabled: boolean;
+  isActive: boolean;
+  selectedDeviceId?: string | null;
+  resolution: '1080p' | '720p' | '4k' | 'default';
+  frameRate: number;
+  aspectRatio: string;
+  fitMode: 'cover' | 'contain' | 'fill';
+  flipHorizontal: boolean;
+  opacity: number;
+  displayMode: 'background_imag' | 'standalone_slide' | 'pip';
+  pipPosition: 'bottom_right' | 'bottom_left' | 'top_right' | 'top_left';
+  pipSizePercent: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LiveVideoStatus {
+  isCapturing: boolean;
+  activeDeviceId?: string | null;
+  activeDeviceLabel?: string | null;
+  displayMode: string;
+  availableDevices: CameraDeviceInfo[];
+  error?: string | null;
 }
 
 

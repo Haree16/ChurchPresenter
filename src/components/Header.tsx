@@ -21,6 +21,7 @@ import {
   Settings,
   Sliders,
   Video,
+  Camera,
 } from 'lucide-react';
 import {
   PresentationState,
@@ -76,6 +77,8 @@ interface HeaderProps {
   onToggleLogo?: () => void;
   onClearMedia?: () => void;
   onClearAll?: () => void;
+  isLiveCameraActive?: boolean;
+  onToggleLiveCamera?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -84,6 +87,8 @@ export const Header: React.FC<HeaderProps> = ({
   stageStatus,
   remoteServerStatus,
   recordingStatus,
+  isLiveCameraActive,
+  onToggleLiveCamera,
   activeView,
   onChangeView,
   onOpenDisplayModal,
@@ -604,6 +609,24 @@ export const Header: React.FC<HeaderProps> = ({
                     .padStart(2, '0')}`
                 : 'Record'}
             </span>
+          </button>
+        )}
+
+        {onToggleLiveCamera && (
+          <button
+            type="button"
+            data-testid="header-camera-toggle-btn"
+            onClick={onToggleLiveCamera}
+            title={isLiveCameraActive ? "Live Camera Active (Click to Turn Off)" : "Live Camera Background (Click to Turn On)"}
+            style={{
+              ...headerBtn,
+              backgroundColor: isLiveCameraActive ? '#0284c7' : '#1e293b',
+              color: isLiveCameraActive ? '#ffffff' : '#cbd5e1',
+              border: isLiveCameraActive ? '1px solid #38bdf8' : '1px solid #334155',
+            }}
+          >
+            <Camera size={14} color={isLiveCameraActive ? '#ffffff' : '#cbd5e1'} />
+            <span>{isLiveCameraActive ? 'CAM ON' : 'Camera'}</span>
           </button>
         )}
 

@@ -15,7 +15,11 @@ import {
   Macro,
   ObsConfig,
   ObsStatus,
+  CameraDeviceInfo,
+  LiveVideoConfig,
+  LiveVideoStatus,
 } from '../../types';
+import { liveVideoService } from '../../services/liveVideoService';
 import {
   Smartphone,
   Sliders,
@@ -37,12 +41,13 @@ import {
   Eye,
   EyeOff,
   Tv,
+  Camera,
 } from 'lucide-react';
 
 interface ProductionIntegrationsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'remote' | 'midi' | 'osc' | 'obs' | 'actions';
+  initialTab?: 'remote' | 'midi' | 'osc' | 'obs' | 'video' | 'actions';
 }
 
 export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalProps> = ({
@@ -50,7 +55,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   onClose,
   initialTab = 'remote',
 }) => {
-  const [activeTab, setActiveTab] = useState<'remote' | 'midi' | 'osc' | 'obs' | 'actions'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'remote' | 'midi' | 'osc' | 'obs' | 'video' | 'actions'>(initialTab);
 
   // Who may connect to the remote server and OSC listener (applies on next start)
   const [bindMode, setBindMode] = useState<BindMode>('lan');
@@ -97,6 +102,13 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const [obsSelectedScene, setObsSelectedScene] = useState<string>('');
   const [obsTestSceneResult, setObsTestSceneResult] = useState<string | null>(null);
 
+  // Live Video / IMAG state
+  const [liveVideoConfig, setLiveVideoConfig] = useState<LiveVideoConfig | null>(null);
+  const [liveVideoStatus, setLiveVideoStatus] = useState<LiveVideoStatus | null>(null);
+  const [cameraDevices, setCameraDevices] = useState<CameraDeviceInfo[]>([]);
+  const previewVideoRef = React.useRef<HTMLVideoElement>(null);
+  const [previewCapturing, setPreviewCapturing] = useState<boolean>(false);
+
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -111,7 +123,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode, savedMacros, tlsEnabled, oObsCfg, oObsSt] =
+      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode, savedMacros, tlsEnabled, oObsCfg, oObsSt, lvCfg, lvSt, cDevs] =
         await Promise.all([
           api.getRemoteServerStatus(),
           api.listRemoteDevices(),
@@ -125,6 +137,9 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
           api.getRemoteTlsEnabled(),
           api.getObsConfig(),
           api.getObsStatus(),
+          api.getLiveVideoConfig(),
+          api.getLiveVideoStatus(),
+          api.listCameraDevices(),
         ]);
 
       setMacros(savedMacros);
@@ -156,6 +171,10 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
       } else if (oObsSt.scenes.length > 0) {
         setObsSelectedScene(oObsSt.scenes[0]);
       }
+
+      setLiveVideoConfig(lvCfg);
+      setLiveVideoStatus(lvSt);
+      setCameraDevices(cDevs);
     } catch (e) {
       console.error('Failed to load integration states:', e);
     } finally {
@@ -165,18 +184,20 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
 
   const refreshLiveMonitors = async () => {
     try {
-      const [mStatus, oStatus, rStatus, rDevs, oObsSt] = await Promise.all([
+      const [mStatus, oStatus, rStatus, rDevs, oObsSt, lvSt] = await Promise.all([
         api.getMidiStatus(),
         api.getOscStatus(),
         api.getRemoteServerStatus(),
         api.listRemoteDevices(),
         api.getObsStatus(),
+        api.getLiveVideoStatus(),
       ]);
       setMidiStatus(mStatus);
       setOscStatus(oStatus);
       setRemoteStatus(rStatus);
       setRemoteDevices(rDevs);
       setObsStatus(oObsSt);
+      setLiveVideoStatus(lvSt);
       if (oObsSt.currentScene && !obsSelectedScene) {
         setObsSelectedScene(oObsSt.currentScene);
       }
@@ -515,6 +536,50 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
     }
   };
 
+  // Live Video Handlers
+  const handleToggleLiveCameraActive = async () => {
+    try {
+      const active = await api.toggleLiveCamera();
+      if (liveVideoConfig) {
+        setLiveVideoConfig({ ...liveVideoConfig, isActive: active });
+      }
+      setStatusMessage(active ? 'Live Camera turned ON on Audience display.' : 'Live Camera turned OFF.');
+    } catch (err) {
+      setStatusMessage(`Camera toggle error: ${err}`);
+    }
+  };
+
+  const handleSaveLiveVideoConfig = async () => {
+    if (!liveVideoConfig) return;
+    try {
+      const updated = await api.updateLiveVideoConfig(liveVideoConfig);
+      setLiveVideoConfig(updated);
+      setStatusMessage('Live Video configuration saved.');
+    } catch (err) {
+      setStatusMessage(`Error saving Live Video config: ${err}`);
+    }
+  };
+
+  const handleTogglePreviewCapture = async () => {
+    if (previewCapturing) {
+      liveVideoService.stopCapture();
+      setPreviewCapturing(false);
+      if (previewVideoRef.current) {
+        previewVideoRef.current.srcObject = null;
+      }
+    } else if (liveVideoConfig) {
+      try {
+        const stream = await liveVideoService.startCapture(liveVideoConfig);
+        if (stream && previewVideoRef.current) {
+          previewVideoRef.current.srcObject = stream;
+        }
+        setPreviewCapturing(true);
+      } catch (err) {
+        setStatusMessage(`Preview error: ${err}`);
+      }
+    }
+  };
+
   return (
     <div
       style={{
@@ -746,6 +811,37 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                   height: '8px',
                   borderRadius: '50%',
                   backgroundColor: '#22c55e',
+                }}
+              />
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('video')}
+            data-testid="tab-live-video"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '12px 16px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              borderBottom: activeTab === 'video' ? '2px solid #3b82f6' : '2px solid transparent',
+              color: activeTab === 'video' ? '#60a5fa' : '#94a3b8',
+              fontWeight: 600,
+              fontSize: '13px',
+              cursor: 'pointer',
+            }}
+          >
+            <Camera size={16} />
+            <span>Live Video & IMAG</span>
+            {liveVideoConfig?.isActive && (
+              <span
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: '#0284c7',
                 }}
               />
             )}
@@ -2672,6 +2768,396 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                   2. Check <strong>Enable WebSocket server</strong> with Server Port <code>4455</code>.<br />
                   3. If Authentication is enabled, enter the exact password above.<br />
                   4. Church Presenter automatically authenticates using standard SHA-256 challenge-response hashing.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================= TAB: LIVE VIDEO & IMAG ================= */}
+          {activeTab === 'video' && (
+            <div data-testid="live-video-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Header Status Card */}
+              <div
+                style={{
+                  padding: '16px',
+                  backgroundColor: '#1e293b',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ fontWeight: 700, fontSize: '15px' }}>Live Video Input & IMAG</div>
+                    <span
+                      data-testid="camera-status-badge"
+                      style={{
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        backgroundColor: liveVideoConfig?.isActive
+                          ? 'rgba(2, 132, 199, 0.2)'
+                          : 'rgba(148, 163, 184, 0.2)',
+                        color: liveVideoConfig?.isActive ? '#38bdf8' : '#94a3b8',
+                        border: `1px solid ${liveVideoConfig?.isActive ? '#0284c7' : '#64748b'}`,
+                      }}
+                    >
+                      {liveVideoConfig?.isActive ? 'LIVE ON OUTPUT' : 'STANDBY'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
+                    Capture live camera feeds, HDMI capture cards, or virtual cameras for IMAG worship lyrics backgrounds and PiP overlays.
+                    {liveVideoStatus?.activeDeviceLabel && (
+                      <span style={{ marginLeft: '6px', color: '#38bdf8' }}>
+                        &bull; Active: {liveVideoStatus.activeDeviceLabel}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={handleToggleLiveCameraActive}
+                    data-testid="toggle-live-camera-output-btn"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 14px',
+                      borderRadius: '6px',
+                      backgroundColor: liveVideoConfig?.isActive ? '#ef4444' : '#0284c7',
+                      color: '#fff',
+                      fontWeight: 600,
+                      fontSize: '12px',
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {liveVideoConfig?.isActive ? (
+                      <>
+                        <Square size={13} fill="#fff" />
+                        <span>Turn Camera Off</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play size={13} fill="#fff" />
+                        <span>Take Camera Live</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Grid: Preview Box & Device Settings */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                {/* Preview Monitor Card */}
+                <div
+                  style={{
+                    backgroundColor: '#1e293b',
+                    padding: '16px',
+                    borderRadius: '8px',
+                    border: '1px solid #334155',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 700, fontSize: '13px', color: '#cbd5e1' }}>
+                      Camera Monitor Preview
+                    </div>
+                    <button
+                      onClick={handleTogglePreviewCapture}
+                      data-testid="toggle-preview-capture-btn"
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        backgroundColor: previewCapturing ? '#334155' : '#2563eb',
+                        border: 'none',
+                        color: '#fff',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {previewCapturing ? 'Stop Preview' : 'Start Preview'}
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      position: 'relative',
+                      width: '100%',
+                      aspectRatio: '16/9',
+                      backgroundColor: '#090d16',
+                      borderRadius: '6px',
+                      overflow: 'hidden',
+                      border: '1px solid #334155',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <video
+                      ref={previewVideoRef}
+                      data-testid="live-video-preview-element"
+                      autoPlay
+                      playsInline
+                      muted
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: liveVideoConfig?.fitMode || 'cover',
+                        transform: liveVideoConfig?.flipHorizontal ? 'scaleX(-1)' : undefined,
+                        display: previewCapturing ? 'block' : 'none',
+                      }}
+                    />
+                    {!previewCapturing && (
+                      <div style={{ textAlign: 'center', color: '#64748b', fontSize: '12px' }}>
+                        <Camera size={32} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
+                        <div>Click "Start Preview" to test capture stream</div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: '#94a3b8' }}>
+                    <div>
+                      Resolution: <strong style={{ color: '#f8fafc' }}>{liveVideoConfig?.resolution || '1080p'}</strong>
+                    </div>
+                    <div>
+                      Frame Rate: <strong style={{ color: '#f8fafc' }}>{liveVideoConfig?.frameRate || 30} FPS</strong>
+                    </div>
+                    <div>
+                      Mode: <strong style={{ color: '#f8fafc' }}>{liveVideoConfig?.displayMode || 'IMAG'}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Capture & IMAG Configuration Card */}
+                <div
+                  style={{
+                    backgroundColor: '#1e293b',
+                    padding: '16px',
+                    borderRadius: '8px',
+                    border: '1px solid #334155',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: '13px', color: '#cbd5e1' }}>
+                    Capture Device & IMAG Settings
+                  </div>
+
+                  {/* Device Picker */}
+                  <div>
+                    <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                      Selected Video Input Device
+                    </label>
+                    <select
+                      data-testid="camera-device-select"
+                      value={liveVideoConfig?.selectedDeviceId || ''}
+                      onChange={(e) =>
+                        liveVideoConfig &&
+                        setLiveVideoConfig({ ...liveVideoConfig, selectedDeviceId: e.target.value })
+                      }
+                      style={{
+                        width: '100%',
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        backgroundColor: '#0f172a',
+                        border: '1px solid #334155',
+                        color: '#f8fafc',
+                        fontSize: '12px',
+                      }}
+                    >
+                      {cameraDevices.map((d) => (
+                        <option key={d.deviceId} value={d.deviceId}>
+                          {d.label} {d.isDefault ? '(Default)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Display Mode */}
+                  <div>
+                    <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                      Display Mode
+                    </label>
+                    <select
+                      data-testid="camera-display-mode-select"
+                      value={liveVideoConfig?.displayMode || 'background_imag'}
+                      onChange={(e) =>
+                        liveVideoConfig &&
+                        setLiveVideoConfig({ ...liveVideoConfig, displayMode: e.target.value as any })
+                      }
+                      style={{
+                        width: '100%',
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        backgroundColor: '#0f172a',
+                        border: '1px solid #334155',
+                        color: '#f8fafc',
+                        fontSize: '12px',
+                      }}
+                    >
+                      <option value="background_imag">IMAG Background (Beneath Lyrics & Scripture)</option>
+                      <option value="standalone_slide">Full Screen Camera View</option>
+                      <option value="pip">Picture-in-Picture (ASL / Sign Language / Pulpit)</option>
+                    </select>
+                  </div>
+
+                  {/* PiP Position & Size (if PiP mode selected) */}
+                  {liveVideoConfig?.displayMode === 'pip' && (
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                          PiP Corner
+                        </label>
+                        <select
+                          data-testid="camera-pip-position-select"
+                          value={liveVideoConfig?.pipPosition || 'bottom_right'}
+                          onChange={(e) =>
+                            liveVideoConfig &&
+                            setLiveVideoConfig({ ...liveVideoConfig, pipPosition: e.target.value as any })
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '6px 10px',
+                            borderRadius: '6px',
+                            backgroundColor: '#0f172a',
+                            border: '1px solid #334155',
+                            color: '#f8fafc',
+                            fontSize: '12px',
+                          }}
+                        >
+                          <option value="bottom_right">Bottom Right</option>
+                          <option value="bottom_left">Bottom Left</option>
+                          <option value="top_right">Top Right</option>
+                          <option value="top_left">Top Left</option>
+                        </select>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                          PiP Size ({liveVideoConfig?.pipSizePercent || 25}%)
+                        </label>
+                        <input
+                          type="range"
+                          min={15}
+                          max={50}
+                          value={liveVideoConfig?.pipSizePercent || 25}
+                          onChange={(e) =>
+                            liveVideoConfig &&
+                            setLiveVideoConfig({ ...liveVideoConfig, pipSizePercent: Number(e.target.value) })
+                          }
+                          style={{ width: '100%', marginTop: '6px' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Resolution & FPS */}
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                        Resolution
+                      </label>
+                      <select
+                        data-testid="camera-resolution-select"
+                        value={liveVideoConfig?.resolution || '1080p'}
+                        onChange={(e) =>
+                          liveVideoConfig &&
+                          setLiveVideoConfig({ ...liveVideoConfig, resolution: e.target.value as any })
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          color: '#f8fafc',
+                          fontSize: '12px',
+                        }}
+                      >
+                        <option value="1080p">1080p (Full HD)</option>
+                        <option value="720p">720p (HD)</option>
+                        <option value="4k">4K (UHD)</option>
+                        <option value="default">Camera Default</option>
+                      </select>
+                    </div>
+
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                        Frame Rate
+                      </label>
+                      <select
+                        data-testid="camera-fps-select"
+                        value={liveVideoConfig?.frameRate || 30}
+                        onChange={(e) =>
+                          liveVideoConfig &&
+                          setLiveVideoConfig({ ...liveVideoConfig, frameRate: Number(e.target.value) })
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          color: '#f8fafc',
+                          fontSize: '12px',
+                        }}
+                      >
+                        <option value={30}>30 FPS</option>
+                        <option value={60}>60 FPS</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Flip Horizontal Checkbox */}
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '12px',
+                      color: '#cbd5e1',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      data-testid="camera-flip-checkbox"
+                      checked={liveVideoConfig?.flipHorizontal ?? false}
+                      onChange={(e) =>
+                        liveVideoConfig &&
+                        setLiveVideoConfig({ ...liveVideoConfig, flipHorizontal: e.target.checked })
+                      }
+                      style={{ accentColor: '#3b82f6' }}
+                    />
+                    <span>Flip Horizontal (Mirror Selfie Camera)</span>
+                  </label>
+
+                  <button
+                    onClick={handleSaveLiveVideoConfig}
+                    data-testid="camera-save-config-btn"
+                    style={{
+                      marginTop: '6px',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      backgroundColor: '#2563eb',
+                      border: 'none',
+                      color: '#fff',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    Save Camera Settings
+                  </button>
                 </div>
               </div>
             </div>

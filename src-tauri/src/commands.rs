@@ -2812,6 +2812,83 @@ pub async fn obs_stop_record(
     Ok(status)
 }
 
+// ================= Phase 11.3: Live Video Input =================
+
+#[tauri::command]
+pub async fn get_live_video_config(
+    db: State<'_, DbManager>,
+) -> Result<crate::models::LiveVideoConfig, String> {
+    db.get_live_video_config().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_live_video_config(
+    config: crate::models::LiveVideoConfig,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<crate::models::LiveVideoConfig, String> {
+    let mut cfg = config;
+    cfg.updated_at = Utc::now().to_rfc3339();
+    db.update_live_video_config(&cfg).map_err(|e| e.to_string())?;
+    app.emit("live-video:config-updated", &cfg).ok();
+    Ok(cfg)
+}
+
+#[tauri::command]
+pub async fn toggle_live_camera(
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<bool, String> {
+    let mut cfg = db.get_live_video_config().map_err(|e| e.to_string())?;
+    cfg.is_active = !cfg.is_active;
+    cfg.updated_at = Utc::now().to_rfc3339();
+    db.update_live_video_config(&cfg).map_err(|e| e.to_string())?;
+    app.emit("live-video:config-updated", &cfg).ok();
+    Ok(cfg.is_active)
+}
+
+#[tauri::command]
+pub async fn get_live_video_status(
+    db: State<'_, DbManager>,
+) -> Result<crate::models::LiveVideoStatus, String> {
+    let cfg = db.get_live_video_config().unwrap_or_default();
+    Ok(crate::models::LiveVideoStatus {
+        is_capturing: cfg.is_active && cfg.is_enabled,
+        active_device_id: cfg.selected_device_id.clone(),
+        active_device_label: cfg.selected_device_id.as_ref().map(|id| format!("Capture Device ({})", id)),
+        display_mode: cfg.display_mode.clone(),
+        available_devices: vec![
+            crate::models::CameraDeviceInfo {
+                device_id: "default-cam".to_string(),
+                label: "Default System Camera".to_string(),
+                is_default: true,
+            },
+            crate::models::CameraDeviceInfo {
+                device_id: "obs-cam".to_string(),
+                label: "OBS Virtual Camera".to_string(),
+                is_default: false,
+            },
+        ],
+        error: None,
+    })
+}
+
+#[tauri::command]
+pub async fn list_camera_devices() -> Result<Vec<crate::models::CameraDeviceInfo>, String> {
+    Ok(vec![
+        crate::models::CameraDeviceInfo {
+            device_id: "default-cam".to_string(),
+            label: "Default System Camera".to_string(),
+            is_default: true,
+        },
+        crate::models::CameraDeviceInfo {
+            device_id: "obs-cam".to_string(),
+            label: "OBS Virtual Camera".to_string(),
+            is_default: false,
+        },
+    ])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

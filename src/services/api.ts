@@ -80,6 +80,9 @@ import {
   RecordedFile,
   ObsConfig,
   ObsStatus,
+  CameraDeviceInfo,
+  LiveVideoConfig,
+  LiveVideoStatus,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
@@ -1970,6 +1973,17 @@ class MockDataStore {
           await this.obsStartRecord();
         } else if (step.command === 'stop_record') {
           await this.obsStopRecord();
+        }
+        return;
+      case 'camera':
+        if (step.command === 'enable') {
+          this.liveVideoConfig.isActive = true;
+        } else if (step.command === 'disable') {
+          this.liveVideoConfig.isActive = false;
+        } else if (step.command === 'toggle') {
+          this.liveVideoConfig.isActive = !this.liveVideoConfig.isActive;
+        } else if (step.command === 'select_device' && step.deviceId) {
+          this.liveVideoConfig.selectedDeviceId = step.deviceId;
         }
         return;
       case 'wait':
@@ -4525,6 +4539,18 @@ class MockDataStore {
       case 'obs_stop_record':
         await this.obsStopRecord();
         return this.getPresentationState();
+      case 'toggle_live_camera':
+        await this.toggleLiveCamera();
+        return this.getPresentationState();
+      case 'switch_next_camera': {
+        const devices = await this.listCameraDevices();
+        if (devices.length > 0) {
+          const curIdx = devices.findIndex((d) => d.deviceId === this.liveVideoConfig.selectedDeviceId);
+          const nextIdx = (curIdx + 1) % devices.length;
+          this.liveVideoConfig.selectedDeviceId = devices[nextIdx].deviceId;
+        }
+        return this.getPresentationState();
+      }
       default:
         return this.getPresentationState();
     }
@@ -5334,6 +5360,70 @@ class MockDataStore {
   public async obsStopRecord(): Promise<ObsStatus> {
     this.obsStatus.isRecording = false;
     return { ...this.obsStatus };
+  }
+
+  // Phase 11.3: Live Video Input (Capture Devices & IMAG)
+  private liveVideoConfig: LiveVideoConfig = {
+    id: 'default-live-video',
+    isEnabled: true,
+    isActive: false,
+    selectedDeviceId: 'default-cam',
+    resolution: '1080p',
+    frameRate: 30,
+    aspectRatio: '16:9',
+    fitMode: 'cover',
+    flipHorizontal: false,
+    opacity: 1.0,
+    displayMode: 'background_imag',
+    pipPosition: 'bottom_right',
+    pipSizePercent: 25,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  private cameraDevices: CameraDeviceInfo[] = [
+    {
+      deviceId: 'default-cam',
+      label: 'Default Capture Card / Webcam',
+      isDefault: true,
+    },
+    {
+      deviceId: 'obs-cam',
+      label: 'OBS Virtual Camera',
+      isDefault: false,
+    },
+  ];
+
+  public async getLiveVideoConfig(): Promise<LiveVideoConfig> {
+    return { ...this.liveVideoConfig };
+  }
+
+  public async updateLiveVideoConfig(config: LiveVideoConfig): Promise<LiveVideoConfig> {
+    this.liveVideoConfig = { ...config, updatedAt: new Date().toISOString() };
+    return { ...this.liveVideoConfig };
+  }
+
+  public async toggleLiveCamera(): Promise<boolean> {
+    this.liveVideoConfig.isActive = !this.liveVideoConfig.isActive;
+    this.liveVideoConfig.updatedAt = new Date().toISOString();
+    return this.liveVideoConfig.isActive;
+  }
+
+  public async getLiveVideoStatus(): Promise<LiveVideoStatus> {
+    return {
+      isCapturing: this.liveVideoConfig.isActive && this.liveVideoConfig.isEnabled,
+      activeDeviceId: this.liveVideoConfig.selectedDeviceId || null,
+      activeDeviceLabel:
+        this.cameraDevices.find((d) => d.deviceId === this.liveVideoConfig.selectedDeviceId)?.label ||
+        'Default Camera',
+      displayMode: this.liveVideoConfig.displayMode,
+      availableDevices: [...this.cameraDevices],
+      error: null,
+    };
+  }
+
+  public async listCameraDevices(): Promise<CameraDeviceInfo[]> {
+    return [...this.cameraDevices];
   }
 }
 
@@ -7590,6 +7680,57 @@ export const api = {
     if (isTauri()) {
       let unlisten: UnlistenFn | undefined;
       listen<string>('obs:scene-changed', (event) => {
+        callback(event.payload);
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        if (unlisten) unlisten();
+      };
+    }
+    return () => {};
+  },
+
+  // Phase 11.3: Live Video Input (Capture Devices & IMAG)
+  getLiveVideoConfig: async (): Promise<LiveVideoConfig> => {
+    if (isTauri()) {
+      return await invoke<LiveVideoConfig>('get_live_video_config');
+    }
+    return mockStore.getLiveVideoConfig();
+  },
+
+  updateLiveVideoConfig: async (config: LiveVideoConfig): Promise<LiveVideoConfig> => {
+    if (isTauri()) {
+      return await invoke<LiveVideoConfig>('update_live_video_config', { config });
+    }
+    return mockStore.updateLiveVideoConfig(config);
+  },
+
+  toggleLiveCamera: async (): Promise<boolean> => {
+    if (isTauri()) {
+      return await invoke<boolean>('toggle_live_camera');
+    }
+    return mockStore.toggleLiveCamera();
+  },
+
+  getLiveVideoStatus: async (): Promise<LiveVideoStatus> => {
+    if (isTauri()) {
+      return await invoke<LiveVideoStatus>('get_live_video_status');
+    }
+    return mockStore.getLiveVideoStatus();
+  },
+
+  listCameraDevices: async (): Promise<CameraDeviceInfo[]> => {
+    if (isTauri()) {
+      return await invoke<CameraDeviceInfo[]>('list_camera_devices');
+    }
+    return mockStore.listCameraDevices();
+  },
+
+  onLiveVideoConfigUpdated: (callback: (config: LiveVideoConfig) => void): (() => void) => {
+    if (isTauri()) {
+      let unlisten: UnlistenFn | undefined;
+      listen<LiveVideoConfig>('live-video:config-updated', (event) => {
         callback(event.payload);
       }).then((fn) => {
         unlisten = fn;

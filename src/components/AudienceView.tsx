@@ -4,11 +4,12 @@ import { AlertBanner } from './AlertBanner';
 import { PropsLayer } from './PropsLayer';
 import { SlideElements } from './SlideElements';
 import { composeTextShadow, layoutPadding } from '../services/slideLayout';
-import { PresentationState, Theme, MediaAsset } from '../types';
+import { PresentationState, Theme, MediaAsset, LiveVideoConfig } from '../types';
 import { api } from '../services/api';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { goToSlideNumber } from '../services/slideJump';
 import { mediaService, getMediaTypeFromExtension } from '../services/mediaService';
+import { liveVideoService } from '../services/liveVideoService';
 
 interface AudienceViewProps {
   outputId?: string;
@@ -34,6 +35,37 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
+
+  // Phase 11.3: Live Video Input (Capture Devices & IMAG)
+  const [liveVideoConfig, setLiveVideoConfig] = useState<LiveVideoConfig | null>(null);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    let unlistenConfig: (() => void) | undefined;
+    api.getLiveVideoConfig().then(setLiveVideoConfig).catch(() => {});
+    unlistenConfig = api.onLiveVideoConfigUpdated((cfg) => {
+      setLiveVideoConfig(cfg);
+    });
+
+    const unlistenStream = liveVideoService.onStreamChange((stream) => {
+      setCameraStream(stream);
+      if (cameraVideoRef.current && stream) {
+        cameraVideoRef.current.srcObject = stream;
+      }
+    });
+
+    return () => {
+      if (unlistenConfig) unlistenConfig();
+      if (unlistenStream) unlistenStream();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (cameraVideoRef.current && cameraStream) {
+      cameraVideoRef.current.srcObject = cameraStream;
+    }
+  }, [cameraStream, liveVideoConfig?.isActive]);
 
   // Phase 10.3: Load media asset inspector metadata (crop, rotation, volume, trim, loop)
   useEffect(() => {
@@ -315,8 +347,9 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
     );
   }
 
-  // Render pure black screen when blackout is active or not live
-  if (isBlackout || !isLive) {
+  // Render pure black screen when blackout is active, or when not live and no camera is active
+  const hasLiveCamera = !!(liveVideoConfig?.isEnabled && liveVideoConfig?.isActive);
+  if (isBlackout || (!isLive && !hasLiveCamera)) {
     return withAlert(
       <div
         data-testid="audience-blackout"
@@ -378,6 +411,78 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
             ).catch(() => {});
           }}
         />
+      </div>
+    );
+  }
+
+  // If no current slide, but live camera is active, render camera view
+  if (!currentSlide && liveVideoConfig?.isActive && liveVideoConfig?.isEnabled) {
+    return withAlert(
+      <div
+        data-testid="audience-display"
+        style={{
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: '#000000',
+          cursor: 'none',
+          overflow: 'hidden',
+          position: 'relative',
+        }}
+      >
+        {liveVideoConfig.displayMode !== 'pip' ? (
+          <video
+            ref={cameraVideoRef}
+            data-testid="audience-live-camera-background"
+            autoPlay
+            playsInline
+            muted
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: liveVideoConfig.fitMode || 'cover',
+              transform: liveVideoConfig.flipHorizontal ? 'scaleX(-1)' : undefined,
+              opacity: liveVideoConfig.opacity ?? 1,
+            }}
+          />
+        ) : (
+          <div
+            data-testid="audience-camera-pip"
+            style={{
+              position: 'absolute',
+              ...(liveVideoConfig.pipPosition === 'top_left'
+                ? { top: '24px', left: '24px' }
+                : liveVideoConfig.pipPosition === 'top_right'
+                ? { top: '24px', right: '24px' }
+                : liveVideoConfig.pipPosition === 'bottom_left'
+                ? { bottom: '24px', left: '24px' }
+                : { bottom: '24px', right: '24px' }),
+              width: `${liveVideoConfig.pipSizePercent || 25}%`,
+              aspectRatio: '16/9',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              border: '2px solid rgba(255, 255, 255, 0.4)',
+              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.7)',
+              zIndex: 10,
+              pointerEvents: 'none',
+            }}
+          >
+            <video
+              ref={cameraVideoRef}
+              data-testid="audience-camera-pip-video"
+              autoPlay
+              playsInline
+              muted
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                transform: liveVideoConfig.flipHorizontal ? 'scaleX(-1)' : undefined,
+              }}
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -476,7 +581,7 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
       )}
 
       {/* Motion Background Video Behind Lyrics (Seamless Across Slide Changes) */}
-      {motionVideoUrl && (
+      {motionVideoUrl && !liveVideoConfig?.isActive && (
         <video
           ref={videoRef}
           data-testid="audience-motion-background"
@@ -505,6 +610,28 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
               'Motion background video failed to load; fell back to theme background color',
               motionVideoUrl || undefined
             ).catch(() => {});
+          }}
+        />
+      )}
+
+      {/* Live Camera IMAG Background Behind Lyrics */}
+      {liveVideoConfig?.isActive && liveVideoConfig?.isEnabled && liveVideoConfig.displayMode !== 'pip' && (
+        <video
+          ref={cameraVideoRef}
+          data-testid="audience-live-camera-background"
+          autoPlay
+          playsInline
+          muted
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: liveVideoConfig.fitMode || 'cover',
+            transform: liveVideoConfig.flipHorizontal ? 'scaleX(-1)' : undefined,
+            opacity: liveVideoConfig.opacity ?? 1,
+            zIndex: 0,
+            pointerEvents: 'none',
           }}
         />
       )}
@@ -636,6 +763,45 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
       <div style={{ opacity: slideOpacity, transition: 'opacity 250ms ease-in-out' }}>
         <SlideElements elements={currentSlide.layout?.elements} />
       </div>
+
+      {/* Live Camera Picture-in-Picture Overlay (e.g. ASL / Sign Language / Pulpit PiP) */}
+      {liveVideoConfig?.isActive && liveVideoConfig?.isEnabled && liveVideoConfig.displayMode === 'pip' && (
+        <div
+          data-testid="audience-camera-pip"
+          style={{
+            position: 'absolute',
+            ...(liveVideoConfig.pipPosition === 'top_left'
+              ? { top: '24px', left: '24px' }
+              : liveVideoConfig.pipPosition === 'top_right'
+              ? { top: '24px', right: '24px' }
+              : liveVideoConfig.pipPosition === 'bottom_left'
+              ? { bottom: '24px', left: '24px' }
+              : { bottom: '24px', right: '24px' }),
+            width: `${liveVideoConfig.pipSizePercent || 25}%`,
+            aspectRatio: '16/9',
+            borderRadius: '8px',
+            overflow: 'hidden',
+            border: '2px solid rgba(255, 255, 255, 0.4)',
+            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.7)',
+            zIndex: 10,
+            pointerEvents: 'none',
+          }}
+        >
+          <video
+            ref={cameraVideoRef}
+            data-testid="audience-camera-pip-video"
+            autoPlay
+            playsInline
+            muted
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              transform: liveVideoConfig.flipHorizontal ? 'scaleX(-1)' : undefined,
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 };

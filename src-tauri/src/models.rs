@@ -494,6 +494,8 @@ pub struct BackupData {
     #[serde(default)]
     pub obs_configs: Vec<ObsConfig>,
     #[serde(default)]
+    pub live_video_configs: Vec<LiveVideoConfig>,
+    #[serde(default)]
     pub action_mappings: Vec<ActionMapping>,
     #[serde(default)]
     pub workspace_state: Option<WorkspaceState>,
@@ -1174,6 +1176,83 @@ impl Default for ObsStatus {
             is_virtual_cam_active: false,
             error: None,
             obs_version: None,
+        }
+    }
+}
+
+// ================= Phase 11.3: Live Video Input Models =================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraDeviceInfo {
+    pub device_id: String,
+    pub label: String,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveVideoConfig {
+    pub id: String,
+    pub is_enabled: bool,
+    pub is_active: bool,
+    pub selected_device_id: Option<String>,
+    pub resolution: String,      // "1080p", "720p", "4k", "default"
+    pub frame_rate: u32,         // 30, 60
+    pub aspect_ratio: String,    // "16:9", "4:3"
+    pub fit_mode: String,        // "cover", "contain", "fill"
+    pub flip_horizontal: bool,
+    pub opacity: f64,            // 0.0 to 1.0
+    pub display_mode: String,    // "background_imag", "standalone_slide", "pip"
+    pub pip_position: String,    // "bottom_right", "bottom_left", "top_right", "top_left"
+    pub pip_size_percent: u32,   // 25%
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl Default for LiveVideoConfig {
+    fn default() -> Self {
+        let now = chrono::Utc::now().to_rfc3339();
+        Self {
+            id: "default-live-video".to_string(),
+            is_enabled: true,
+            is_active: false,
+            selected_device_id: None,
+            resolution: "1080p".to_string(),
+            frame_rate: 30,
+            aspect_ratio: "16:9".to_string(),
+            fit_mode: "cover".to_string(),
+            flip_horizontal: false,
+            opacity: 1.0,
+            display_mode: "background_imag".to_string(),
+            pip_position: "bottom_right".to_string(),
+            pip_size_percent: 25,
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveVideoStatus {
+    pub is_capturing: bool,
+    pub active_device_id: Option<String>,
+    pub active_device_label: Option<String>,
+    pub display_mode: String,
+    pub available_devices: Vec<CameraDeviceInfo>,
+    pub error: Option<String>,
+}
+
+impl Default for LiveVideoStatus {
+    fn default() -> Self {
+        Self {
+            is_capturing: false,
+            active_device_id: None,
+            active_device_label: None,
+            display_mode: "background_imag".to_string(),
+            available_devices: Vec::new(),
+            error: None,
         }
     }
 }

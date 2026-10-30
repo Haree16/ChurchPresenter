@@ -91,6 +91,12 @@ pub enum MacroStep {
         #[serde(default)]
         scene_name: Option<String>,
     },
+    /// Phase 11.3: Live Video / Camera Input Step
+    Camera {
+        command: String,
+        #[serde(default)]
+        device_id: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -183,6 +189,15 @@ pub fn validate_step(step: &MacroStep) -> std::result::Result<(), String> {
             }
             if command == "set_scene" && scene_name.as_deref().unwrap_or("").trim().is_empty() {
                 return Err("choose an OBS scene name.".to_string());
+            }
+            Ok(())
+        }
+        MacroStep::Camera { command, device_id } => {
+            if command.trim().is_empty() {
+                return Err("choose a camera command.".to_string());
+            }
+            if command == "select_device" && device_id.as_deref().unwrap_or("").trim().is_empty() {
+                return Err("choose a camera device.".to_string());
             }
             Ok(())
         }
@@ -387,6 +402,23 @@ pub fn apply_step_core(
                 if cfg.is_enabled {
                     let _ = crate::obs::dispatch_obs_command(&cfg, command, scene_name.as_deref());
                 }
+            }
+            Ok(StepOutcome::Done)
+        }
+        MacroStep::Camera { command, device_id } => {
+            if let Ok(mut cfg) = db.get_live_video_config() {
+                match command.as_str() {
+                    "enable" => cfg.is_active = true,
+                    "disable" => cfg.is_active = false,
+                    "toggle" => cfg.is_active = !cfg.is_active,
+                    "select_device" => {
+                        if let Some(dev) = device_id {
+                            cfg.selected_device_id = Some(dev.clone());
+                        }
+                    }
+                    _ => {}
+                }
+                let _ = db.update_live_video_config(&cfg);
             }
             Ok(StepOutcome::Done)
         }

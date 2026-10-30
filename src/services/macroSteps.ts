@@ -63,6 +63,12 @@ export function validateStep(step: MacroStep): string | null {
         return 'choose an OBS scene name.';
       }
       return null;
+    case 'camera':
+      if (!step.command) return 'choose a camera command.';
+      if (step.command === 'select_device' && !(step.deviceId || '').trim()) {
+        return 'choose a camera device.';
+      }
+      return null;
     default:
       return `unknown step type '${(step as { type: string }).type}'.`;
   }
@@ -116,6 +122,12 @@ export function stepLabel(
       if (step.command === 'start_record') return 'OBS: Start Recording';
       if (step.command === 'stop_record') return 'OBS: Stop Recording';
       return `OBS: ${step.command}`;
+    case 'camera':
+      if (step.command === 'enable') return 'Camera: Turn On';
+      if (step.command === 'disable') return 'Camera: Turn Off';
+      if (step.command === 'toggle') return 'Camera: Toggle Live';
+      if (step.command === 'select_device') return `Camera: Switch Device (${step.deviceId || '…'})`;
+      return `Camera: ${step.command}`;
   }
 }
 
@@ -138,5 +150,7 @@ export function newStep(type: MacroStep['type']): MacroStep {
       return { type, groupId: '' };
     case 'obs':
       return { type, command: 'set_scene', sceneName: '' };
+    case 'camera':
+      return { type, command: 'toggle' };
   }
 }

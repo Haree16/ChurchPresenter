@@ -105,7 +105,8 @@ impl ActionDispatcher {
                 pres_mgr.get_state()
             }
             "start_recording" | "stop_recording" | "toggle_recording"
-            | "obs_start_stream" | "obs_stop_stream" | "obs_start_record" | "obs_stop_record" => {
+            | "obs_start_stream" | "obs_stop_stream" | "obs_start_record" | "obs_stop_record"
+            | "toggle_live_camera" | "switch_next_camera" => {
                 pres_mgr.get_state()
             }
             unknown => return Err(format!("Unsupported action '{}'", unknown)),
@@ -197,6 +198,20 @@ impl ActionDispatcher {
                     }
                     _ => {}
                 }
+            }
+            app.emit(
+                "action:dispatched",
+                serde_json::json!({ "action": action_name, "timestamp": Utc::now().to_rfc3339() }),
+            )
+            .ok();
+            return Ok(pres_mgr.get_state());
+        }
+
+        if action_name == "toggle_live_camera" {
+            if let Ok(mut cfg) = db.get_live_video_config() {
+                cfg.is_active = !cfg.is_active;
+                let _ = db.update_live_video_config(&cfg);
+                app.emit("live-video:config-updated", &cfg).ok();
             }
             app.emit(
                 "action:dispatched",

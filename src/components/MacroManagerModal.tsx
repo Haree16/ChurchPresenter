@@ -54,6 +54,7 @@ const STEP_TYPES: { type: MacroStep['type']; label: string }[] = [
   { type: 'clearGroup', label: 'Clear group' },
   { type: 'autoAdvance', label: 'Auto-advance' },
   { type: 'obs', label: 'OBS Studio' },
+  { type: 'camera', label: 'Camera / Video' },
 ];
 
 export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, onClose }) => {
@@ -247,6 +248,45 @@ export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, on
                     type: 'obs',
                     command: 'set_scene',
                     sceneName: e.target.value,
+                  })
+                }
+              />
+            )}
+          </div>
+        );
+      case 'camera':
+        return (
+          <div style={{ display: 'flex', gap: '6px', flex: 1, alignItems: 'center' }}>
+            <select
+              data-testid="step-camera-command"
+              aria-label="Camera command"
+              style={{ ...field, width: '130px' }}
+              value={step.command}
+              onChange={(e) =>
+                setStep(i, {
+                  type: 'camera',
+                  command: e.target.value as any,
+                  deviceId: step.deviceId ?? '',
+                })
+              }
+            >
+              <option value="toggle">Toggle Live</option>
+              <option value="enable">Turn On</option>
+              <option value="disable">Turn Off</option>
+              <option value="select_device">Select Device</option>
+            </select>
+            {step.command === 'select_device' && (
+              <input
+                data-testid="step-camera-device"
+                aria-label="Camera device ID"
+                placeholder="Device ID or Name"
+                style={{ ...field, flex: 1 }}
+                value={step.deviceId ?? ''}
+                onChange={(e) =>
+                  setStep(i, {
+                    type: 'camera',
+                    command: 'select_device',
+                    deviceId: e.target.value,
                   })
                 }
               />

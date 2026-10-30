@@ -441,6 +441,12 @@ pub fn run() {
             commands::obs_stop_stream,
             commands::obs_start_record,
             commands::obs_stop_record,
+            // Phase 11.3: Live Video Input
+            commands::get_live_video_config,
+            commands::update_live_video_config,
+            commands::toggle_live_camera,
+            commands::get_live_video_status,
+            commands::list_camera_devices,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
