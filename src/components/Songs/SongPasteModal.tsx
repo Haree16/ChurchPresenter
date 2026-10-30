@@ -1,8 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ClipboardPaste, X } from 'lucide-react';
+import { ClipboardPaste, Music, ShieldCheck, X } from 'lucide-react';
 import { SongSection } from '../../types';
 import { api } from '../../services/api';
-import { parseLyricsText } from '../../services/lyricsParser';
+import {
+  parseLyricsText,
+  stripChords,
+  extractSongMetadata,
+} from '../../services/lyricsParser';
 
 interface SongPasteModalProps {
   isOpen: boolean;
@@ -43,10 +47,42 @@ export const SongPasteModal: React.FC<SongPasteModalProps> = ({ isOpen, onClose,
   const [text, setText] = useState('');
   const [title, setTitle] = useState('');
   const [language, setLanguage] = useState('Tamil');
+  const [ccliNumber, setCcliNumber] = useState('');
+  const [author, setAuthor] = useState('');
+  const [copyright, setCopyright] = useState('');
+  const [stripChordsEnabled, setStripChordsEnabled] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const sections = useMemo(() => parseLyricsText(text), [text]);
+  // Metadata extracted from pasted text (CCLI number, authors, copyright, disclaimers stripped)
+  const metadata = useMemo(() => extractSongMetadata(text), [text]);
+
+  const cleanedLyrics = useMemo(() => {
+    let t = metadata.cleanedText;
+    if (stripChordsEnabled) {
+      t = stripChords(t);
+    }
+    return t;
+  }, [metadata.cleanedText, stripChordsEnabled]);
+
+  const sections = useMemo(() => parseLyricsText(cleanedLyrics), [cleanedLyrics]);
+
+  const handleTextChange = (newText: string) => {
+    setText(newText);
+    const meta = extractSongMetadata(newText);
+    if (meta.title && !title) {
+      setTitle(meta.title);
+    }
+    if (meta.ccliNumber && !ccliNumber) {
+      setCcliNumber(meta.ccliNumber);
+    }
+    if (meta.author && !author) {
+      setAuthor(meta.author);
+    }
+    if (meta.copyright && !copyright) {
+      setCopyright(meta.copyright);
+    }
+  };
 
   const pasteFromClipboard = async () => {
     setError(null);
@@ -56,23 +92,25 @@ export const SongPasteModal: React.FC<SongPasteModalProps> = ({ isOpen, onClose,
         setError('The clipboard is empty.');
         return;
       }
-      setText(clip);
+      handleTextChange(clip);
     } catch {
       setError('Could not read the clipboard. Paste into the box with Ctrl+V instead.');
     }
   };
 
-  // Offer the first line as the title until the user types their own.
   useEffect(() => {
     if (!isOpen) {
       setText('');
       setTitle('');
+      setCcliNumber('');
+      setAuthor('');
+      setCopyright('');
       setError(null);
     }
   }, [isOpen]);
 
   const handleCreate = async () => {
-    const name = title.trim() || text.trim().split('\n')[0].slice(0, 60);
+    const name = title.trim() || metadata.title || cleanedLyrics.trim().split('\n')[0].slice(0, 60);
     if (!name || sections.length === 0) {
       setError('Paste some lyrics first.');
       return;
@@ -82,7 +120,15 @@ export const SongPasteModal: React.FC<SongPasteModalProps> = ({ isOpen, onClose,
     try {
       const now = Date.now();
       const created = await api.createSong(
-        { title: name, language, category: 'Worship', tags: [] },
+        {
+          title: name,
+          language,
+          category: 'Worship',
+          tags: [],
+          author: author.trim() || null,
+          copyright: copyright.trim() || null,
+          ccliNumber: ccliNumber.trim() || null,
+        },
         sections.map((s, i) => ({
           id: `sec-${now}-${i}`,
           songId: '',
@@ -119,9 +165,9 @@ export const SongPasteModal: React.FC<SongPasteModalProps> = ({ isOpen, onClose,
     >
       <div
         style={{
-          width: '860px',
-          maxWidth: '95vw',
-          maxHeight: '90vh',
+          width: '920px',
+          maxWidth: '96vw',
+          maxHeight: '92vh',
           backgroundColor: '#090d16',
           borderRadius: '12px',
           border: '1px solid #1e293b',
@@ -149,8 +195,9 @@ export const SongPasteModal: React.FC<SongPasteModalProps> = ({ isOpen, onClose,
           </button>
         </div>
 
-        <div style={{ padding: '16px 20px', display: 'flex', gap: '16px', minHeight: 0, flex: 1 }}>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
+        <div style={{ padding: '16px 20px', display: 'flex', gap: '16px', minHeight: 0, flex: 1, overflow: 'hidden' }}>
+          {/* Left: Input fields and textarea */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0, overflowY: 'auto' }}>
             <div style={{ display: 'flex', gap: '8px' }}>
               <input
                 aria-label="Song title"
@@ -170,37 +217,110 @@ export const SongPasteModal: React.FC<SongPasteModalProps> = ({ isOpen, onClose,
                 <option value="Other">Other</option>
               </select>
             </div>
-            <button type="button" onClick={pasteFromClipboard} style={btn(false)}>
-              <ClipboardPaste size={13} /> Paste from clipboard
-            </button>
+
+            {/* CCLI and Attribution Metadata */}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                aria-label="CCLI number"
+                value={ccliNumber}
+                onChange={(e) => setCcliNumber(e.target.value)}
+                placeholder="CCLI Song # (auto-detected)"
+                style={{ ...field, width: '170px' }}
+              />
+              <input
+                aria-label="Author"
+                value={author}
+                onChange={(e) => setAuthor(e.target.value)}
+                placeholder="Author / Songwriters"
+                style={{ ...field, flex: 1 }}
+              />
+              <input
+                aria-label="Copyright"
+                value={copyright}
+                onChange={(e) => setCopyright(e.target.value)}
+                placeholder="Copyright (e.g. © 2024)"
+                style={{ ...field, flex: 1 }}
+              />
+            </div>
+
+            {/* Action & Options Bar */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+              <button type="button" onClick={pasteFromClipboard} style={btn(false)}>
+                <ClipboardPaste size={13} /> Paste from clipboard
+              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {metadata.ccliNumber && (
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      color: '#34d399',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      backgroundColor: 'rgba(52, 211, 153, 0.1)',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      border: '1px solid rgba(52, 211, 153, 0.25)',
+                    }}
+                  >
+                    <ShieldCheck size={12} /> Detected CCLI #{metadata.ccliNumber}
+                  </span>
+                )}
+                <label
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '12px',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={stripChordsEnabled}
+                    onChange={(e) => setStripChordsEnabled(e.target.checked)}
+                    style={{ accentColor: '#2563eb' }}
+                  />
+                  <Music size={13} /> Strip chords ([G], chord lines)
+                </label>
+              </div>
+            </div>
+
             <textarea
               aria-label="Lyrics"
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => handleTextChange(e.target.value)}
               placeholder={'Paste lyrics here.\nA blank line starts a new slide.\nName a section with a line like "Chorus" or "[Verse 2]".'}
-              style={{ ...field, flex: 1, minHeight: '260px', resize: 'none', lineHeight: 1.45 }}
+              style={{ ...field, flex: 1, minHeight: '260px', resize: 'none', lineHeight: 1.45, fontFamily: 'monospace' }}
             />
           </div>
 
-          <div style={{ width: '280px', overflowY: 'auto', fontSize: '12px' }}>
-            <div style={{ color: '#94a3b8', marginBottom: '8px' }}>
-              {sections.length} section{sections.length === 1 ? '' : 's'}
+          {/* Right: Section cards preview */}
+          <div style={{ width: '280px', overflowY: 'auto', fontSize: '12px', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ color: '#94a3b8', marginBottom: '8px', fontWeight: 600 }}>
+              {sections.length} section{sections.length === 1 ? '' : 's'} recognized
             </div>
-            {sections.map((s, i) => (
-              <div
-                key={i}
-                style={{
-                  marginBottom: '8px',
-                  padding: '8px',
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #1e293b',
-                  borderRadius: '6px',
-                }}
-              >
-                <div style={{ color: '#60a5fa', fontWeight: 600, marginBottom: '4px' }}>{s.label}</div>
-                <div style={{ whiteSpace: 'pre-wrap', color: '#cbd5e1' }}>{s.lyrics}</div>
-              </div>
-            ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1 }}>
+              {sections.map((s, i) => (
+                <div
+                  key={i}
+                  style={{
+                    padding: '8px',
+                    backgroundColor: '#0f172a',
+                    border: '1px solid #1e293b',
+                    borderRadius: '6px',
+                  }}
+                >
+                  <div style={{ color: '#60a5fa', fontWeight: 600, marginBottom: '4px' }}>{s.label}</div>
+                  <div style={{ whiteSpace: 'pre-wrap', color: '#cbd5e1', fontSize: '11px', maxHeight: '100px', overflowY: 'hidden' }}>
+                    {s.lyrics}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ChevronUp,
   ChevronDown,
@@ -9,9 +9,16 @@ import {
   AlignLeft,
   FileText,
   GripVertical,
+  LayoutList,
 } from 'lucide-react';
 import { SongSection, SectionType } from '../../types';
 import { sectionColor } from '../../services/sectionColors';
+import {
+  sectionsToText,
+  textToSections,
+  stripChords,
+  parseLyricsText,
+} from '../../services/lyricsParser';
 
 interface LyricsEditorProps {
   sections: SongSection[];
@@ -79,6 +86,42 @@ export const LyricsEditor: React.FC<LyricsEditorProps> = ({
   disabled = false,
 }) => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [editorMode, setEditorMode] = useState<'cards' | 'reflow'>('cards');
+  const [reflowText, setReflowText] = useState('');
+
+  // Switch to Reflow bulk-edit mode
+  const handleSwitchToReflow = () => {
+    setReflowText(sectionsToText(sections));
+    setEditorMode('reflow');
+  };
+
+  // Switch back to Card mode
+  const handleSwitchToCards = () => {
+    const updated = textToSections(reflowText, sections, sections[0]?.songId);
+    onChange(updated);
+    setEditorMode('cards');
+  };
+
+  const handleReflowChange = (val: string) => {
+    setReflowText(val);
+    const updated = textToSections(val, sections, sections[0]?.songId);
+    onChange(updated);
+  };
+
+  const handleStripChordsInReflow = () => {
+    const stripped = stripChords(reflowText);
+    handleReflowChange(stripped);
+  };
+
+  const handleInsertSectionHeader = (label: string) => {
+    const header = `\n\n[${label}]\n`;
+    const newText = reflowText ? `${reflowText.trimEnd()}${header}` : `[${label}]\n`;
+    handleReflowChange(newText);
+  };
+
+  const reflowParsedCount = useMemo(() => {
+    return parseLyricsText(reflowText).length;
+  }, [reflowText]);
 
   const handleUpdateSection = (
     index: number,
@@ -191,73 +234,246 @@ export const LyricsEditor: React.FC<LyricsEditorProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {/* Quick Add Section Bar */}
+      {/* View Mode & Reflow Header */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
+          justifyContent: 'space-between',
           flexWrap: 'wrap',
           gap: '8px',
-          padding: '12px 14px',
-          backgroundColor: '#0f172a',
+          padding: '8px 12px',
+          backgroundColor: '#090d16',
           borderRadius: '8px',
           border: '1px solid #1e293b',
         }}
       >
-        <span
-          style={{
-            fontSize: '12px',
-            color: '#94a3b8',
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            marginRight: '4px',
-          }}
-        >
-          <Plus size={14} /> Add Section:
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            type="button"
+            onClick={editorMode === 'reflow' ? handleSwitchToCards : undefined}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 600,
+              backgroundColor: editorMode === 'cards' ? '#2563eb' : '#1e293b',
+              border: `1px solid ${editorMode === 'cards' ? '#3b82f6' : '#334155'}`,
+              color: '#f8fafc',
+              cursor: 'pointer',
+            }}
+          >
+            <LayoutList size={14} /> Section Cards ({sections.length})
+          </button>
+          <button
+            type="button"
+            onClick={editorMode === 'cards' ? handleSwitchToReflow : undefined}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 600,
+              backgroundColor: editorMode === 'reflow' ? '#2563eb' : '#1e293b',
+              border: `1px solid ${editorMode === 'reflow' ? '#3b82f6' : '#334155'}`,
+              color: '#f8fafc',
+              cursor: 'pointer',
+            }}
+          >
+            <FileText size={14} /> Bulk Edit as Text (Reflow)
+          </button>
+        </div>
 
-        {(
-          [
-            'verse',
-            'chorus',
-            'bridge',
-            'pre_chorus',
-            'intro',
-            'outro',
-            'refrain',
-            'custom',
-          ] as SectionType[]
-        ).map((type) => {
-          const cfg = SECTION_TYPE_CONFIG[type];
-          return (
+        {editorMode === 'reflow' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+              {reflowParsedCount} section{reflowParsedCount === 1 ? '' : 's'} parsed
+            </span>
             <button
-              key={type}
               type="button"
+              onClick={handleStripChordsInReflow}
               disabled={disabled}
-              onClick={() => handleAddSection(type)}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '4px',
+                gap: '5px',
                 padding: '4px 10px',
                 borderRadius: '6px',
-                backgroundColor: cfg.bgColor,
-                border: `1px solid ${cfg.borderColor}`,
-                color: cfg.color,
+                fontSize: '11px',
+                fontWeight: 600,
+                backgroundColor: '#1e293b',
+                border: '1px solid #334155',
+                color: '#38bdf8',
+                cursor: 'pointer',
+              }}
+              title="Strip [G] chords and chord lines from text"
+            >
+              <Music size={12} /> Strip chords
+            </button>
+          </div>
+        )}
+      </div>
+
+      {editorMode === 'reflow' ? (
+        /* Reflow Bulk Text Editor */
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+            backgroundColor: '#0f172a',
+            borderRadius: '8px',
+            border: '1px solid #1e293b',
+            padding: '14px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+            <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>
+              Insert Section Header:
+            </span>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {['Verse', 'Chorus', 'Bridge', 'Pre-Chorus', 'Outro'].map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => handleInsertSectionHeader(label)}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    backgroundColor: '#1e293b',
+                    border: '1px solid #334155',
+                    color: '#94a3b8',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  + [{label}]
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <textarea
+            aria-label="Bulk lyrics reflow text"
+            value={reflowText}
+            disabled={disabled}
+            onChange={(e) => handleReflowChange(e.target.value)}
+            placeholder={'[Verse 1]\nLine 1\nLine 2\n\n[Chorus]\nChorus line\n\n[Bridge]\nBridge line'}
+            className="multilingual-text"
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              minHeight: '380px',
+              backgroundColor: '#090d16',
+              border: '1px solid #334155',
+              borderRadius: '6px',
+              color: '#f8fafc',
+              padding: '12px 14px',
+              fontSize: '14px',
+              lineHeight: 1.5,
+              fontFamily: 'monospace',
+              resize: 'vertical',
+            }}
+          />
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#64748b' }}>
+            <span>
+              Tip: Label sections with [Verse 1], [Chorus], etc. Blank lines separate slides.
+            </span>
+            <button
+              type="button"
+              onClick={handleSwitchToCards}
+              style={{
+                padding: '4px 12px',
+                borderRadius: '6px',
+                backgroundColor: '#2563eb',
+                border: 'none',
+                color: '#f8fafc',
                 fontSize: '12px',
                 fontWeight: 600,
-                cursor: disabled ? 'not-allowed' : 'pointer',
-                transition: 'all 0.15s ease',
+                cursor: 'pointer',
               }}
-              title={`Add new ${cfg.label}`}
             >
-              + {cfg.label}
+              Done (Back to Cards)
             </button>
-          );
-        })}
-      </div>
+          </div>
+        </div>
+      ) : (
+        /* Section Cards View */
+        <>
+          {/* Quick Add Section Bar */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '8px',
+              padding: '12px 14px',
+              backgroundColor: '#0f172a',
+              borderRadius: '8px',
+              border: '1px solid #1e293b',
+            }}
+          >
+            <span
+              style={{
+                fontSize: '12px',
+                color: '#94a3b8',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginRight: '4px',
+              }}
+            >
+              <Plus size={14} /> Add Section:
+            </span>
+
+            {(
+              [
+                'verse',
+                'chorus',
+                'bridge',
+                'pre_chorus',
+                'intro',
+                'outro',
+                'refrain',
+                'custom',
+              ] as SectionType[]
+            ).map((type) => {
+              const cfg = SECTION_TYPE_CONFIG[type];
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => handleAddSection(type)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    backgroundColor: cfg.bgColor,
+                    border: `1px solid ${cfg.borderColor}`,
+                    color: cfg.color,
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  title={`Add new ${cfg.label}`}
+                >
+                  + {cfg.label}
+                </button>
+              );
+            })}
+          </div>
 
       {/* Sections List */}
       {sections.length === 0 ? (
@@ -566,6 +782,8 @@ export const LyricsEditor: React.FC<LyricsEditorProps> = ({
             );
           })}
         </div>
+      )}
+      </>
       )}
     </div>
   );

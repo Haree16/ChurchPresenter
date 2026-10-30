@@ -8,7 +8,7 @@ Done when: a church can import its songs and a PowerPoint deck, build a service 
 Today: importers and FTS5 search exist; only about six passages are seeded and autocomplete uses a short hard-coded list.
 - Decide which public-domain translations ship (e.g. KJV, WEB) and confirm each licence. Open question for the owner.
 - DONE: autocomplete built from the imported verses (book, chapter, verse) instead of the hard-coded list of ten passages. Backend `bible_suggest.rs` (command `suggest_bible_references`); the Bible lookup box calls it. It only offers books, chapters and verses that exist, so a partial import (like the seeded John 3:16-18) never offers verses that are missing. Matches by name prefix or abbreviation in any language ("jn", "ps", "யோவ"). A space after a book offers its first chapters. Not yet: arrow-key selection in the list (mouse only).
-- Side-by-side translation layout on a slide (two or more translations, with a theme per layout).
+- Side-by-side translation layout on a slide: DONE. `AudienceView` renders dual-translation Bible slides (`chunk[0].translation / sec_tr`) in a side-by-side dual column grid layout with column translation badges and a dividing line.
 - Test against a full USFM and a full Zefania file (not yet done per `plan.md`).
 
 ## 8.2 CCLI reporting
@@ -26,8 +26,8 @@ Status: done, except matching CCLI's official file layout (see below). Migration
 
 ## 8.3 Song import
 - ProPresenter song files and EasyWorship exports, keeping group names. Collect real sample files first.
-- SongSelect: lyric text paste already works via `SongPasteModal`; add chord-stripping and CCLI number capture. Direct SongSelect login is out of scope.
-- Reflow-style bulk edit: edit all lyrics as text and re-split into slides.
+- SongSelect lyric paste & chord-stripping: DONE. `lyricsParser.ts` (`stripChords`, `extractSongMetadata`) and `SongPasteModal.tsx`. Automatically strips inline chords (`[G]`, `[Am7]`, `[D/F#]`) and chord lines above lyrics. Auto-detects and populates CCLI Song #, Author/Songwriters, and Copyright, while cleaning out SongSelect disclaimer boilerplate and church license numbers.
+- Reflow-style bulk edit: DONE. `LyricsEditor.tsx`. Toggle between Section Cards view and "Bulk Edit as Text (Reflow)". Edits all lyrics in a full-height editor with section headers (`[Verse 1]`, `[Chorus]`, `[Bridge]`), quick insertion buttons, one-click "Strip chords", live section count pill, and bidirectional synchronization with structured cards retaining existing IDs and custom group colors.
 
 ## 8.4 Native PowerPoint import
 Status: done. `pptx_import.rs`, command `import_pptx_native`; new crates `zip` (reading the file) and `quick-xml`.

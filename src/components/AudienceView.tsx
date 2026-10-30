@@ -403,31 +403,100 @@ export const AudienceView: React.FC = () => {
       )}
 
       {/* Lyrics / Slide Text Overlay */}
-      <div
-        data-testid="audience-slide-body"
-        className="multilingual-text"
-        style={{
-          position: 'relative',
-          zIndex: 2,
-          width: '100%',
-          textAlign: textAlign,
-          fontSize: getFontSize(currentSlide.fontSize),
-          fontWeight: currentSlide.fontWeight === 'normal' ? 500 : 700,
-          fontFamily: currentSlide.fontFamily || 'var(--font-family)',
-          lineHeight: currentSlide.lineSpacing || 1.35,
-          letterSpacing: '0.015em',
-          textShadow: composeTextShadow(
-            currentSlide.layout,
-            currentSlide.textShadow !== null && currentSlide.textShadow !== undefined
-              ? currentSlide.textShadow
-              : '0 2px 12px rgba(0, 0, 0, 0.85)'
-          ),
-          transition: 'opacity 250ms ease-in-out',
-          opacity: slideOpacity,
-        }}
-      >
-        {currentSlide.body}
-      </div>
+      {(() => {
+        const dualMatch = currentSlide.title?.match(/\((.+?)\s*\/\s*(.+?)\)$/);
+        const dualParts =
+          dualMatch && currentSlide.body?.includes('\n\n')
+            ? (() => {
+                const parts = currentSlide.body.split('\n\n');
+                const mid = Math.ceil(parts.length / 2);
+                return {
+                  leftLabel: dualMatch[1],
+                  leftText: parts.slice(0, mid).join('\n\n'),
+                  rightLabel: dualMatch[2],
+                  rightText: parts.slice(mid).join('\n\n'),
+                };
+              })()
+            : null;
+
+        return (
+          <div
+            data-testid="audience-slide-body"
+            className="multilingual-text"
+            style={{
+              position: 'relative',
+              zIndex: 2,
+              width: '100%',
+              textAlign: textAlign,
+              fontSize: getFontSize(currentSlide.fontSize),
+              fontWeight: currentSlide.fontWeight === 'normal' ? 500 : 700,
+              fontFamily: currentSlide.fontFamily || 'var(--font-family)',
+              lineHeight: currentSlide.lineSpacing || 1.35,
+              letterSpacing: '0.015em',
+              textShadow: composeTextShadow(
+                currentSlide.layout,
+                currentSlide.textShadow !== null && currentSlide.textShadow !== undefined
+                  ? currentSlide.textShadow
+                  : '0 2px 12px rgba(0, 0, 0, 0.85)'
+              ),
+              transition: 'opacity 250ms ease-in-out',
+              opacity: slideOpacity,
+            }}
+          >
+            {dualParts ? (
+              <div
+                data-testid="dual-translation-layout"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '4vw',
+                  width: '100%',
+                  alignItems: 'start',
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8vh' }}>
+                  <div
+                    style={{
+                      fontSize: '0.55em',
+                      fontWeight: 700,
+                      opacity: 0.75,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}
+                  >
+                    {dualParts.leftLabel}
+                  </div>
+                  <div style={{ whiteSpace: 'pre-wrap' }}>{dualParts.leftText}</div>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.8vh',
+                    borderLeft: '1px solid rgba(255, 255, 255, 0.2)',
+                    paddingLeft: '3vw',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '0.55em',
+                      fontWeight: 700,
+                      opacity: 0.75,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}
+                  >
+                    {dualParts.rightLabel}
+                  </div>
+                  <div style={{ whiteSpace: 'pre-wrap' }}>{dualParts.rightText}</div>
+                </div>
+              </div>
+            ) : (
+              currentSlide.body
+            )}
+          </div>
+        );
+      })()}
 
       {/* Extra text boxes, images and shapes placed on the slide */}
       <div style={{ opacity: slideOpacity, transition: 'opacity 250ms ease-in-out' }}>
