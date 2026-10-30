@@ -66,7 +66,12 @@ describe('Phase 9.3: Per-Screen Stage Layouts & Multi-Viewer Panel', () => {
     // 3. Create a customized stage configuration for pastor confidence monitor
     const pastorCfg: StageConfig = {
       id: 'output-stage-pastor',
-      name: "Pastor Pulpit Confidence Monitor",
+      fontSize: 'large',
+      showNotes: true,
+      showTimer: true,
+      showNext: true,
+      highContrast: true,
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       panels: [
         {
@@ -110,8 +115,7 @@ describe('Phase 9.3: Per-Screen Stage Layouts & Multi-Viewer Panel', () => {
     // 5. Querying pastor screen ID now returns its specific layout
     const retrievedPastor = await api.getStageConfig('output-stage-pastor');
     expect(retrievedPastor.id).toBe('output-stage-pastor');
-    expect(retrievedPastor.name).toBe("Pastor Pulpit Confidence Monitor");
-    expect(retrievedPastor.panels.some((p) => p.kind === 'multiviewer')).toBe(true);
+    expect(retrievedPastor.panels!.some((p) => p.kind === 'multiviewer')).toBe(true);
 
     // 6. Delete pastor layout -> fallback to default-stage works again
     await api.deleteStageConfig('output-stage-pastor');
@@ -128,12 +132,17 @@ describe('Phase 9.3: Per-Screen Stage Layouts & Multi-Viewer Panel', () => {
       id: 'output-stage-musicians',
       name: 'Musicians Stage Display',
       outputType: 'stage',
-      displayMode: 'window',
-      bounds: { x: 0, y: 0, width: 1920, height: 1080 },
-      edgeBlending: { enabled: false, leftOverlap: 0, rightOverlap: 0, topOverlap: 0, bottomOverlap: 0 },
-      colorCalibration: { brightness: 1, contrast: 1, gamma: 1 },
-      assignedThemeId: null,
-      customProperties: {},
+      targetMonitorId: null,
+      resolutionWidth: 1920,
+      resolutionHeight: 1080,
+      aspectRatio: '16:9',
+      safeMarginPercent: 4.0,
+      contentSource: 'stage_layout',
+      themeId: null,
+      isEnabled: true,
+      isActive: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     });
 
     const onSavedSpy = vi.fn();
@@ -171,20 +180,25 @@ describe('Phase 9.3: Per-Screen Stage Layouts & Multi-Viewer Panel', () => {
       expect(onSavedSpy).toHaveBeenCalled();
       const savedConfig: StageConfig = onSavedSpy.mock.calls[0][0];
       expect(savedConfig.id).toBe('output-stage-musicians');
-      expect(savedConfig.panels.some((p) => p.kind === 'multiviewer')).toBe(true);
+      expect(savedConfig.panels?.some((p) => p.kind === 'multiviewer')).toBe(true);
     });
 
     // Verify it persisted in api
     const persisted = await api.getStageConfig('output-stage-musicians');
     expect(persisted.id).toBe('output-stage-musicians');
-    expect(persisted.panels.some((p) => p.kind === 'multiviewer')).toBe(true);
+    expect(persisted.panels?.some((p) => p.kind === 'multiviewer')).toBe(true);
   });
 
   it('StageDisplayView renders using screen-specific outputId layout', async () => {
     // Configure special layout for vocalist confidence monitor
     await api.updateStageConfig({
       id: 'output-stage-vocalist',
-      name: 'Vocalist Floor Monitor',
+      fontSize: 'large',
+      showNotes: true,
+      showTimer: true,
+      showNext: true,
+      highContrast: true,
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       panels: [
         {
