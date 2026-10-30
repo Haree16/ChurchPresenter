@@ -14,7 +14,16 @@ pub const MAX_CLEAR_GROUP_NAME_CHARS: usize = 60;
 pub const MAX_CLEAR_GROUPS: usize = 50;
 
 /// Layers a group may clear. `media` covers video and audio playback.
-pub const CLEAR_LAYERS: [&str; 7] = ["slide", "media", "logo", "blackout", "alert", "props", "autoAdvance"];
+pub const CLEAR_LAYERS: [&str; 8] = [
+    "slide",
+    "media",
+    "logo",
+    "blackout",
+    "alert",
+    "props",
+    "autoAdvance",
+    "announcements",
+];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -258,7 +267,7 @@ mod tests {
         let all: Vec<String> = CLEAR_LAYERS.iter().map(|l| l.to_string()).collect();
         let st = mgr.clear_group_core(&all);
         assert!(!st.is_live && !st.is_logo && !st.is_blackout);
-        assert!(st.media_playback.is_none() && st.alert.is_none() && st.active_props.is_empty() && st.auto_advance.is_none());
+        assert!(st.media_playback.is_none() && st.alert.is_none() && st.active_props.is_empty() && st.auto_advance.is_none() && st.announcements.is_none());
     }
 
     #[test]

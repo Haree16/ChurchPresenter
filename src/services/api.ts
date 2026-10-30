@@ -1706,6 +1706,11 @@ class MockDataStore {
           if (this.autoAdvanceTimer) clearTimeout(this.autoAdvanceTimer);
           this.autoAdvanceTimer = null;
           break;
+        case 'announcements':
+          this.state.announcements = null;
+          if (this.announcementsAutoAdvanceTimer) clearTimeout(this.announcementsAutoAdvanceTimer);
+          this.announcementsAutoAdvanceTimer = null;
+          break;
       }
     }
     this.notify();
@@ -1870,6 +1875,7 @@ class MockDataStore {
   // ---- automation (macros and auto-advance)
   private macros: Macro[] = [];
   private autoAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
+  private announcementsAutoAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
   private macroRunId: string | null = null;
 
   public async listMacros(): Promise<Macro[]> {
@@ -2009,6 +2015,9 @@ class MockDataStore {
     this.state.autoAdvance = null;
     if (this.autoAdvanceTimer) clearTimeout(this.autoAdvanceTimer);
     this.autoAdvanceTimer = null;
+    this.state.announcements = null;
+    if (this.announcementsAutoAdvanceTimer) clearTimeout(this.announcementsAutoAdvanceTimer);
+    this.announcementsAutoAdvanceTimer = null;
     this.notify();
     return this.state;
   }
@@ -2215,6 +2224,9 @@ class MockDataStore {
     this.state.autoAdvance = null;
     if (this.autoAdvanceTimer) clearTimeout(this.autoAdvanceTimer);
     this.autoAdvanceTimer = null;
+    this.state.announcements = null;
+    if (this.announcementsAutoAdvanceTimer) clearTimeout(this.announcementsAutoAdvanceTimer);
+    this.announcementsAutoAdvanceTimer = null;
     this.notify();
     return this.state;
   }
@@ -2332,6 +2344,170 @@ class MockDataStore {
       this.state.isLogo = false;
       this.notify();
     }
+    return this.state;
+  }
+
+  public async setAnnouncementsPresentation(
+    presentationId: string,
+    targetOutputIds: string[] = [],
+    intervalSeconds?: number | null,
+    isLooping = true
+  ): Promise<PresentationState> {
+    const pres = this.presentations.find((p) => p.id === presentationId);
+    if (!pres) throw new Error('Presentation not found.');
+    const slides = this.slides
+      .filter((s) => s.presentationId === presentationId)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    if (slides.length === 0) throw new Error('That presentation has no slides.');
+
+    if (this.announcementsAutoAdvanceTimer) {
+      clearTimeout(this.announcementsAutoAdvanceTimer);
+      this.announcementsAutoAdvanceTimer = null;
+    }
+
+    const first = slides[0];
+    const next = slides.length > 1 ? slides[1] : (isLooping ? first : null);
+    const holdMs = intervalSeconds && intervalSeconds > 0 ? intervalSeconds * 1000 : null;
+
+    this.state.announcements = {
+      presentationId,
+      slideId: first.id,
+      slideIndex: 0,
+      totalSlides: slides.length,
+      currentSlide: { ...first },
+      nextSlide: next ? { ...next } : null,
+      isLive: true,
+      isLooping,
+      autoAdvanceSeconds: intervalSeconds ?? null,
+      nextAdvanceAtMs: holdMs ? Date.now() + holdMs : null,
+      targetOutputIds,
+    };
+
+    if (intervalSeconds && intervalSeconds > 0) {
+      this.scheduleAnnouncementsTick(intervalSeconds * 1000);
+    }
+
+    this.notify();
+    return this.state;
+  }
+
+  private scheduleAnnouncementsTick(delayMs: number): void {
+    if (this.announcementsAutoAdvanceTimer) {
+      clearTimeout(this.announcementsAutoAdvanceTimer);
+    }
+    this.announcementsAutoAdvanceTimer = setTimeout(async () => {
+      if (this.state.announcements?.isLive && this.state.announcements.autoAdvanceSeconds) {
+        await this.nextAnnouncementsSlide();
+      }
+    }, delayMs);
+  }
+
+  public async setAnnouncementsSlide(slideId: string): Promise<PresentationState> {
+    if (!this.state.announcements?.presentationId) {
+      throw new Error('No announcements presentation is currently active.');
+    }
+    const slides = this.slides
+      .filter((s) => s.presentationId === this.state.announcements!.presentationId)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const idx = slides.findIndex((s) => s.id === slideId);
+    if (idx < 0) throw new Error('Slide not found in announcements presentation.');
+
+    const cur = slides[idx];
+    const next = idx + 1 < slides.length ? slides[idx + 1] : (this.state.announcements.isLooping ? slides[0] : null);
+
+    this.state.announcements.slideId = cur.id;
+    this.state.announcements.slideIndex = idx;
+    this.state.announcements.currentSlide = { ...cur };
+    this.state.announcements.nextSlide = next ? { ...next } : null;
+    this.state.announcements.isLive = true;
+
+    if (this.state.announcements.autoAdvanceSeconds && this.state.announcements.autoAdvanceSeconds > 0) {
+      this.state.announcements.nextAdvanceAtMs = Date.now() + this.state.announcements.autoAdvanceSeconds * 1000;
+      this.scheduleAnnouncementsTick(this.state.announcements.autoAdvanceSeconds * 1000);
+    }
+
+    this.notify();
+    return this.state;
+  }
+
+  public async nextAnnouncementsSlide(): Promise<PresentationState> {
+    if (!this.state.announcements?.presentationId) {
+      throw new Error('No announcements presentation is currently active.');
+    }
+    const slides = this.slides
+      .filter((s) => s.presentationId === this.state.announcements!.presentationId)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    if (slides.length === 0) return this.state;
+
+    const nextIdx = this.state.announcements.slideIndex + 1;
+    if (nextIdx < slides.length) {
+      const cur = slides[nextIdx];
+      const next = nextIdx + 1 < slides.length ? slides[nextIdx + 1] : (this.state.announcements.isLooping ? slides[0] : null);
+      this.state.announcements.slideIndex = nextIdx;
+      this.state.announcements.slideId = cur.id;
+      this.state.announcements.currentSlide = { ...cur };
+      this.state.announcements.nextSlide = next ? { ...next } : null;
+    } else if (this.state.announcements.isLooping) {
+      const cur = slides[0];
+      const next = slides.length > 1 ? slides[1] : cur;
+      this.state.announcements.slideIndex = 0;
+      this.state.announcements.slideId = cur.id;
+      this.state.announcements.currentSlide = { ...cur };
+      this.state.announcements.nextSlide = { ...next };
+    }
+
+    if (this.state.announcements.autoAdvanceSeconds && this.state.announcements.autoAdvanceSeconds > 0) {
+      this.state.announcements.nextAdvanceAtMs = Date.now() + this.state.announcements.autoAdvanceSeconds * 1000;
+      this.scheduleAnnouncementsTick(this.state.announcements.autoAdvanceSeconds * 1000);
+    }
+
+    this.notify();
+    return this.state;
+  }
+
+  public async previousAnnouncementsSlide(): Promise<PresentationState> {
+    if (!this.state.announcements?.presentationId) {
+      throw new Error('No announcements presentation is currently active.');
+    }
+    const slides = this.slides
+      .filter((s) => s.presentationId === this.state.announcements!.presentationId)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    if (slides.length === 0) return this.state;
+
+    if (this.state.announcements.slideIndex > 0) {
+      const prevIdx = this.state.announcements.slideIndex - 1;
+      const cur = slides[prevIdx];
+      const next = slides[prevIdx + 1];
+      this.state.announcements.slideIndex = prevIdx;
+      this.state.announcements.slideId = cur.id;
+      this.state.announcements.currentSlide = { ...cur };
+      this.state.announcements.nextSlide = { ...next };
+    } else if (this.state.announcements.isLooping) {
+      const lastIdx = slides.length - 1;
+      const cur = slides[lastIdx];
+      const next = slides[0];
+      this.state.announcements.slideIndex = lastIdx;
+      this.state.announcements.slideId = cur.id;
+      this.state.announcements.currentSlide = { ...cur };
+      this.state.announcements.nextSlide = { ...next };
+    }
+
+    if (this.state.announcements.autoAdvanceSeconds && this.state.announcements.autoAdvanceSeconds > 0) {
+      this.state.announcements.nextAdvanceAtMs = Date.now() + this.state.announcements.autoAdvanceSeconds * 1000;
+      this.scheduleAnnouncementsTick(this.state.announcements.autoAdvanceSeconds * 1000);
+    }
+
+    this.notify();
+    return this.state;
+  }
+
+  public async clearAnnouncements(): Promise<PresentationState> {
+    if (this.announcementsAutoAdvanceTimer) {
+      clearTimeout(this.announcementsAutoAdvanceTimer);
+      this.announcementsAutoAdvanceTimer = null;
+    }
+    this.state.announcements = null;
+    this.notify();
     return this.state;
   }
 
@@ -5020,6 +5196,63 @@ export const api = {
       return await invoke<PresentationState>('previous_slide');
     }
     return mockStore.previousSlide();
+  },
+
+  setAnnouncementsPresentation: async (
+    presentationId: string,
+    targetOutputIds: string[] = [],
+    autoAdvanceSeconds?: number | null,
+    isLooping: boolean = true
+  ): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('set_announcements_presentation', {
+        presentationId,
+        presentation_id: presentationId,
+        targetOutputIds,
+        target_output_ids: targetOutputIds,
+        autoAdvanceSeconds: autoAdvanceSeconds ?? null,
+        auto_advance_seconds: autoAdvanceSeconds ?? null,
+        isLooping,
+        is_looping: isLooping,
+      });
+    }
+    return mockStore.setAnnouncementsPresentation(
+      presentationId,
+      targetOutputIds,
+      autoAdvanceSeconds,
+      isLooping
+    );
+  },
+
+  setAnnouncementsSlide: async (slideId: string): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('set_announcements_slide', {
+        slideId,
+        slide_id: slideId,
+      });
+    }
+    return mockStore.setAnnouncementsSlide(slideId);
+  },
+
+  nextAnnouncementsSlide: async (): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('next_announcements_slide');
+    }
+    return mockStore.nextAnnouncementsSlide();
+  },
+
+  previousAnnouncementsSlide: async (): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('previous_announcements_slide');
+    }
+    return mockStore.previousAnnouncementsSlide();
+  },
+
+  clearAnnouncements: async (): Promise<PresentationState> => {
+    if (isTauri()) {
+      return await invoke<PresentationState>('clear_announcements');
+    }
+    return mockStore.clearAnnouncements();
   },
 
   getAvailableMonitors: async (): Promise<DisplayMonitor[]> => {

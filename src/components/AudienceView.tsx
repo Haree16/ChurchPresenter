@@ -107,7 +107,18 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
     }
   }, [screenThemeId]);
 
-  const { isLive, currentSlide, mediaPlayback } = presentationState;
+  const isAnnouncementsTarget =
+    !!presentationState.announcements?.isLive &&
+    !!presentationState.announcements.currentSlide &&
+    (presentationState.announcements.targetOutputIds?.length === 0 ||
+      presentationState.announcements.targetOutputIds?.includes(effectiveOutputId));
+
+  const currentSlide = isAnnouncementsTarget
+    ? presentationState.announcements!.currentSlide
+    : presentationState.currentSlide;
+
+  const isLive = isAnnouncementsTarget ? true : presentationState.isLive;
+  const { mediaPlayback } = presentationState;
   // re-read the custom logo each time the logo screen is shown
   const logoUrl = useLogoUrl(!!isLogo);
   // props and alerts show over every kind of output (slide, logo, blackout, video)

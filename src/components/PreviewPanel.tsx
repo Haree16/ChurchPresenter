@@ -4,6 +4,7 @@ import { AutoAdvanceControl } from './AutoAdvanceControl';
 import { LooksControl } from './LooksControl';
 import { ClearGroupsControl } from './ClearGroupsControl';
 import { MacroControl } from './MacroControl';
+import { AnnouncementsControl } from './AnnouncementsControl';
 import { SlideElements } from './SlideElements';
 import { backgroundImageCss } from '../services/backgroundMedia';
 import { composeTextShadow, layoutPaddingPercent } from '../services/slideLayout';
@@ -421,6 +422,8 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
           <ClearGroupsControl />
 
           <AutoAdvanceControl presentationState={presentationState} />
+
+          <AnnouncementsControl presentationState={presentationState} />
 
           <MacroControl presentationState={presentationState} />
 

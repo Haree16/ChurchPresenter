@@ -16,10 +16,14 @@ Today a Look (`looks.rs`) stores logo, blackout and props globally.
   - `AudienceView` respects per-screen layer overrides and theme overrides based on its target `outputId`.
 - **Verification**: All Rust and Vitest test suites pass (including tests proving that applying a Look to one output leaves other outputs untouched).
 
-## 9.2 Announcements layer
-- A second presentation or service item that plays on chosen outputs while the main one is operated separately (state split in `presentation.rs`).
-- Operator panel: a second live slot with its own next/previous; clears independently; included in Clear All.
-- Typical use: looping foyer slides before service.
+## 9.2 Announcements layer [COMPLETED]
+- **Implemented**: Added `AnnouncementsState` to `PresentationState` in `models.rs` and frontend `types/index.ts`.
+- **Independent State Execution**: In `presentation.rs`, added `set_announcements_presentation_core`, `set_announcements_slide_core`, `next_announcements_slide_core`, `previous_announcements_slide_core`, and `clear_announcements_core`.
+- **Target Outputs Filtering**: Announcements layer routes specifically to designated target outputs (e.g. Foyer, Stage, Overlay). Sanctuary/audience outputs continue rendering the main sermon/worship presentation unchanged.
+- **Looping & Auto-Advance**: Configurable loop at end and background auto-advance ticker thread (`spawn_announcements_loop`) that automatically advances foyer slides on schedule.
+- **Clearing Logic**: Clears independently via operator panel and is automatically included in `clear_all` and `clear_group` (with `'announcements'` layer).
+- **Operator Panel**: Added `AnnouncementsControl` component to `PreviewPanel`, displaying second live slot thumbnail, slide position (`Slide X of Y`), interval control, loop toggle, and dedicated next/prev/clear buttons.
+- **Verification**: Verified with both Cargo unit tests and Vitest component/integration test suite (`tests/announcements-layer.test.tsx`). Main presentation and announcements layer operate independently without collisions.
 
 ## 9.3 Per-screen stage layouts
 Today there is one stage layout for all stage screens (`stage_layout.rs`).

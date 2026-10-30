@@ -686,6 +686,64 @@ pub async fn previous_slide(
     Ok(pres_mgr.previous_slide(&app, &db))
 }
 
+// ================= Announcements Layer =================
+
+#[tauri::command]
+pub async fn set_announcements_presentation(
+    presentation_id: String,
+    target_output_ids: Option<Vec<String>>,
+    auto_advance_seconds: Option<u32>,
+    is_looping: Option<bool>,
+    pres_mgr: State<'_, PresentationManager>,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    pres_mgr.set_announcements_presentation(
+        &app,
+        &db,
+        &presentation_id,
+        target_output_ids.unwrap_or_default(),
+        auto_advance_seconds,
+        is_looping.unwrap_or(true),
+    )
+}
+
+#[tauri::command]
+pub async fn set_announcements_slide(
+    slide_id: String,
+    pres_mgr: State<'_, PresentationManager>,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    pres_mgr.set_announcements_slide(&app, &db, &slide_id)
+}
+
+#[tauri::command]
+pub async fn next_announcements_slide(
+    pres_mgr: State<'_, PresentationManager>,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    pres_mgr.next_announcements_slide(&app, &db)
+}
+
+#[tauri::command]
+pub async fn previous_announcements_slide(
+    pres_mgr: State<'_, PresentationManager>,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    pres_mgr.previous_announcements_slide(&app, &db)
+}
+
+#[tauri::command]
+pub async fn clear_announcements(
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<PresentationState, String> {
+    Ok(pres_mgr.clear_announcements(&app))
+}
+
 // ================= Display Controls =================
 
 #[tauri::command]

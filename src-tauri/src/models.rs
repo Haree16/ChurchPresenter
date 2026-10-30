@@ -129,6 +129,31 @@ pub struct PresentationState {
     /// Per-output layer overrides (logo, blackout, props, theme). If an output isn't listed, it uses global layers.
     #[serde(default)]
     pub screen_layers: std::collections::HashMap<String, ScreenLayers>,
+    /// Announcements / foyer loop layer: plays concurrently on designated outputs while the main presentation runs separately.
+    #[serde(default)]
+    pub announcements: Option<AnnouncementsState>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnouncementsState {
+    pub presentation_id: Option<String>,
+    pub service_id: Option<String>,
+    pub item_id: Option<String>,
+    pub slide_id: Option<String>,
+    pub slide_index: usize,
+    pub total_slides: usize,
+    pub current_slide: Option<Slide>,
+    pub next_slide: Option<Slide>,
+    pub is_live: bool,
+    #[serde(default)]
+    pub is_looping: bool,
+    #[serde(default)]
+    pub auto_advance_seconds: Option<u32>,
+    #[serde(default)]
+    pub next_advance_at_ms: Option<i64>,
+    #[serde(default)]
+    pub target_output_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -168,6 +193,7 @@ impl Default for PresentationState {
             auto_advance: None,
             running_macro: None,
             screen_layers: std::collections::HashMap::new(),
+            announcements: None,
         }
     }
 }

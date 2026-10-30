@@ -229,6 +229,11 @@ pub fn run() {
             commands::clear_all,
             commands::next_slide,
             commands::previous_slide,
+            commands::set_announcements_presentation,
+            commands::set_announcements_slide,
+            commands::next_announcements_slide,
+            commands::previous_announcements_slide,
+            commands::clear_announcements,
             // Display & Audience
             commands::get_available_monitors,
             commands::open_audience_window,

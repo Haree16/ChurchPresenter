@@ -63,6 +63,34 @@ pub fn spawn_auto_advance_loop(app: AppHandle, db: DbManager, pres: Presentation
     });
 }
 
+/// Runs auto-advance loop for announcements/foyer presentation on a background thread.
+pub fn spawn_announcements_loop(app: AppHandle, db: DbManager, pres: PresentationManager, pres_id: String) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        let (due, is_active) = {
+            let state = pres.state.lock().unwrap();
+            let Some(ann) = &state.announcements else { break; };
+            if ann.presentation_id.as_deref() != Some(&pres_id) || !ann.is_live {
+                break;
+            }
+            let Some(sec) = ann.auto_advance_seconds else { break; };
+            if sec == 0 { break; }
+            let due = ann.next_advance_at_ms.map_or(false, |next| now_ms() >= next);
+            (due, true)
+        };
+
+        if !is_active {
+            break;
+        }
+
+        if due {
+            if let Ok(st) = pres.next_announcements_slide_core(&db, now_ms()) {
+                app.emit("presentation:state-changed", &st).ok();
+            }
+        }
+    });
+}
+
 /// Starts auto-advance and the thread that drives it.
 pub fn start_auto_advance_running(
     app: &AppHandle,
@@ -630,7 +658,7 @@ impl PresentationManager {
     }
 
     /// Clears the output completely: no slide, no media, no logo, no blackout toggle left on.
-    /// The audience screen ends up plain black.
+    /// The audience screen ends up plain black. Also clears the announcements layer.
     pub fn clear_all_core(&self) -> PresentationState {
         let mut state = self.state.lock().unwrap();
         state.is_live = false;
@@ -640,6 +668,7 @@ impl PresentationManager {
         state.alert = None;
         state.active_props.clear();
         state.auto_advance = None;
+        state.announcements = None;
         state.clone()
     }
 
@@ -655,6 +684,7 @@ impl PresentationManager {
                 "alert" => state.alert = None,
                 "props" => state.active_props.clear(),
                 "autoAdvance" => state.auto_advance = None,
+                "announcements" => state.announcements = None,
                 _ => {}
             }
         }
@@ -665,6 +695,249 @@ impl PresentationManager {
         let cloned = self.clear_all_core();
         app.emit("presentation:state-changed", &cloned).ok();
         cloned
+    }
+
+    pub fn clear_announcements_core(&self) -> PresentationState {
+        let mut state = self.state.lock().unwrap();
+        state.announcements = None;
+        state.clone()
+    }
+
+    pub fn clear_announcements(&self, app: &AppHandle) -> PresentationState {
+        let cloned = self.clear_announcements_core();
+        app.emit("presentation:state-changed", &cloned).ok();
+        cloned
+    }
+
+    /// Starts an announcements presentation (or foyer loop) running on target outputs.
+    pub fn set_announcements_presentation_core(
+        &self,
+        db: &DbManager,
+        presentation_id: &str,
+        target_output_ids: Vec<String>,
+        auto_advance_seconds: Option<u32>,
+        is_looping: bool,
+        now_ms: i64,
+    ) -> Result<PresentationState, String> {
+        let slides = db
+            .get_slides(presentation_id)
+            .map_err(|e| e.to_string())?;
+
+        if slides.is_empty() {
+            return Err("That presentation has no slides.".to_string());
+        }
+
+        let first_slide = slides[0].clone();
+        let next_slide = slides.get(1).cloned();
+        let hold_ms = auto_advance_seconds.map(|s| i64::from(s.max(1)) * 1000);
+
+        let mut state = self.state.lock().unwrap();
+        state.announcements = Some(crate::models::AnnouncementsState {
+            presentation_id: Some(presentation_id.to_string()),
+            service_id: None,
+            item_id: None,
+            slide_id: Some(first_slide.id.clone()),
+            slide_index: 0,
+            total_slides: slides.len(),
+            current_slide: Some(first_slide),
+            next_slide,
+            is_live: true,
+            is_looping,
+            auto_advance_seconds,
+            next_advance_at_ms: hold_ms.map(|h| now_ms + h),
+            target_output_ids,
+        });
+
+        Ok(state.clone())
+    }
+
+    pub fn set_announcements_presentation(
+        &self,
+        app: &AppHandle,
+        db: &DbManager,
+        presentation_id: &str,
+        target_output_ids: Vec<String>,
+        auto_advance_seconds: Option<u32>,
+        is_looping: bool,
+    ) -> Result<PresentationState, String> {
+        let state = self.set_announcements_presentation_core(
+            db,
+            presentation_id,
+            target_output_ids,
+            auto_advance_seconds,
+            is_looping,
+            now_ms(),
+        )?;
+        app.emit("presentation:state-changed", &state).ok();
+
+        if let Some(ann) = &state.announcements {
+            if let Some(sec) = ann.auto_advance_seconds {
+                if sec > 0 {
+                    spawn_announcements_loop(
+                        app.clone(),
+                        db.clone(),
+                        self.clone(),
+                        presentation_id.to_string(),
+                    );
+                }
+            }
+        }
+
+        Ok(state)
+    }
+
+    pub fn set_announcements_slide_core(
+        &self,
+        db: &DbManager,
+        slide_id: &str,
+        now_ms: i64,
+    ) -> Result<PresentationState, String> {
+        let mut state = self.state.lock().unwrap();
+        let Some(ann) = state.announcements.as_mut() else {
+            return Err("No announcements presentation is currently active.".to_string());
+        };
+
+        let Some(pres_id) = &ann.presentation_id else {
+            return Err("No announcements presentation id.".to_string());
+        };
+
+        let slides = db.get_slides(pres_id).map_err(|e| e.to_string())?;
+        let Some(idx) = slides.iter().position(|s| s.id == slide_id) else {
+            return Err("Slide not found in announcements presentation.".to_string());
+        };
+
+        ann.slide_id = Some(slide_id.to_string());
+        ann.slide_index = idx;
+        ann.current_slide = Some(slides[idx].clone());
+        ann.next_slide = if idx + 1 < slides.len() {
+            slides.get(idx + 1).cloned()
+        } else if ann.is_looping {
+            slides.first().cloned()
+        } else {
+            None
+        };
+        ann.is_live = true;
+        if let Some(sec) = ann.auto_advance_seconds {
+            ann.next_advance_at_ms = Some(now_ms + i64::from(sec.max(1)) * 1000);
+        }
+
+        Ok(state.clone())
+    }
+
+    pub fn set_announcements_slide(
+        &self,
+        app: &AppHandle,
+        db: &DbManager,
+        slide_id: &str,
+    ) -> Result<PresentationState, String> {
+        let state = self.set_announcements_slide_core(db, slide_id, now_ms())?;
+        app.emit("presentation:state-changed", &state).ok();
+        Ok(state)
+    }
+
+    pub fn next_announcements_slide_core(
+        &self,
+        db: &DbManager,
+        now_ms: i64,
+    ) -> Result<PresentationState, String> {
+        let mut state = self.state.lock().unwrap();
+        let Some(ann) = state.announcements.as_mut() else {
+            return Err("No announcements presentation is currently active.".to_string());
+        };
+
+        let Some(pres_id) = &ann.presentation_id else {
+            return Err("No announcements presentation id.".to_string());
+        };
+
+        let slides = db.get_slides(pres_id).map_err(|e| e.to_string())?;
+        if slides.is_empty() {
+            return Ok(state.clone());
+        }
+
+        let next_idx = ann.slide_index + 1;
+        if next_idx < slides.len() {
+            ann.slide_index = next_idx;
+            ann.slide_id = Some(slides[next_idx].id.clone());
+            ann.current_slide = Some(slides[next_idx].clone());
+            ann.next_slide = if next_idx + 1 < slides.len() {
+                slides.get(next_idx + 1).cloned()
+            } else if ann.is_looping {
+                slides.first().cloned()
+            } else {
+                None
+            };
+        } else if ann.is_looping {
+            ann.slide_index = 0;
+            ann.slide_id = Some(slides[0].id.clone());
+            ann.current_slide = Some(slides[0].clone());
+            ann.next_slide = slides.get(1).cloned();
+        }
+
+        if let Some(sec) = ann.auto_advance_seconds {
+            ann.next_advance_at_ms = Some(now_ms + i64::from(sec.max(1)) * 1000);
+        }
+
+        Ok(state.clone())
+    }
+
+    pub fn next_announcements_slide(
+        &self,
+        app: &AppHandle,
+        db: &DbManager,
+    ) -> Result<PresentationState, String> {
+        let state = self.next_announcements_slide_core(db, now_ms())?;
+        app.emit("presentation:state-changed", &state).ok();
+        Ok(state)
+    }
+
+    pub fn previous_announcements_slide_core(
+        &self,
+        db: &DbManager,
+        now_ms: i64,
+    ) -> Result<PresentationState, String> {
+        let mut state = self.state.lock().unwrap();
+        let Some(ann) = state.announcements.as_mut() else {
+            return Err("No announcements presentation is currently active.".to_string());
+        };
+
+        let Some(pres_id) = &ann.presentation_id else {
+            return Err("No announcements presentation id.".to_string());
+        };
+
+        let slides = db.get_slides(pres_id).map_err(|e| e.to_string())?;
+        if slides.is_empty() {
+            return Ok(state.clone());
+        }
+
+        if ann.slide_index > 0 {
+            let prev_idx = ann.slide_index - 1;
+            ann.slide_index = prev_idx;
+            ann.slide_id = Some(slides[prev_idx].id.clone());
+            ann.current_slide = Some(slides[prev_idx].clone());
+            ann.next_slide = slides.get(prev_idx + 1).cloned();
+        } else if ann.is_looping {
+            let last_idx = slides.len() - 1;
+            ann.slide_index = last_idx;
+            ann.slide_id = Some(slides[last_idx].id.clone());
+            ann.current_slide = Some(slides[last_idx].clone());
+            ann.next_slide = slides.first().cloned();
+        }
+
+        if let Some(sec) = ann.auto_advance_seconds {
+            ann.next_advance_at_ms = Some(now_ms + i64::from(sec.max(1)) * 1000);
+        }
+
+        Ok(state.clone())
+    }
+
+    pub fn previous_announcements_slide(
+        &self,
+        app: &AppHandle,
+        db: &DbManager,
+    ) -> Result<PresentationState, String> {
+        let state = self.previous_announcements_slide_core(db, now_ms())?;
+        app.emit("presentation:state-changed", &state).ok();
+        Ok(state)
     }
 
     pub fn toggle_logo_core(&self) -> bool {
@@ -1331,5 +1604,111 @@ mod tests {
         // each manager keeps its own history
         let other = PresentationManager::new();
         assert!(!other.is_action_bounce("next_slide", 1_221));
+    }
+
+    fn make_test_slide(pres_id: &str, title: &str) -> crate::models::Slide {
+        crate::models::Slide {
+            id: String::new(),
+            presentation_id: pres_id.into(),
+            sort_order: 0,
+            title: title.into(),
+            body: format!("{title} body"),
+            background_color: "#000000".into(),
+            foreground_color: "#ffffff".into(),
+            font_size: "medium".into(),
+            text_alignment: "center".into(),
+            theme_override: None,
+            background_image: None,
+            overlay_color: None,
+            line_spacing: None,
+            text_shadow: None,
+            vertical_alignment: None,
+            font_family: None,
+            font_weight: None,
+            group_label: None,
+            group_color: None,
+            layout: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_announcements_layer_runs_independently_and_loops() {
+        let db = DbManager::new_in_memory().unwrap();
+        let pres_main = db.create_presentation("Sunday Service", "Main", None).unwrap();
+        let s_m1 = db.create_slide(&make_test_slide(&pres_main.id, "M1")).unwrap();
+        let s_m2 = db.create_slide(&make_test_slide(&pres_main.id, "M2")).unwrap();
+
+        let pres_foyer = db.create_presentation("Foyer Announcements", "Lobby", None).unwrap();
+        let s_f1 = db.create_slide(&make_test_slide(&pres_foyer.id, "F1")).unwrap();
+        let s_f2 = db.create_slide(&make_test_slide(&pres_foyer.id, "F2")).unwrap();
+
+        let mgr = PresentationManager::new();
+        // Start main presentation
+        mgr.set_live_slide_core(&db, &pres_main.id, &s_m1.id);
+        assert_eq!(mgr.get_state().current_slide_id.as_deref(), Some(s_m1.id.as_str()));
+        assert!(mgr.get_state().announcements.is_none());
+
+        // Start announcements layer on foyer output
+        let st = mgr.set_announcements_presentation_core(
+            &db,
+            &pres_foyer.id,
+            vec!["output-foyer".to_string()],
+            Some(10),
+            true,
+            1_000,
+        ).unwrap();
+
+        let ann = st.announcements.as_ref().unwrap();
+        assert_eq!(ann.presentation_id.as_deref(), Some(pres_foyer.id.as_str()));
+        assert_eq!(ann.slide_id.as_deref(), Some(s_f1.id.as_str()));
+        assert_eq!(ann.target_output_ids, vec!["output-foyer".to_string()]);
+        assert_eq!(ann.next_slide.as_ref().unwrap().id, s_f2.id);
+
+        // Advance main presentation -> announcements remain untouched
+        mgr.next_slide_core(&db);
+        assert_eq!(mgr.get_state().current_slide_id.as_deref(), Some(s_m2.id.as_str()));
+        assert_eq!(mgr.get_state().announcements.as_ref().unwrap().slide_id.as_deref(), Some(s_f1.id.as_str()));
+
+        // Advance announcements layer -> main slide remains untouched
+        let st2 = mgr.next_announcements_slide_core(&db, 2_000).unwrap();
+        assert_eq!(st2.announcements.as_ref().unwrap().slide_id.as_deref(), Some(s_f2.id.as_str()));
+        assert_eq!(st2.current_slide_id.as_deref(), Some(s_m2.id.as_str()));
+
+        // Advance announcements layer again -> loops back to F1
+        let st3 = mgr.next_announcements_slide_core(&db, 3_000).unwrap();
+        assert_eq!(st3.announcements.as_ref().unwrap().slide_id.as_deref(), Some(s_f1.id.as_str()));
+        assert_eq!(st3.announcements.as_ref().unwrap().slide_index, 0);
+
+        // Previous announcements layer -> wraps to last slide F2
+        let st4 = mgr.previous_announcements_slide_core(&db, 4_000).unwrap();
+        assert_eq!(st4.announcements.as_ref().unwrap().slide_id.as_deref(), Some(s_f2.id.as_str()));
+        assert_eq!(st4.announcements.as_ref().unwrap().slide_index, 1);
+    }
+
+    #[test]
+    fn test_announcements_clears_independently_and_with_clear_all() {
+        let db = DbManager::new_in_memory().unwrap();
+        let pres = db.create_presentation("Lobby", "Announcements", None).unwrap();
+        let s1 = db.create_slide(&make_test_slide(&pres.id, "1")).unwrap();
+
+        let mgr = PresentationManager::new();
+        mgr.set_live_slide_core(&db, &pres.id, &s1.id);
+        mgr.set_announcements_presentation_core(&db, &pres.id, vec!["foyer".to_string()], None, true, 0).unwrap();
+
+        assert!(mgr.get_state().is_live);
+        assert!(mgr.get_state().announcements.is_some());
+
+        // Independent clear leaves main presentation live
+        let cleared_ann = mgr.clear_announcements_core();
+        assert!(cleared_ann.announcements.is_none());
+        assert!(cleared_ann.is_live);
+
+        // Clear all clears both
+        mgr.set_announcements_presentation_core(&db, &pres.id, vec!["foyer".to_string()], None, true, 0).unwrap();
+        let cleared_all = mgr.clear_all_core();
+        assert!(!cleared_all.is_live);
+        assert!(cleared_all.announcements.is_none());
     }
 }

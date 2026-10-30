@@ -162,7 +162,7 @@ export type MacroStep =
 
 export type KeyBindingTargetType = 'action' | 'prop' | 'macro' | 'look' | 'clearGroup';
 
-export type ClearLayer = 'slide' | 'media' | 'logo' | 'blackout' | 'alert' | 'props' | 'autoAdvance';
+export type ClearLayer = 'slide' | 'media' | 'logo' | 'blackout' | 'alert' | 'props' | 'autoAdvance' | 'announcements';
 
 /** A named choice of output layers that are cleared together with one click. */
 export interface ClearGroup {
@@ -235,6 +235,22 @@ export interface ScreenLayers {
   themeId?: string | null;
 }
 
+export interface AnnouncementsState {
+  presentationId?: string | null;
+  serviceId?: string | null;
+  itemId?: string | null;
+  slideId?: string | null;
+  slideIndex: number;
+  totalSlides: number;
+  currentSlide: Slide | null;
+  nextSlide: Slide | null;
+  isLive: boolean;
+  isLooping?: boolean;
+  autoAdvanceSeconds?: number | null;
+  nextAdvanceAtMs?: number | null;
+  targetOutputIds?: string[];
+}
+
 export interface PresentationState {
   currentPresentationId: string | null;
   currentSlideId: string | null;
@@ -245,6 +261,7 @@ export interface PresentationState {
   isBlackout: boolean;
   isLogo?: boolean;
   screenLayers?: Record<string, ScreenLayers>;
+  announcements?: AnnouncementsState | null;
   alert?: AudienceAlert | null;
   activeProps?: Prop[];
   autoAdvance?: AutoAdvanceStatus | null;
