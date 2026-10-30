@@ -83,6 +83,10 @@ import {
   CameraDeviceInfo,
   LiveVideoConfig,
   LiveVideoStatus,
+  AlphaKeyConfig,
+  AlphaKeyStatus,
+  AlphaKeyMode,
+  AlphaContentSource,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
@@ -1986,6 +1990,15 @@ class MockDataStore {
           this.liveVideoConfig.selectedDeviceId = step.deviceId;
         }
         return;
+      case 'alpha_key':
+        if (step.command === 'enable') {
+          this.alphaKeyConfig.isActive = true;
+        } else if (step.command === 'disable') {
+          this.alphaKeyConfig.isActive = false;
+        } else if (step.command === 'toggle') {
+          this.alphaKeyConfig.isActive = !this.alphaKeyConfig.isActive;
+        }
+        return;
       case 'wait':
         return; // handled by the runner
     }
@@ -3763,6 +3776,8 @@ class MockDataStore {
       remoteDevices: this.remoteDevices,
       midiMappings: this.midiMappings,
       oscConfigs: [this.oscConfig],
+      liveVideoConfigs: [this.liveVideoConfig],
+      alphaKeyConfigs: [this.alphaKeyConfig],
       actionMappings: this.actionMappings,
       workspaceState: this.workspaceState,
       settings: this.settings,
@@ -4551,6 +4566,16 @@ class MockDataStore {
         }
         return this.getPresentationState();
       }
+      case 'toggle_alpha_key':
+        await this.toggleAlphaKey();
+        return this.getPresentationState();
+      case 'open_alpha_key_outputs':
+        await this.openAlphaWindow('fill');
+        await this.openAlphaWindow('key');
+        return this.getPresentationState();
+      case 'close_alpha_key_outputs':
+        await this.closeAlphaWindow('all');
+        return this.getPresentationState();
       default:
         return this.getPresentationState();
     }
@@ -5424,6 +5449,84 @@ class MockDataStore {
 
   public async listCameraDevices(): Promise<CameraDeviceInfo[]> {
     return [...this.cameraDevices];
+  }
+
+  // Phase 11.4: Alpha Key
+  private alphaKeyConfig: AlphaKeyConfig = {
+    id: 'default-alpha-key',
+    isEnabled: true,
+    isActive: false,
+    mode: 'dual_window',
+    contentSource: 'overlay',
+    fillMonitorId: null,
+    keyMonitorId: null,
+    combinedMonitorId: null,
+    premultiplied: true,
+    keyGain: 1.0,
+    keyInvert: false,
+    keyClipPercent: 0.0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  private alphaKeyWindows = {
+    fillOpen: false,
+    keyOpen: false,
+    combinedOpen: false,
+  };
+
+  public async getAlphaKeyConfig(): Promise<AlphaKeyConfig> {
+    return { ...this.alphaKeyConfig };
+  }
+
+  public async updateAlphaKeyConfig(config: AlphaKeyConfig): Promise<AlphaKeyConfig> {
+    this.alphaKeyConfig = { ...this.alphaKeyConfig, ...config, updatedAt: new Date().toISOString() };
+    return { ...this.alphaKeyConfig };
+  }
+
+  public async toggleAlphaKey(): Promise<boolean> {
+    this.alphaKeyConfig.isActive = !this.alphaKeyConfig.isActive;
+    this.alphaKeyConfig.updatedAt = new Date().toISOString();
+    return this.alphaKeyConfig.isActive;
+  }
+
+  public async getAlphaKeyStatus(): Promise<AlphaKeyStatus> {
+    return {
+      isEnabled: this.alphaKeyConfig.isEnabled,
+      isActive: this.alphaKeyConfig.isActive,
+      mode: this.alphaKeyConfig.mode,
+      fillWindowOpen: this.alphaKeyWindows.fillOpen,
+      keyWindowOpen: this.alphaKeyWindows.keyOpen,
+      combinedWindowOpen: this.alphaKeyWindows.combinedOpen,
+      contentSource: this.alphaKeyConfig.contentSource,
+      error: null,
+    };
+  }
+
+  public async openAlphaWindow(role: string, _monitorId?: string, _fullscreen?: boolean): Promise<AlphaKeyStatus> {
+    if (role === 'fill' || role === 'alpha_fill') {
+      this.alphaKeyWindows.fillOpen = true;
+    } else if (role === 'key' || role === 'alpha_key') {
+      this.alphaKeyWindows.keyOpen = true;
+    } else if (role === 'combined' || role === 'alpha_combined') {
+      this.alphaKeyWindows.combinedOpen = true;
+    }
+    return this.getAlphaKeyStatus();
+  }
+
+  public async closeAlphaWindow(role: string): Promise<AlphaKeyStatus> {
+    if (role === 'fill' || role === 'alpha_fill') {
+      this.alphaKeyWindows.fillOpen = false;
+    } else if (role === 'key' || role === 'alpha_key') {
+      this.alphaKeyWindows.keyOpen = false;
+    } else if (role === 'combined' || role === 'alpha_combined') {
+      this.alphaKeyWindows.combinedOpen = false;
+    } else if (role === 'all') {
+      this.alphaKeyWindows.fillOpen = false;
+      this.alphaKeyWindows.keyOpen = false;
+      this.alphaKeyWindows.combinedOpen = false;
+    }
+    return this.getAlphaKeyStatus();
   }
 }
 
@@ -7731,6 +7834,72 @@ export const api = {
     if (isTauri()) {
       let unlisten: UnlistenFn | undefined;
       listen<LiveVideoConfig>('live-video:config-updated', (event) => {
+        callback(event.payload);
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        if (unlisten) unlisten();
+      };
+    }
+    return () => {};
+  },
+
+  // Phase 11.4: Alpha Key (Key & Fill Dual Outputs)
+  getAlphaKeyConfig: async (): Promise<AlphaKeyConfig> => {
+    if (isTauri()) {
+      return await invoke<AlphaKeyConfig>('get_alpha_key_config');
+    }
+    return mockStore.getAlphaKeyConfig();
+  },
+
+  updateAlphaKeyConfig: async (config: AlphaKeyConfig): Promise<AlphaKeyConfig> => {
+    if (isTauri()) {
+      return await invoke<AlphaKeyConfig>('update_alpha_key_config', { config });
+    }
+    return mockStore.updateAlphaKeyConfig(config);
+  },
+
+  toggleAlphaKey: async (): Promise<boolean> => {
+    if (isTauri()) {
+      return await invoke<boolean>('toggle_alpha_key');
+    }
+    return mockStore.toggleAlphaKey();
+  },
+
+  getAlphaKeyStatus: async (): Promise<AlphaKeyStatus> => {
+    if (isTauri()) {
+      return await invoke<AlphaKeyStatus>('get_alpha_key_status');
+    }
+    return mockStore.getAlphaKeyStatus();
+  },
+
+  openAlphaWindow: async (
+    role: string,
+    monitorId?: string,
+    fullscreen?: boolean
+  ): Promise<AlphaKeyStatus> => {
+    if (isTauri()) {
+      return await invoke<AlphaKeyStatus>('open_alpha_window', {
+        role,
+        monitorId,
+        fullscreen,
+      });
+    }
+    return mockStore.openAlphaWindow(role, monitorId, fullscreen);
+  },
+
+  closeAlphaWindow: async (role: string): Promise<AlphaKeyStatus> => {
+    if (isTauri()) {
+      return await invoke<AlphaKeyStatus>('close_alpha_window', { role });
+    }
+    return mockStore.closeAlphaWindow(role);
+  },
+
+  onAlphaKeyConfigUpdated: (callback: (config: AlphaKeyConfig) => void): (() => void) => {
+    if (isTauri()) {
+      let unlisten: UnlistenFn | undefined;
+      listen<AlphaKeyConfig>('alpha-key:config-updated', (event) => {
         callback(event.payload);
       }).then((fn) => {
         unlisten = fn;

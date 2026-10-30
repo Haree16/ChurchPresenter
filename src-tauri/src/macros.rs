@@ -97,6 +97,10 @@ pub enum MacroStep {
         #[serde(default)]
         device_id: Option<String>,
     },
+    /// Phase 11.4: Alpha Key (Key & Fill) Step
+    AlphaKey {
+        command: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -200,6 +204,15 @@ pub fn validate_step(step: &MacroStep) -> std::result::Result<(), String> {
                 return Err("choose a camera device.".to_string());
             }
             Ok(())
+        }
+        MacroStep::AlphaKey { command } => {
+            if command.trim().is_empty() {
+                return Err("choose an alpha key command.".to_string());
+            }
+            match command.as_str() {
+                "enable" | "disable" | "toggle" => Ok(()),
+                other => Err(format!("unknown alpha key command: '{}'", other)),
+            }
         }
     }
 }
@@ -419,6 +432,18 @@ pub fn apply_step_core(
                     _ => {}
                 }
                 let _ = db.update_live_video_config(&cfg);
+            }
+            Ok(StepOutcome::Done)
+        }
+        MacroStep::AlphaKey { command } => {
+            if let Ok(mut cfg) = db.get_alpha_key_config() {
+                match command.as_str() {
+                    "enable" => cfg.is_active = true,
+                    "disable" => cfg.is_active = false,
+                    "toggle" => cfg.is_active = !cfg.is_active,
+                    _ => {}
+                }
+                let _ = db.update_alpha_key_config(&cfg);
             }
             Ok(StepOutcome::Done)
         }

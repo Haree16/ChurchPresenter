@@ -258,6 +258,10 @@ export type MacroStep =
       type: 'camera';
       command: 'enable' | 'disable' | 'toggle' | 'select_device';
       deviceId?: string;
+    }
+  | {
+      type: 'alpha_key';
+      command: 'enable' | 'disable' | 'toggle';
     };
 
 export type KeyBindingTargetType = 'action' | 'prop' | 'macro' | 'look' | 'clearGroup';
@@ -565,6 +569,7 @@ export interface BackupData {
   oscConfigs?: OscConfig[];
   obsConfigs?: ObsConfig[];
   liveVideoConfigs?: LiveVideoConfig[];
+  alphaKeyConfigs?: AlphaKeyConfig[];
   actionMappings?: ActionMapping[];
   workspaceState?: WorkspaceState | null;
   settings: Record<string, string>;
@@ -1161,6 +1166,38 @@ export interface LiveVideoStatus {
   activeDeviceLabel?: string | null;
   displayMode: string;
   availableDevices: CameraDeviceInfo[];
+  error?: string | null;
+}
+
+// Phase 11.4: Alpha Key (Key and Fill Dual Outputs for Hardware Video Switchers)
+export type AlphaKeyMode = 'dual_window' | 'side_by_side' | 'stacked';
+export type AlphaContentSource = 'overlay' | 'audience';
+
+export interface AlphaKeyConfig {
+  id: string;
+  isEnabled: boolean;
+  isActive: boolean;
+  mode: AlphaKeyMode;
+  contentSource: AlphaContentSource;
+  fillMonitorId?: string | null;
+  keyMonitorId?: string | null;
+  combinedMonitorId?: string | null;
+  premultiplied: boolean;
+  keyGain: number; // 0.5 to 2.0
+  keyInvert: boolean;
+  keyClipPercent: number; // 0.0 to 100.0%
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlphaKeyStatus {
+  isEnabled: boolean;
+  isActive: boolean;
+  mode: AlphaKeyMode;
+  fillWindowOpen: boolean;
+  keyWindowOpen: boolean;
+  combinedWindowOpen: boolean;
+  contentSource: AlphaContentSource;
   error?: string | null;
 }
 

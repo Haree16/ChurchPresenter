@@ -2889,6 +2889,67 @@ pub async fn list_camera_devices() -> Result<Vec<crate::models::CameraDeviceInfo
     ])
 }
 
+// ================= Phase 11.4: Alpha Key =================
+
+#[tauri::command]
+pub async fn get_alpha_key_config(
+    db: State<'_, DbManager>,
+) -> Result<crate::models::AlphaKeyConfig, String> {
+    db.get_alpha_key_config().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_alpha_key_config(
+    config: crate::models::AlphaKeyConfig,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<crate::models::AlphaKeyConfig, String> {
+    let mut cfg = config;
+    cfg.updated_at = Utc::now().to_rfc3339();
+    db.update_alpha_key_config(&cfg).map_err(|e| e.to_string())?;
+    app.emit("alpha-key:config-updated", &cfg).ok();
+    Ok(cfg)
+}
+
+#[tauri::command]
+pub async fn toggle_alpha_key(
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<bool, String> {
+    let mut cfg = db.get_alpha_key_config().map_err(|e| e.to_string())?;
+    cfg.is_active = !cfg.is_active;
+    cfg.updated_at = Utc::now().to_rfc3339();
+    db.update_alpha_key_config(&cfg).map_err(|e| e.to_string())?;
+    app.emit("alpha-key:config-updated", &cfg).ok();
+    Ok(cfg.is_active)
+}
+
+#[tauri::command]
+pub async fn get_alpha_key_status(
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<crate::models::AlphaKeyStatus, String> {
+    Ok(DisplayManager::get_alpha_key_status(&app, &db))
+}
+
+#[tauri::command]
+pub async fn open_alpha_window(
+    role: String,
+    monitor_id: Option<String>,
+    fullscreen: Option<bool>,
+    app: AppHandle,
+) -> Result<crate::models::AlphaKeyStatus, String> {
+    DisplayManager::open_alpha_window(&app, &role, monitor_id, fullscreen.unwrap_or(false))
+}
+
+#[tauri::command]
+pub async fn close_alpha_window(
+    role: String,
+    app: AppHandle,
+) -> Result<crate::models::AlphaKeyStatus, String> {
+    DisplayManager::close_alpha_window(&app, &role)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

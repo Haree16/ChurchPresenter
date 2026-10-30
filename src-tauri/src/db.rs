@@ -1782,6 +1782,53 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 33: Alpha Key (Key & Fill Dual Outputs) =================
+        if current_version < 33 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS alpha_key_configs (
+                    id TEXT PRIMARY KEY,
+                    is_enabled INTEGER NOT NULL DEFAULT 1,
+                    is_active INTEGER NOT NULL DEFAULT 0,
+                    mode TEXT NOT NULL DEFAULT 'dual_window',
+                    content_source TEXT NOT NULL DEFAULT 'overlay',
+                    fill_monitor_id TEXT,
+                    key_monitor_id TEXT,
+                    combined_monitor_id TEXT,
+                    premultiplied INTEGER NOT NULL DEFAULT 1,
+                    key_gain REAL NOT NULL DEFAULT 1.0,
+                    key_invert INTEGER NOT NULL DEFAULT 0,
+                    key_clip_percent REAL NOT NULL DEFAULT 0.0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+
+            let now = Utc::now().to_rfc3339();
+            tx.execute(
+                "INSERT OR IGNORE INTO alpha_key_configs (id, is_enabled, is_active, mode, content_source, fill_monitor_id, key_monitor_id, combined_monitor_id, premultiplied, key_gain, key_invert, key_clip_percent, created_at, updated_at)
+                 VALUES ('default-alpha-key', 1, 0, 'dual_window', 'overlay', NULL, NULL, NULL, 1, 1.0, 0, 0.0, ?1, ?1);",
+                params![now],
+            )?;
+
+            // Seed Alpha Key actions in action_mappings
+            tx.execute(
+                "INSERT OR IGNORE INTO action_mappings (id, action_name, display_label, category, keyboard_shortcut, is_enabled, created_at, updated_at)
+                 VALUES
+                 ('act-toggle-alpha-key', 'toggle_alpha_key', 'Toggle Alpha Key (Key & Fill)', 'broadcast', NULL, 1, ?1, ?1),
+                 ('act-open-alpha-outputs', 'open_alpha_key_outputs', 'Open Alpha Key Windows', 'broadcast', NULL, 1, ?1, ?1),
+                 ('act-close-alpha-outputs', 'close_alpha_key_outputs', 'Close Alpha Key Windows', 'broadcast', NULL, 1, ?1, ?1);",
+                params![now],
+            )?;
+
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (33, ?1);",
+                params![now],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -5720,6 +5767,8 @@ impl DbManager {
         let obs_configs = vec![obs_config];
         let live_video_config = self.get_live_video_config()?;
         let live_video_configs = vec![live_video_config];
+        let alpha_key_config = self.get_alpha_key_config()?;
+        let alpha_key_configs = vec![alpha_key_config];
         let action_mappings = self.list_action_mappings()?;
 
         let settings = {
@@ -5771,6 +5820,7 @@ impl DbManager {
             dmx_configs,
             obs_configs,
             live_video_configs,
+            alpha_key_configs,
             action_mappings,
             workspace_state,
             settings,
@@ -6511,6 +6561,43 @@ impl DbManager {
                     lv.pip_size_percent as i32,
                     lv.created_at,
                     lv.updated_at
+                ],
+            )?;
+        }
+
+        // Restore Alpha Key configs
+        for ak in &backup.alpha_key_configs {
+            tx.execute(
+                "INSERT INTO alpha_key_configs (id, is_enabled, is_active, mode, content_source, fill_monitor_id, key_monitor_id, combined_monitor_id, premultiplied, key_gain, key_invert, key_clip_percent, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                 ON CONFLICT(id) DO UPDATE SET
+                    is_enabled = excluded.is_enabled,
+                    is_active = excluded.is_active,
+                    mode = excluded.mode,
+                    content_source = excluded.content_source,
+                    fill_monitor_id = excluded.fill_monitor_id,
+                    key_monitor_id = excluded.key_monitor_id,
+                    combined_monitor_id = excluded.combined_monitor_id,
+                    premultiplied = excluded.premultiplied,
+                    key_gain = excluded.key_gain,
+                    key_invert = excluded.key_invert,
+                    key_clip_percent = excluded.key_clip_percent,
+                    updated_at = excluded.updated_at;",
+                params![
+                    ak.id,
+                    if ak.is_enabled { 1 } else { 0 },
+                    if ak.is_active { 1 } else { 0 },
+                    ak.mode,
+                    ak.content_source,
+                    ak.fill_monitor_id,
+                    ak.key_monitor_id,
+                    ak.combined_monitor_id,
+                    if ak.premultiplied { 1 } else { 0 },
+                    ak.key_gain,
+                    if ak.key_invert { 1 } else { 0 },
+                    ak.key_clip_percent,
+                    ak.created_at,
+                    ak.updated_at
                 ],
             )?;
         }
@@ -7302,6 +7389,76 @@ impl DbManager {
             ],
         )?;
         Ok(cfg.clone())
+    }
+
+    // ================= Phase 11.4: Alpha Key Config =================
+
+    pub fn get_alpha_key_config(&self) -> Result<crate::models::AlphaKeyConfig> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, is_enabled, is_active, mode, content_source, fill_monitor_id, key_monitor_id, combined_monitor_id, premultiplied, key_gain, key_invert, key_clip_percent, created_at, updated_at
+             FROM alpha_key_configs
+             WHERE id = 'default-alpha-key';",
+        )?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            Ok(crate::models::AlphaKeyConfig {
+                id: row.get(0)?,
+                is_enabled: row.get::<_, i64>(1)? != 0,
+                is_active: row.get::<_, i64>(2)? != 0,
+                mode: row.get(3)?,
+                content_source: row.get(4)?,
+                fill_monitor_id: row.get(5)?,
+                key_monitor_id: row.get(6)?,
+                combined_monitor_id: row.get(7)?,
+                premultiplied: row.get::<_, i64>(8)? != 0,
+                key_gain: row.get::<_, f64>(9)?,
+                key_invert: row.get::<_, i64>(10)? != 0,
+                key_clip_percent: row.get::<_, f64>(11)?,
+                created_at: row.get(12)?,
+                updated_at: row.get(13)?,
+            })
+        } else {
+            Ok(crate::models::AlphaKeyConfig::default())
+        }
+    }
+
+    pub fn update_alpha_key_config(&self, cfg: &crate::models::AlphaKeyConfig) -> Result<crate::models::AlphaKeyConfig> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO alpha_key_configs (id, is_enabled, is_active, mode, content_source, fill_monitor_id, key_monitor_id, combined_monitor_id, premultiplied, key_gain, key_invert, key_clip_percent, created_at, updated_at)
+             VALUES ('default-alpha-key', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)
+             ON CONFLICT(id) DO UPDATE SET
+                is_enabled = excluded.is_enabled,
+                is_active = excluded.is_active,
+                mode = excluded.mode,
+                content_source = excluded.content_source,
+                fill_monitor_id = excluded.fill_monitor_id,
+                key_monitor_id = excluded.key_monitor_id,
+                combined_monitor_id = excluded.combined_monitor_id,
+                premultiplied = excluded.premultiplied,
+                key_gain = excluded.key_gain,
+                key_invert = excluded.key_invert,
+                key_clip_percent = excluded.key_clip_percent,
+                updated_at = excluded.updated_at;",
+            params![
+                if cfg.is_enabled { 1 } else { 0 },
+                if cfg.is_active { 1 } else { 0 },
+                &cfg.mode,
+                &cfg.content_source,
+                &cfg.fill_monitor_id,
+                &cfg.key_monitor_id,
+                &cfg.combined_monitor_id,
+                if cfg.premultiplied { 1 } else { 0 },
+                cfg.key_gain,
+                if cfg.key_invert { 1 } else { 0 },
+                cfg.key_clip_percent,
+                &now,
+            ],
+        )?;
+        drop(conn);
+        self.get_alpha_key_config()
     }
 
     // ================= Phase 10.2: DMX Lighting Config =================

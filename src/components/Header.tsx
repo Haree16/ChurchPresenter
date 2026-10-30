@@ -79,6 +79,8 @@ interface HeaderProps {
   onClearAll?: () => void;
   isLiveCameraActive?: boolean;
   onToggleLiveCamera?: () => void;
+  isAlphaKeyActive?: boolean;
+  onToggleAlphaKey?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -89,6 +91,8 @@ export const Header: React.FC<HeaderProps> = ({
   recordingStatus,
   isLiveCameraActive,
   onToggleLiveCamera,
+  isAlphaKeyActive,
+  onToggleAlphaKey,
   activeView,
   onChangeView,
   onOpenDisplayModal,
@@ -627,6 +631,24 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Camera size={14} color={isLiveCameraActive ? '#ffffff' : '#cbd5e1'} />
             <span>{isLiveCameraActive ? 'CAM ON' : 'Camera'}</span>
+          </button>
+        )}
+
+        {onToggleAlphaKey && (
+          <button
+            type="button"
+            data-testid="header-alpha-key-toggle-btn"
+            onClick={onToggleAlphaKey}
+            title={isAlphaKeyActive ? "Alpha Key Active (Click to Turn Off)" : "Alpha Key Outputs (Click to Turn On)"}
+            style={{
+              ...headerBtn,
+              backgroundColor: isAlphaKeyActive ? '#059669' : '#1e293b',
+              color: isAlphaKeyActive ? '#ffffff' : '#cbd5e1',
+              border: isAlphaKeyActive ? '1px solid #34d399' : '1px solid #334155',
+            }}
+          >
+            <Layers size={14} color={isAlphaKeyActive ? '#ffffff' : '#cbd5e1'} />
+            <span>{isAlphaKeyActive ? 'KEY ON' : 'Key & Fill'}</span>
           </button>
         )}
 

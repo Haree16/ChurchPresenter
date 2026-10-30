@@ -18,6 +18,9 @@ import {
   CameraDeviceInfo,
   LiveVideoConfig,
   LiveVideoStatus,
+  AlphaKeyConfig,
+  AlphaKeyStatus,
+  DisplayMonitor,
 } from '../../types';
 import { liveVideoService } from '../../services/liveVideoService';
 import {
@@ -42,12 +45,13 @@ import {
   EyeOff,
   Tv,
   Camera,
+  Layers,
 } from 'lucide-react';
 
 interface ProductionIntegrationsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'remote' | 'midi' | 'osc' | 'obs' | 'video' | 'actions';
+  initialTab?: 'remote' | 'midi' | 'osc' | 'obs' | 'video' | 'alpha_key' | 'actions';
 }
 
 export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalProps> = ({
@@ -55,7 +59,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   onClose,
   initialTab = 'remote',
 }) => {
-  const [activeTab, setActiveTab] = useState<'remote' | 'midi' | 'osc' | 'obs' | 'video' | 'actions'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'remote' | 'midi' | 'osc' | 'obs' | 'video' | 'alpha_key' | 'actions'>(initialTab);
 
   // Who may connect to the remote server and OSC listener (applies on next start)
   const [bindMode, setBindMode] = useState<BindMode>('lan');
@@ -109,6 +113,11 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const previewVideoRef = React.useRef<HTMLVideoElement>(null);
   const [previewCapturing, setPreviewCapturing] = useState<boolean>(false);
 
+  // Alpha Key state
+  const [alphaKeyConfig, setAlphaKeyConfig] = useState<AlphaKeyConfig | null>(null);
+  const [alphaKeyStatus, setAlphaKeyStatus] = useState<AlphaKeyStatus | null>(null);
+  const [displayMonitors, setDisplayMonitors] = useState<DisplayMonitor[]>([]);
+
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -123,7 +132,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode, savedMacros, tlsEnabled, oObsCfg, oObsSt, lvCfg, lvSt, cDevs] =
+      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode, savedMacros, tlsEnabled, oObsCfg, oObsSt, lvCfg, lvSt, cDevs, akCfg, akSt, dMonitors] =
         await Promise.all([
           api.getRemoteServerStatus(),
           api.listRemoteDevices(),
@@ -140,6 +149,9 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
           api.getLiveVideoConfig(),
           api.getLiveVideoStatus(),
           api.listCameraDevices(),
+          api.getAlphaKeyConfig(),
+          api.getAlphaKeyStatus(),
+          api.getAvailableMonitors(),
         ]);
 
       setMacros(savedMacros);
@@ -175,6 +187,10 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
       setLiveVideoConfig(lvCfg);
       setLiveVideoStatus(lvSt);
       setCameraDevices(cDevs);
+
+      setAlphaKeyConfig(akCfg);
+      setAlphaKeyStatus(akSt);
+      setDisplayMonitors(dMonitors);
     } catch (e) {
       console.error('Failed to load integration states:', e);
     } finally {
@@ -184,13 +200,14 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
 
   const refreshLiveMonitors = async () => {
     try {
-      const [mStatus, oStatus, rStatus, rDevs, oObsSt, lvSt] = await Promise.all([
+      const [mStatus, oStatus, rStatus, rDevs, oObsSt, lvSt, akSt] = await Promise.all([
         api.getMidiStatus(),
         api.getOscStatus(),
         api.getRemoteServerStatus(),
         api.listRemoteDevices(),
         api.getObsStatus(),
         api.getLiveVideoStatus(),
+        api.getAlphaKeyStatus(),
       ]);
       setMidiStatus(mStatus);
       setOscStatus(oStatus);
@@ -198,6 +215,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
       setRemoteDevices(rDevs);
       setObsStatus(oObsSt);
       setLiveVideoStatus(lvSt);
+      setAlphaKeyStatus(akSt);
       if (oObsSt.currentScene && !obsSelectedScene) {
         setObsSelectedScene(oObsSt.currentScene);
       }
@@ -580,6 +598,59 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
     }
   };
 
+  // Alpha Key Handlers
+  const handleToggleAlphaKeyActive = async () => {
+    try {
+      const newActive = await api.toggleAlphaKey();
+      if (alphaKeyConfig) {
+        setAlphaKeyConfig({ ...alphaKeyConfig, isActive: newActive });
+      }
+      const st = await api.getAlphaKeyStatus();
+      setAlphaKeyStatus(st);
+      setStatusMessage(`Alpha Key output ${newActive ? 'activated (ON-AIR)' : 'deactivated'}.`);
+    } catch (err) {
+      setStatusMessage(`Error toggling Alpha Key: ${err}`);
+    }
+  };
+
+  const handleUpdateAlphaKey = async (partial: Partial<AlphaKeyConfig>) => {
+    try {
+      const current = alphaKeyConfig || (await api.getAlphaKeyConfig());
+      const merged = { ...current, ...partial };
+      setAlphaKeyConfig(merged);
+      const updated = await api.updateAlphaKeyConfig(merged);
+      setAlphaKeyConfig(updated);
+      setStatusMessage('Alpha Key configuration saved.');
+    } catch (err) {
+      setStatusMessage(`Error saving Alpha Key config: ${err}`);
+    }
+  };
+
+  const handleOpenAlphaWindow = async (role: string) => {
+    try {
+      let monitorId: string | undefined;
+      if (role === 'fill') monitorId = alphaKeyConfig?.fillMonitorId || undefined;
+      else if (role === 'key') monitorId = alphaKeyConfig?.keyMonitorId || undefined;
+      else if (role === 'combined') monitorId = alphaKeyConfig?.combinedMonitorId || undefined;
+
+      const st = await api.openAlphaWindow(role, monitorId, false);
+      setAlphaKeyStatus(st);
+      setStatusMessage(`Alpha ${role} window opened.`);
+    } catch (err) {
+      setStatusMessage(`Error opening Alpha ${role} window: ${err}`);
+    }
+  };
+
+  const handleCloseAlphaWindow = async (role: string) => {
+    try {
+      const st = await api.closeAlphaWindow(role);
+      setAlphaKeyStatus(st);
+      setStatusMessage(`Alpha ${role} window closed.`);
+    } catch (err) {
+      setStatusMessage(`Error closing Alpha ${role} window: ${err}`);
+    }
+  };
+
   return (
     <div
       style={{
@@ -842,6 +913,37 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                   height: '8px',
                   borderRadius: '50%',
                   backgroundColor: '#0284c7',
+                }}
+              />
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('alpha_key')}
+            data-testid="tab-alpha-key"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '12px 16px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              borderBottom: activeTab === 'alpha_key' ? '2px solid #3b82f6' : '2px solid transparent',
+              color: activeTab === 'alpha_key' ? '#60a5fa' : '#94a3b8',
+              fontWeight: 600,
+              fontSize: '13px',
+              cursor: 'pointer',
+            }}
+          >
+            <Layers size={16} />
+            <span>Alpha Key (Key & Fill)</span>
+            {alphaKeyConfig?.isActive && (
+              <span
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: '#10b981',
                 }}
               />
             )}
@@ -3158,6 +3260,527 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                   >
                     Save Camera Settings
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================= TAB 7: ALPHA KEY (KEY & FILL) ================= */}
+          {activeTab === 'alpha_key' && (
+            <div data-testid="alpha-key-tab-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Header Card */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '16px 20px',
+                  backgroundColor: '#1e293b',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                }}
+              >
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Layers size={18} style={{ color: '#38bdf8' }} />
+                    Alpha Key & Fill Outputs (Hardware Switchers & ATEM)
+                  </h3>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
+                    Send synchronized Fill (color graphics) and Key (black & white alpha mask) outputs to vision mixers (ATEM, Roland, Ross) for broadcast-grade overlays.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <button
+                    onClick={handleToggleAlphaKeyActive}
+                    data-testid="btn-toggle-alpha-active"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 16px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      backgroundColor: alphaKeyConfig?.isActive ? '#dc2626' : '#16a34a',
+                      color: '#ffffff',
+                      fontWeight: 600,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {alphaKeyConfig?.isActive ? (
+                      <>
+                        <Square size={14} fill="#ffffff" />
+                        <span>Take OFF-AIR</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play size={14} fill="#ffffff" />
+                        <span>Go ON-AIR</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Live Dual Preview Monitors: Fill vs Key Matte */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '16px',
+                }}
+              >
+                {/* Fill Preview */}
+                <div
+                  style={{
+                    backgroundColor: '#0f172a',
+                    borderRadius: '8px',
+                    border: '1px solid #334155',
+                    padding: '14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#38bdf8' }}>Fill Channel (RGB Graphics)</span>
+                      {alphaKeyStatus?.fillWindowOpen && (
+                        <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', backgroundColor: '#0284c7', color: '#fff' }}>Window Open</span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => alphaKeyStatus?.fillWindowOpen ? handleCloseAlphaWindow('fill') : handleOpenAlphaWindow('fill')}
+                      data-testid="btn-toggle-fill-window"
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        border: '1px solid #334155',
+                        backgroundColor: '#1e293b',
+                        color: '#94a3b8',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {alphaKeyStatus?.fillWindowOpen ? 'Close Window' : 'Launch Fill Window'}
+                    </button>
+                  </div>
+                  <div
+                    data-testid="fill-preview-monitor"
+                    style={{
+                      width: '100%',
+                      aspectRatio: '16 / 9',
+                      backgroundColor: alphaKeyConfig?.premultiplied ? '#000000' : '#090d16',
+                      borderRadius: '6px',
+                      overflow: 'hidden',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      position: 'relative',
+                      border: '1px solid #1e293b',
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: alphaKeyConfig?.contentSource === 'overlay' ? 'flex-end' : 'center',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <div
+                        style={{
+                          backgroundColor: alphaKeyConfig?.contentSource === 'overlay' ? 'rgba(15, 23, 42, 0.9)' : 'transparent',
+                          padding: alphaKeyConfig?.contentSource === 'overlay' ? '8px 16px' : '0',
+                          borderRadius: '8px',
+                          border: alphaKeyConfig?.contentSource === 'overlay' ? '1px solid rgba(255,255,255,0.15)' : 'none',
+                          textAlign: 'center',
+                        }}
+                      >
+                        <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#2563eb', color: '#fff', fontWeight: 700, display: 'inline-block', marginBottom: '4px' }}>
+                          CHURCH PRESENTER
+                        </span>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: '#ffffff', textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}>
+                          Amazing Grace! How sweet the sound
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Key Matte Preview */}
+                <div
+                  style={{
+                    backgroundColor: '#0f172a',
+                    borderRadius: '8px',
+                    border: '1px solid #334155',
+                    padding: '14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>Key Matte Channel (Alpha Mask)</span>
+                      {alphaKeyStatus?.keyWindowOpen && (
+                        <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', backgroundColor: '#475569', color: '#fff' }}>Window Open</span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => alphaKeyStatus?.keyWindowOpen ? handleCloseAlphaWindow('key') : handleOpenAlphaWindow('key')}
+                      data-testid="btn-toggle-key-window"
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        border: '1px solid #334155',
+                        backgroundColor: '#1e293b',
+                        color: '#94a3b8',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {alphaKeyStatus?.keyWindowOpen ? 'Close Window' : 'Launch Key Window'}
+                    </button>
+                  </div>
+                  <div
+                    data-testid="key-preview-monitor"
+                    style={{
+                      width: '100%',
+                      aspectRatio: '16 / 9',
+                      backgroundColor: alphaKeyConfig?.keyInvert ? '#ffffff' : '#000000',
+                      borderRadius: '6px',
+                      overflow: 'hidden',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      position: 'relative',
+                      border: '1px solid #1e293b',
+                      filter: alphaKeyConfig && alphaKeyConfig.keyGain !== 1.0 ? `contrast(${alphaKeyConfig.keyGain * 100}%)` : undefined,
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: alphaKeyConfig?.contentSource === 'overlay' ? 'flex-end' : 'center',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <div
+                        style={{
+                          backgroundColor: alphaKeyConfig?.contentSource === 'overlay' ? (alphaKeyConfig?.keyInvert ? '#000000' : '#ffffff') : 'transparent',
+                          padding: alphaKeyConfig?.contentSource === 'overlay' ? '8px 16px' : '0',
+                          borderRadius: '8px',
+                          border: alphaKeyConfig?.contentSource === 'overlay' ? `1px solid ${alphaKeyConfig?.keyInvert ? '#000000' : '#ffffff'}` : 'none',
+                          textAlign: 'center',
+                        }}
+                      >
+                        <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', backgroundColor: alphaKeyConfig?.keyInvert ? '#ffffff' : '#000000', color: alphaKeyConfig?.keyInvert ? '#000' : '#fff', fontWeight: 700, display: 'inline-block', marginBottom: '4px' }}>
+                          CHURCH PRESENTER
+                        </span>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: alphaKeyConfig?.keyInvert ? '#000000' : '#ffffff', textShadow: `1px 1px 2px ${alphaKeyConfig?.keyInvert ? '#000000' : '#ffffff'}` }}>
+                          Amazing Grace! How sweet the sound
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Master Window Launch Bar */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '12px 18px',
+                  backgroundColor: '#0f172a',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                }}
+              >
+                <div style={{ fontSize: '13px', color: '#cbd5e1' }}>
+                  <strong>Output Window Controls:</strong> Launch or close all assigned Key & Fill outputs with a single click.
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    onClick={() => {
+                      if (alphaKeyConfig?.mode === 'side_by_side' || alphaKeyConfig?.mode === 'stacked') {
+                        handleOpenAlphaWindow('combined');
+                      } else {
+                        handleOpenAlphaWindow('fill');
+                        handleOpenAlphaWindow('key');
+                      }
+                    }}
+                    data-testid="btn-launch-alpha-windows"
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      backgroundColor: '#2563eb',
+                      color: '#ffffff',
+                      fontWeight: 600,
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Launch All Key & Fill Outputs
+                  </button>
+                  <button
+                    onClick={() => handleCloseAlphaWindow('all')}
+                    data-testid="btn-close-alpha-windows"
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '6px',
+                      border: '1px solid #475569',
+                      backgroundColor: '#1e293b',
+                      color: '#e2e8f0',
+                      fontWeight: 600,
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Close All Outputs
+                  </button>
+                </div>
+              </div>
+
+              {/* Settings Configuration Grid */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '20px',
+                  backgroundColor: '#1e293b',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                  padding: '20px',
+                }}
+              >
+                {/* Left Column: Routing & Modes */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#f8fafc', borderBottom: '1px solid #334155', paddingBottom: '8px' }}>
+                    Routing & Output Layout
+                  </h4>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                      Output Architecture
+                    </label>
+                    <select
+                      value={alphaKeyConfig?.mode || 'dual_window'}
+                      onChange={(e) => handleUpdateAlphaKey({ mode: e.target.value as any })}
+                      data-testid="select-alpha-mode"
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        backgroundColor: '#0f172a',
+                        border: '1px solid #334155',
+                        borderRadius: '6px',
+                        color: '#f8fafc',
+                        fontSize: '13px',
+                      }}
+                    >
+                      <option value="dual_window">Dual Dedicated Windows (Monitor A = Fill, Monitor B = Key)</option>
+                      <option value="side_by_side">Side-by-Side 3840x1080 (Single SDI/HDMI Splitter)</option>
+                      <option value="stacked">Over-Under 1920x2160 (Stacked Vertical)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                      Content Source
+                    </label>
+                    <select
+                      value={alphaKeyConfig?.contentSource || 'overlay'}
+                      onChange={(e) => handleUpdateAlphaKey({ contentSource: e.target.value as any })}
+                      data-testid="select-alpha-content-source"
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        backgroundColor: '#0f172a',
+                        border: '1px solid #334155',
+                        borderRadius: '6px',
+                        color: '#f8fafc',
+                        fontSize: '13px',
+                      }}
+                    >
+                      <option value="overlay">Livestream Lower Thirds & Overlays</option>
+                      <option value="audience">Full Audience Presentation Slides</option>
+                    </select>
+                  </div>
+
+                  {alphaKeyConfig?.mode === 'dual_window' ? (
+                    <>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                          Fill Channel Physical Monitor
+                        </label>
+                        <select
+                          value={alphaKeyConfig?.fillMonitorId || ''}
+                          onChange={(e) => handleUpdateAlphaKey({ fillMonitorId: e.target.value || null })}
+                          data-testid="select-alpha-fill-monitor"
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            backgroundColor: '#0f172a',
+                            border: '1px solid #334155',
+                            borderRadius: '6px',
+                            color: '#f8fafc',
+                            fontSize: '13px',
+                          }}
+                        >
+                          <option value="">(Default Secondary Display)</option>
+                          {displayMonitors.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} ({m.width}x{m.height})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                          Key Matte Channel Physical Monitor
+                        </label>
+                        <select
+                          value={alphaKeyConfig?.keyMonitorId || ''}
+                          onChange={(e) => handleUpdateAlphaKey({ keyMonitorId: e.target.value || null })}
+                          data-testid="select-alpha-key-monitor"
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            backgroundColor: '#0f172a',
+                            border: '1px solid #334155',
+                            borderRadius: '6px',
+                            color: '#f8fafc',
+                            fontSize: '13px',
+                          }}
+                        >
+                          <option value="">(Default Tertiary Display)</option>
+                          {displayMonitors.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} ({m.width}x{m.height})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                        Combined Output Monitor (Side-by-Side / Stacked)
+                      </label>
+                      <select
+                        value={alphaKeyConfig?.combinedMonitorId || ''}
+                        onChange={(e) => handleUpdateAlphaKey({ combinedMonitorId: e.target.value || null })}
+                        data-testid="select-alpha-combined-monitor"
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          borderRadius: '6px',
+                          color: '#f8fafc',
+                          fontSize: '13px',
+                        }}
+                      >
+                        <option value="">(Default Ultra-wide / Dual-Head Display)</option>
+                        {displayMonitors.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name} ({m.width}x{m.height})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column: Keyer Calibration & Processing */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#f8fafc', borderBottom: '1px solid #334155', paddingBottom: '8px' }}>
+                    Keyer Calibration & Processing
+                  </h4>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '10px 14px', backgroundColor: '#0f172a', borderRadius: '6px', border: '1px solid #334155' }}>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>Premultiplied Alpha</div>
+                        <div style={{ fontSize: '11px', color: '#94a3b8' }}>Fill rendered against black (Standard for ATEM Linear Keyers)</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={alphaKeyConfig?.premultiplied ?? true}
+                        onChange={(e) => handleUpdateAlphaKey({ premultiplied: e.target.checked })}
+                        data-testid="toggle-alpha-premultiplied"
+                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                      />
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '10px 14px', backgroundColor: '#0f172a', borderRadius: '6px', border: '1px solid #334155' }}>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>Invert Key Matte</div>
+                        <div style={{ fontSize: '11px', color: '#94a3b8' }}>Inverts white and black for reverse luma keyers</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={alphaKeyConfig?.keyInvert ?? false}
+                        onChange={(e) => handleUpdateAlphaKey({ keyInvert: e.target.checked })}
+                        data-testid="toggle-alpha-invert"
+                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                      />
+                    </label>
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8' }}>Key Gain Multiplier</span>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#38bdf8' }}>{(alphaKeyConfig?.keyGain ?? 1.0).toFixed(1)}x</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2.0"
+                      step="0.1"
+                      value={alphaKeyConfig?.keyGain ?? 1.0}
+                      onChange={(e) => handleUpdateAlphaKey({ keyGain: parseFloat(e.target.value) })}
+                      data-testid="slider-alpha-gain"
+                      style={{ width: '100%', cursor: 'pointer' }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+                      <span>0.5x (Soft)</span>
+                      <span>1.0x (Standard)</span>
+                      <span>2.0x (Hard Edge)</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8' }}>Black Clip Threshold</span>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#38bdf8' }}>{alphaKeyConfig?.keyClipPercent ?? 0}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="50"
+                      step="1"
+                      value={alphaKeyConfig?.keyClipPercent ?? 0}
+                      onChange={(e) => handleUpdateAlphaKey({ keyClipPercent: parseInt(e.target.value, 10) })}
+                      data-testid="slider-alpha-clip"
+                      style={{ width: '100%', cursor: 'pointer' }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+                      <span>0% (Full Shadow Gradient)</span>
+                      <span>50% (High Clip)</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

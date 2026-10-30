@@ -1,4 +1,6 @@
-use crate::models::{AudienceWindowStatus, DisplayMonitor, OverlayWindowStatus, StageWindowStatus};
+use crate::models::{
+    AlphaKeyStatus, AudienceWindowStatus, DisplayMonitor, OverlayWindowStatus, StageWindowStatus,
+};
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder,
 };
@@ -456,6 +458,167 @@ impl DisplayManager {
                 is_fullscreen: false,
                 error: None,
             }
+        }
+    }
+
+    // ================= Phase 11.4: Alpha Key Window Management =================
+
+    pub fn get_alpha_key_status(app: &AppHandle, db: &crate::db::DbManager) -> AlphaKeyStatus {
+        let cfg = db.get_alpha_key_config().unwrap_or_default();
+        let fill_open = app
+            .get_webview_window("alpha-fill")
+            .map(|w| w.is_visible().unwrap_or(false))
+            .unwrap_or(false);
+        let key_open = app
+            .get_webview_window("alpha-key")
+            .map(|w| w.is_visible().unwrap_or(false))
+            .unwrap_or(false);
+        let combined_open = app
+            .get_webview_window("alpha-combined")
+            .map(|w| w.is_visible().unwrap_or(false))
+            .unwrap_or(false);
+
+        AlphaKeyStatus {
+            is_enabled: cfg.is_enabled,
+            is_active: cfg.is_active,
+            mode: cfg.mode,
+            fill_window_open: fill_open,
+            key_window_open: key_open,
+            combined_window_open: combined_open,
+            content_source: cfg.content_source,
+            error: None,
+        }
+    }
+
+    pub fn open_alpha_window(
+        app: &AppHandle,
+        role: &str, // "fill", "key", "combined"
+        monitor_id: Option<String>,
+        fullscreen: bool,
+    ) -> Result<AlphaKeyStatus, String> {
+        let (window_id, query_param, title, transparent) = match role {
+            "fill" | "alpha_fill" => (
+                "alpha-fill",
+                "alpha_fill",
+                "Church Presenter - Alpha Fill",
+                true,
+            ),
+            "key" | "alpha_key" => (
+                "alpha-key",
+                "alpha_key",
+                "Church Presenter - Alpha Key Matte",
+                false,
+            ),
+            "combined" | "alpha_combined" => (
+                "alpha-combined",
+                "alpha_combined",
+                "Church Presenter - Alpha Key & Fill Combined",
+                false,
+            ),
+            other => return Err(format!("Unknown alpha window role: {}", other)),
+        };
+
+        let monitors = app
+            .available_monitors()
+            .map_err(|e| format!("Failed to query available monitors: {}", e))?;
+
+        let target_monitor = if let Some(ref mid) = monitor_id {
+            let idx = mid
+                .strip_prefix("display-")
+                .and_then(|s| s.parse::<usize>().ok());
+            if let Some(i) = idx {
+                monitors.get(i).cloned()
+            } else {
+                None
+            }
+        } else {
+            monitors.iter().find(|m| {
+                if let Ok(Some(primary)) = app.primary_monitor() {
+                    m.name() != primary.name()
+                } else {
+                    false
+                }
+            }).cloned().or_else(|| monitors.first().cloned())
+        };
+
+        let window = if let Some(existing) = app.get_webview_window(window_id) {
+            existing
+        } else {
+            let width = if role == "combined" || role == "alpha_combined" { 3840.0 } else { 1920.0 };
+            WebviewWindowBuilder::new(
+                app,
+                window_id,
+                WebviewUrl::App(format!("index.html?window={}", query_param).into()),
+            )
+            .title(title)
+            .inner_size(width, 1080.0)
+            .resizable(true)
+            .decorations(false)
+            .transparent(transparent)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .build()
+            .map_err(|e| format!("Failed to create {} window: {}", window_id, e))?
+        };
+
+        if let Some(m) = target_monitor {
+            let pos = m.position();
+            let size = m.size();
+            window.set_position(PhysicalPosition::new(pos.x, pos.y)).ok();
+            if fullscreen {
+                window.set_size(PhysicalSize::new(size.width, size.height)).ok();
+                window.set_fullscreen(true).ok();
+            } else {
+                window.set_fullscreen(false).ok();
+                window.set_size(PhysicalSize::new(size.width, size.height)).ok();
+            }
+        } else {
+            window.set_fullscreen(fullscreen).ok();
+        }
+
+        window.show().map_err(|e| format!("Failed to display {} window: {}", window_id, e))?;
+
+        if let Some(db) = app.try_state::<crate::db::DbManager>() {
+            Ok(Self::get_alpha_key_status(app, &db))
+        } else {
+            Ok(AlphaKeyStatus {
+                is_enabled: true,
+                is_active: true,
+                mode: "dual_window".to_string(),
+                fill_window_open: role == "fill" || role == "alpha_fill",
+                key_window_open: role == "key" || role == "alpha_key",
+                combined_window_open: role == "combined" || role == "alpha_combined",
+                content_source: "overlay".to_string(),
+                error: None,
+            })
+        }
+    }
+
+    pub fn close_alpha_window(app: &AppHandle, role: &str) -> Result<AlphaKeyStatus, String> {
+        let window_id = match role {
+            "fill" | "alpha_fill" => "alpha-fill",
+            "key" | "alpha_key" => "alpha-key",
+            "combined" | "alpha_combined" => "alpha-combined",
+            "all" => {
+                if let Some(w) = app.get_webview_window("alpha-fill") { let _ = w.hide(); }
+                if let Some(w) = app.get_webview_window("alpha-key") { let _ = w.hide(); }
+                if let Some(w) = app.get_webview_window("alpha-combined") { let _ = w.hide(); }
+                if let Some(db) = app.try_state::<crate::db::DbManager>() {
+                    return Ok(Self::get_alpha_key_status(app, &db));
+                }
+                return Ok(AlphaKeyStatus::default());
+            }
+            other => return Err(format!("Unknown alpha window role: {}", other)),
+        };
+
+        if let Some(window) = app.get_webview_window(window_id) {
+            window.hide().map_err(|e| format!("Failed to hide {} window: {}", window_id, e))?;
+        }
+
+        if let Some(db) = app.try_state::<crate::db::DbManager>() {
+            Ok(Self::get_alpha_key_status(app, &db))
+        } else {
+            Ok(AlphaKeyStatus::default())
         }
     }
 

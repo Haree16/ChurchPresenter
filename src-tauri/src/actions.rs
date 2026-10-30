@@ -106,7 +106,8 @@ impl ActionDispatcher {
             }
             "start_recording" | "stop_recording" | "toggle_recording"
             | "obs_start_stream" | "obs_stop_stream" | "obs_start_record" | "obs_stop_record"
-            | "toggle_live_camera" | "switch_next_camera" => {
+            | "toggle_live_camera" | "switch_next_camera"
+            | "toggle_alpha_key" | "open_alpha_key_outputs" | "close_alpha_key_outputs" => {
                 pres_mgr.get_state()
             }
             unknown => return Err(format!("Unsupported action '{}'", unknown)),
@@ -212,6 +213,20 @@ impl ActionDispatcher {
                 cfg.is_active = !cfg.is_active;
                 let _ = db.update_live_video_config(&cfg);
                 app.emit("live-video:config-updated", &cfg).ok();
+            }
+            app.emit(
+                "action:dispatched",
+                serde_json::json!({ "action": action_name, "timestamp": Utc::now().to_rfc3339() }),
+            )
+            .ok();
+            return Ok(pres_mgr.get_state());
+        }
+
+        if action_name == "toggle_alpha_key" {
+            if let Ok(mut cfg) = db.get_alpha_key_config() {
+                cfg.is_active = !cfg.is_active;
+                let _ = db.update_alpha_key_config(&cfg);
+                app.emit("alpha-key:config-updated", &cfg).ok();
             }
             app.emit(
                 "action:dispatched",

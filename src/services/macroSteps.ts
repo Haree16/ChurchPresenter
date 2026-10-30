@@ -69,6 +69,9 @@ export function validateStep(step: MacroStep): string | null {
         return 'choose a camera device.';
       }
       return null;
+    case 'alpha_key':
+      if (!step.command) return 'choose an alpha key command.';
+      return null;
     default:
       return `unknown step type '${(step as { type: string }).type}'.`;
   }
@@ -128,6 +131,11 @@ export function stepLabel(
       if (step.command === 'toggle') return 'Camera: Toggle Live';
       if (step.command === 'select_device') return `Camera: Switch Device (${step.deviceId || '…'})`;
       return `Camera: ${step.command}`;
+    case 'alpha_key':
+      if (step.command === 'enable') return 'Alpha Key: Enable Output';
+      if (step.command === 'disable') return 'Alpha Key: Disable Output';
+      if (step.command === 'toggle') return 'Alpha Key: Toggle Key & Fill';
+      return `Alpha Key: ${step.command}`;
   }
 }
 
@@ -151,6 +159,8 @@ export function newStep(type: MacroStep['type']): MacroStep {
     case 'obs':
       return { type, command: 'set_scene', sceneName: '' };
     case 'camera':
+      return { type, command: 'toggle' };
+    case 'alpha_key':
       return { type, command: 'toggle' };
   }
 }

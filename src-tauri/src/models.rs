@@ -496,6 +496,8 @@ pub struct BackupData {
     #[serde(default)]
     pub live_video_configs: Vec<LiveVideoConfig>,
     #[serde(default)]
+    pub alpha_key_configs: Vec<AlphaKeyConfig>,
+    #[serde(default)]
     pub action_mappings: Vec<ActionMapping>,
     #[serde(default)]
     pub workspace_state: Option<WorkspaceState>,
@@ -1252,6 +1254,75 @@ impl Default for LiveVideoStatus {
             active_device_label: None,
             display_mode: "background_imag".to_string(),
             available_devices: Vec::new(),
+            error: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlphaKeyConfig {
+    pub id: String,
+    pub is_enabled: bool,
+    pub is_active: bool,
+    pub mode: String, // "dual_window", "side_by_side", "stacked"
+    pub content_source: String, // "overlay", "audience"
+    pub fill_monitor_id: Option<String>,
+    pub key_monitor_id: Option<String>,
+    pub combined_monitor_id: Option<String>,
+    pub premultiplied: bool,
+    pub key_gain: f64,
+    pub key_invert: bool,
+    pub key_clip_percent: f64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl Default for AlphaKeyConfig {
+    fn default() -> Self {
+        let now = chrono::Utc::now().to_rfc3339();
+        Self {
+            id: "default-alpha-key".to_string(),
+            is_enabled: false,
+            is_active: false,
+            mode: "dual_window".to_string(),
+            content_source: "overlay".to_string(),
+            fill_monitor_id: None,
+            key_monitor_id: None,
+            combined_monitor_id: None,
+            premultiplied: true,
+            key_gain: 1.0,
+            key_invert: false,
+            key_clip_percent: 0.0,
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlphaKeyStatus {
+    pub is_enabled: bool,
+    pub is_active: bool,
+    pub mode: String,
+    pub fill_window_open: bool,
+    pub key_window_open: bool,
+    pub combined_window_open: bool,
+    pub content_source: String,
+    pub error: Option<String>,
+}
+
+impl Default for AlphaKeyStatus {
+    fn default() -> Self {
+        Self {
+            is_enabled: false,
+            is_active: false,
+            mode: "dual_window".to_string(),
+            fill_window_open: false,
+            key_window_open: false,
+            combined_window_open: false,
+            content_source: "overlay".to_string(),
             error: None,
         }
     }

@@ -3,6 +3,7 @@ import { OperatorView } from './components/OperatorView';
 import { AudienceView } from './components/AudienceView';
 import { StageDisplayView } from './components/Stage/StageDisplayView';
 import { LivestreamOverlayView } from './components/Overlay/LivestreamOverlayView';
+import { AlphaKeyView } from './components/Broadcast/AlphaKeyView';
 import { DatabaseRecoveryModal } from './components/DatabaseRecoveryModal';
 import { api } from './services/api';
 import { mediaService } from './services/mediaService';
@@ -38,6 +39,15 @@ export function App() {
       if (w === 'overlay' || window.location.hash.includes('overlay')) {
         return 'overlay';
       }
+      if (w === 'alpha_fill' || window.location.hash.includes('alpha_fill')) {
+        return 'alpha_fill';
+      }
+      if (w === 'alpha_key' || window.location.hash.includes('alpha_key')) {
+        return 'alpha_key';
+      }
+      if (w === 'alpha_combined' || window.location.hash.includes('alpha_combined')) {
+        return 'alpha_combined';
+      }
     }
     return 'operator';
   }, []);
@@ -52,6 +62,18 @@ export function App() {
 
   if (windowMode === 'overlay') {
     return <LivestreamOverlayView />;
+  }
+
+  if (windowMode === 'alpha_fill') {
+    return <AlphaKeyView role="fill" />;
+  }
+
+  if (windowMode === 'alpha_key') {
+    return <AlphaKeyView role="key" />;
+  }
+
+  if (windowMode === 'alpha_combined') {
+    return <AlphaKeyView role="combined" />;
   }
 
   return (

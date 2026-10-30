@@ -55,6 +55,7 @@ const STEP_TYPES: { type: MacroStep['type']; label: string }[] = [
   { type: 'autoAdvance', label: 'Auto-advance' },
   { type: 'obs', label: 'OBS Studio' },
   { type: 'camera', label: 'Camera / Video' },
+  { type: 'alpha_key', label: 'Alpha Key (Key & Fill)' },
 ];
 
 export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, onClose }) => {
@@ -291,6 +292,27 @@ export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, on
                 }
               />
             )}
+          </div>
+        );
+      case 'alpha_key':
+        return (
+          <div style={{ display: 'flex', gap: '6px', flex: 1, alignItems: 'center' }}>
+            <select
+              data-testid="step-alpha-key-command"
+              aria-label="Alpha key command"
+              style={{ ...field, width: '160px' }}
+              value={step.command}
+              onChange={(e) =>
+                setStep(i, {
+                  type: 'alpha_key',
+                  command: e.target.value as any,
+                })
+              }
+            >
+              <option value="toggle">Toggle Key & Fill</option>
+              <option value="enable">Enable Output</option>
+              <option value="disable">Disable Output</option>
+            </select>
           </div>
         );
     }

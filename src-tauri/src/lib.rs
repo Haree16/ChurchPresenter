@@ -447,6 +447,13 @@ pub fn run() {
             commands::toggle_live_camera,
             commands::get_live_video_status,
             commands::list_camera_devices,
+            // Phase 11.4: Alpha Key (Key & Fill)
+            commands::get_alpha_key_config,
+            commands::update_alpha_key_config,
+            commands::toggle_alpha_key,
+            commands::get_alpha_key_status,
+            commands::open_alpha_window,
+            commands::close_alpha_window,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
