@@ -26,6 +26,7 @@ mod search;
 mod service_templates;
 pub mod planning_center;
 pub mod dmx;
+pub mod updater;
 
 use db::DbManager;
 use midi::MidiService;
@@ -406,6 +407,11 @@ pub fn run() {
             commands::update_dmx_config,
             commands::send_dmx_test_cue,
             commands::get_stream_deck_profile,
+            // Phase 10.4: Auto-updater
+            commands::get_updater_config,
+            commands::save_updater_config,
+            commands::check_for_updates,
+            commands::install_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

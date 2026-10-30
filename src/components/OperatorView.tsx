@@ -28,7 +28,7 @@ import { cloneElements } from '../services/slideElements';
 import { api } from '../services/api';
 import { goToSlideNumber } from '../services/slideJump';
 import { runKeyBinding } from '../services/runKeyBinding';
-import { AlertTriangle, X, Sparkles, Plus, BookOpen } from 'lucide-react';
+import { AlertTriangle, X, Sparkles, Plus, BookOpen, Download } from 'lucide-react';
 
 export const OperatorView: React.FC = () => {
   const {
@@ -157,6 +157,21 @@ export const OperatorView: React.FC = () => {
       setShowWelcomeBanner(false);
     }
   }, [presentations]);
+
+  // Phase 10.4: Check for updates on application startup
+  const [updateNotice, setUpdateNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.getUpdaterConfig().then((cfg) => {
+      if (cfg.checkOnStartup) {
+        api.checkForUpdates().then((res) => {
+          if (res.isAvailable) {
+            setUpdateNotice(`v${res.latestVersion}`);
+          }
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+  }, []);
 
   // Modals state
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -490,6 +505,68 @@ export const OperatorView: React.FC = () => {
         </div>
       )}
 
+      {/* Phase 10.4: Update Available Startup Banner */}
+      {updateNotice && (
+        <div
+          data-testid="startup-update-banner"
+          style={{
+            backgroundColor: '#0c4a6e',
+            color: '#f8fafc',
+            padding: '10px 20px',
+            fontSize: '13px',
+            borderBottom: '1px solid #0284c7',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Download size={16} color="#38bdf8" />
+            <div>
+              <strong style={{ color: '#ffffff' }}>Church Presenter Update Available ({updateNotice})</strong>
+              <span style={{ color: '#bae6fd', marginLeft: '6px' }}>
+                A newer version is ready to review.
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              type="button"
+              data-testid="open-updates-from-banner"
+              onClick={() => setIsSettingsModalOpen(true)}
+              style={{
+                padding: '5px 12px',
+                backgroundColor: '#0284c7',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              View in Settings
+            </button>
+            <button
+              type="button"
+              onClick={() => setUpdateNotice(null)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                fontSize: '12px',
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Workspace View */}
       {activeView === 'services' ? (
         <ServicePlannerView
@@ -731,6 +808,7 @@ export const OperatorView: React.FC = () => {
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
         onOpenBackupModal={() => setIsBackupModalOpen(true)}
+        isLive={presentationState.isLive}
       />
     </div>
   );

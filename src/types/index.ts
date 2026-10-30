@@ -1032,4 +1032,28 @@ export interface DatabaseHealth {
   availableBackups: string[];
 }
 
+// Phase 10.4: Auto-updater
+export interface UpdaterConfig {
+  checkOnStartup: boolean;
+  feedUrl: string;
+  lastCheckedAt?: string | null;
+}
+
+export interface UpdateCheckResult {
+  isAvailable: boolean;
+  currentVersion: string;
+  latestVersion: string;
+  releaseNotes?: string | null;
+  publishedAt?: string | null;
+  downloadUrl?: string | null;
+  isLiveBlocked: boolean;
+  error?: string | null;
+}
+
+export interface UpdateInstallResult {
+  success: boolean;
+  message: string;
+  restarted: boolean;
+}
+
 

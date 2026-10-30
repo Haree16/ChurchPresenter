@@ -76,8 +76,22 @@ Done when: a Planning Center plan imports into a service and a Stream Deck page 
   - Enforces `volume`, `trimIn`, `trimOut` boundary loops, and `isLooping` state on both standalone fullscreen presentations and background motion videos.
 - **Verification**: Verified with 300 passing backend Rust unit tests and 515 passing Vitest unit tests (`tests/media-inspector.test.tsx`).
 
-## 10.4 Auto-updater
-- Tauri updater plugin with a signed update feed; check on start, never install during a live service.
+## 10.4 Auto-updater [COMPLETED]
+- **Tauri Updater & Signed Feed Configuration**:
+  - Configured `plugins.updater` in `src-tauri/tauri.conf.json` with endpoints pointing to official feeds (`https://updates.churchpresenter.org/v2/releases/latest.json`) and release pubkey.
+  - Relaxed CSP `connect-src` policy allowing `https:` feed endpoints and downloads while maintaining strict offline guarantees.
+- **Backend Updater Engine (`updater.rs`)**:
+  - Strict SemVer version comparator (`is_newer_version(current, candidate)`) handling versions and pre-releases.
+  - Settings persistence in SQLite (`updater_check_on_startup`, `updater_feed_url`, `updater_last_checked_at`).
+  - Offline-safe query engine (`check_for_updates`) with strict 5-second timeout and graceful degradation on network drops or disconnected computers.
+  - **CRITICAL Live Service Safety Lock**: `install_update` strictly blocks installation and restart if `presentationState.is_live == true`, preventing worship disruptions.
+- **Software Updates UI Tab & Operator Startup Banner**:
+  - Added dedicated "Software Updates" tab in `SettingsModal.tsx` showing current installed version, last checked date, "Check for Updates" button, and startup auto-check toggle.
+  - Custom feed URL configuration with "Save" and "Reset Default" controls.
+  - Dynamic display of new versions with release notes and release dates.
+  - When a live presentation is active, displays a prominent safety warning (`Installation Locked During Live Service`) and disables the "Install & Restart" button.
+  - On application launch, if `checkOnStartup` is enabled, performs a quiet background check and displays a non-intrusive update banner in the operator view with "View in Settings" and "Dismiss" buttons.
+- **Verification**: Verified with 303 passing backend Rust unit tests and 528 passing Vitest unit tests (`tests/auto-updater.test.tsx`).
 
 ## 10.5 Remote hardening
 From `plan.md` gap 16: remote and OSC listeners are plain HTTP and password-less OSC.

@@ -1019,4 +1019,35 @@ pub struct DatabaseHealth {
     pub available_backups: Vec<String>,
 }
 
+// ================= Phase 10.4: Auto-updater Models =================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdaterConfig {
+    pub check_on_startup: bool,
+    pub feed_url: String,
+    pub last_checked_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCheckResult {
+    pub is_available: bool,
+    pub current_version: String,
+    pub latest_version: String,
+    pub release_notes: Option<String>,
+    pub published_at: Option<String>,
+    pub download_url: Option<String>,
+    pub is_live_blocked: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInstallResult {
+    pub success: bool,
+    pub message: String,
+    pub restarted: bool,
+}
+
 

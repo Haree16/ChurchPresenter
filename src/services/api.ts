@@ -72,6 +72,9 @@ import {
   PcoImportResult,
   DmxConfig,
   StreamDeckProfileExport,
+  UpdaterConfig,
+  UpdateCheckResult,
+  UpdateInstallResult,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
@@ -4995,6 +4998,47 @@ class MockDataStore {
 4. Assign button presses to send OSC string messages to any of the 15 paths above.`,
     };
   }
+
+  // Phase 10.4: Auto-updater
+  private updaterConfig: UpdaterConfig = {
+    checkOnStartup: true,
+    feedUrl: 'https://updates.churchpresenter.org/v2/releases/latest.json',
+    lastCheckedAt: null,
+  };
+
+  public async getUpdaterConfig(): Promise<UpdaterConfig> {
+    return { ...this.updaterConfig };
+  }
+
+  public async saveUpdaterConfig(config: UpdaterConfig): Promise<UpdaterConfig> {
+    this.updaterConfig = { ...config };
+    return { ...this.updaterConfig };
+  }
+
+  public async checkForUpdates(_overrideFeedUrl?: string | null): Promise<UpdateCheckResult> {
+    const isLive = this.state.isLive;
+    return {
+      isAvailable: false,
+      currentVersion: '1.0.0',
+      latestVersion: '1.0.0',
+      releaseNotes: null,
+      publishedAt: null,
+      downloadUrl: null,
+      isLiveBlocked: isLive,
+      error: null,
+    };
+  }
+
+  public async installUpdate(): Promise<UpdateInstallResult> {
+    if (this.state.isLive) {
+      throw new Error('Cannot install updates while a presentation is live. Please stop the live service first to prevent disruption.');
+    }
+    return {
+      success: true,
+      message: 'Update verified and staged. The application is ready to restart.',
+      restarted: false,
+    };
+  }
 }
 
 const mockStore = new MockDataStore();
@@ -6976,6 +7020,66 @@ export const api = {
       return await invoke<StreamDeckProfileExport>('get_stream_deck_profile');
     }
     return mockStore.getStreamDeckProfile();
+  },
+
+  // ================= Phase 10.4: Auto-updater =================
+
+  getUpdaterConfig: async (): Promise<UpdaterConfig> => {
+    if (isTauri()) {
+      return await invoke<UpdaterConfig>('get_updater_config');
+    }
+    return mockStore.getUpdaterConfig();
+  },
+
+  saveUpdaterConfig: async (config: UpdaterConfig): Promise<UpdaterConfig> => {
+    if (isTauri()) {
+      return await invoke<UpdaterConfig>('save_updater_config', { config });
+    }
+    return mockStore.saveUpdaterConfig(config);
+  },
+
+  checkForUpdates: async (overrideFeedUrl?: string | null): Promise<UpdateCheckResult> => {
+    if (isTauri()) {
+      return await invoke<UpdateCheckResult>('check_for_updates', { overrideFeedUrl });
+    }
+    return mockStore.checkForUpdates(overrideFeedUrl);
+  },
+
+  installUpdate: async (): Promise<UpdateInstallResult> => {
+    if (isTauri()) {
+      return await invoke<UpdateInstallResult>('install_update');
+    }
+    return mockStore.installUpdate();
+  },
+
+  onUpdaterConfigUpdated: (callback: (config: UpdaterConfig) => void): (() => void) => {
+    if (isTauri()) {
+      let unlisten: UnlistenFn | undefined;
+      listen<UpdaterConfig>('updater:config-updated', (event) => {
+        callback(event.payload);
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        if (unlisten) unlisten();
+      };
+    }
+    return () => {};
+  },
+
+  onUpdaterInstalled: (callback: (result: UpdateInstallResult) => void): (() => void) => {
+    if (isTauri()) {
+      let unlisten: UnlistenFn | undefined;
+      listen<UpdateInstallResult>('updater:installed', (event) => {
+        callback(event.payload);
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        if (unlisten) unlisten();
+      };
+    }
+    return () => {};
   },
 };
 

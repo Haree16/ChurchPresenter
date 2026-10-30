@@ -12,26 +12,32 @@ import {
   Info,
   RotateCcw,
   Terminal,
+  Download,
+  AlertTriangle,
+  CheckCircle2,
+  WifiOff,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { LogoSettingsCard } from './LogoSettingsCard';
 import { StageLayoutEditor } from '../Stage/StageLayoutEditor';
 import { KeyBindingsCard } from './KeyBindingsCard';
 import { CcliSettingsCard } from './CcliSettingsCard';
-import { AppInfo, AppDiagnosticEntry, AppDiagnosticFilter } from '../../types';
+import { AppInfo, AppDiagnosticEntry, AppDiagnosticFilter, UpdaterConfig, UpdateCheckResult } from '../../types';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenBackupModal?: () => void;
+  isLive?: boolean;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
   onOpenBackupModal,
+  isLive,
 }) => {
-  const [activeTab, setActiveTab] = useState<'general' | 'storage' | 'diagnostics' | 'maintenance'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'storage' | 'diagnostics' | 'maintenance' | 'updates'>('general');
   const [isStageLayoutOpen, setIsStageLayoutOpen] = useState(false);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [diagnostics, setDiagnostics] = useState<AppDiagnosticEntry[]>([]);
@@ -42,6 +48,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [integrityStatus, setIntegrityStatus] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+
+  // Phase 10.4: Auto-updater state
+  const [updaterConfig, setUpdaterConfig] = useState<UpdaterConfig>({
+    checkOnStartup: true,
+    feedUrl: 'https://updates.churchpresenter.org/v2/releases/latest.json',
+    lastCheckedAt: null,
+  });
+  const [feedUrlDraft, setFeedUrlDraft] = useState<string>('https://updates.churchpresenter.org/v2/releases/latest.json');
+  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
+  const [updateInstallStatus, setUpdateInstallStatus] = useState<string | null>(null);
+  const [isLiveActive, setIsLiveActive] = useState<boolean>(isLive ?? false);
 
   const loadData = async () => {
     try {
@@ -62,6 +81,111 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setDiagnostics(logs);
     } catch {
       // Fallback
+    }
+
+    try {
+      const cfg = await api.getUpdaterConfig();
+      setUpdaterConfig(cfg);
+      setFeedUrlDraft(cfg.feedUrl);
+    } catch {
+      // Fallback
+    }
+
+    if (isLive === undefined) {
+      try {
+        const presState = await api.getPresentationState();
+        setIsLiveActive(presState.isLive);
+      } catch {
+        // Fallback
+      }
+    } else {
+      setIsLiveActive(isLive);
+    }
+  };
+
+  useEffect(() => {
+    if (isLive !== undefined) {
+      setIsLiveActive(isLive);
+    }
+  }, [isLive]);
+
+  const handleCheckUpdates = async () => {
+    setIsCheckingUpdate(true);
+    setUpdateInstallStatus(null);
+    try {
+      const res = await api.checkForUpdates(feedUrlDraft.trim() || undefined);
+      setUpdateResult(res);
+      const cfg = await api.getUpdaterConfig();
+      setUpdaterConfig(cfg);
+    } catch (err: any) {
+      setUpdateResult({
+        isAvailable: false,
+        currentVersion: appInfo?.version || '1.0.0',
+        latestVersion: appInfo?.version || '1.0.0',
+        releaseNotes: null,
+        publishedAt: null,
+        downloadUrl: null,
+        isLiveBlocked: isLiveActive,
+        error: err?.message || 'Failed to check for updates',
+      });
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
+
+  const handleToggleStartupCheck = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    try {
+      const saved = await api.saveUpdaterConfig({
+        ...updaterConfig,
+        checkOnStartup: checked,
+      });
+      setUpdaterConfig(saved);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSaveFeedUrl = async () => {
+    try {
+      const saved = await api.saveUpdaterConfig({
+        ...updaterConfig,
+        feedUrl: feedUrlDraft.trim(),
+      });
+      setUpdaterConfig(saved);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleResetFeedUrl = async () => {
+    const defaultUrl = 'https://updates.churchpresenter.org/v2/releases/latest.json';
+    setFeedUrlDraft(defaultUrl);
+    try {
+      const saved = await api.saveUpdaterConfig({
+        ...updaterConfig,
+        feedUrl: defaultUrl,
+      });
+      setUpdaterConfig(saved);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    if (isLiveActive) {
+      setUpdateInstallStatus('Cannot install updates while a presentation is live.');
+      return;
+    }
+    setIsInstallingUpdate(true);
+    setUpdateInstallStatus(null);
+    try {
+      const res = await api.installUpdate();
+      setUpdateInstallStatus(res.message);
+    } catch (err: any) {
+      setUpdateInstallStatus(err?.message || 'Failed to install update');
+    } finally {
+      setIsInstallingUpdate(false);
     }
   };
 
@@ -200,6 +324,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         >
           {[
             { id: 'general', label: 'General & About', icon: Info },
+            { id: 'updates', label: 'Software Updates', icon: Download },
             { id: 'storage', label: 'Storage & Database', icon: HardDrive },
             { id: 'diagnostics', label: 'Diagnostic Logs', icon: Activity },
             { id: 'maintenance', label: 'Safety & Reset', icon: ShieldCheck },
@@ -367,6 +492,356 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
           <StageLayoutEditor isOpen={isStageLayoutOpen} onClose={() => setIsStageLayoutOpen(false)} />
+
+          {/* TAB: SOFTWARE UPDATES */}
+          {activeTab === 'updates' && (
+            <div data-testid="updates-settings-tab" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Current Version Card */}
+              <div
+                style={{
+                  padding: '16px',
+                  backgroundColor: '#1e293b',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>
+                    Installed Version
+                  </div>
+                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#38bdf8', marginTop: '2px' }}>
+                    Church Presenter v{appInfo?.version || '1.0.0'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                    {updaterConfig.lastCheckedAt
+                      ? `Last checked for updates: ${new Date(updaterConfig.lastCheckedAt).toLocaleString()}`
+                      : 'Never checked for updates'}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  data-testid="check-updates-btn"
+                  onClick={handleCheckUpdates}
+                  disabled={isCheckingUpdate}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    backgroundColor: '#2563eb',
+                    border: 'none',
+                    color: '#ffffff',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: isCheckingUpdate ? 'wait' : 'pointer',
+                    opacity: isCheckingUpdate ? 0.7 : 1,
+                  }}
+                >
+                  <RefreshCw size={15} className={isCheckingUpdate ? 'animate-spin' : ''} />
+                  <span>{isCheckingUpdate ? 'Checking Feeds...' : 'Check for Updates'}</span>
+                </button>
+              </div>
+
+              {/* Live Service Safety Lock Banner (when live presentation is active) */}
+              {isLiveActive && (
+                <div
+                  data-testid="updater-live-locked-banner"
+                  style={{
+                    padding: '14px 16px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                    borderRadius: '8px',
+                    border: '1px solid #ef4444',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '12px',
+                  }}
+                >
+                  <AlertTriangle size={20} color="#f87171" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <div style={{ fontWeight: 700, color: '#f87171', fontSize: '13px' }}>
+                      Installation Locked During Live Service
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#fca5a5', marginTop: '4px', lineHeight: 1.5 }}>
+                      A worship presentation is currently LIVE. Installing software updates or restarting the application is strictly disabled to prevent worship service disruption. Please end or pause the live presentation before updating.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Update Check Results */}
+              {updateResult && updateResult.isAvailable && (
+                <div
+                  data-testid="update-available-card"
+                  style={{
+                    padding: '16px',
+                    backgroundColor: '#0f172a',
+                    borderRadius: '8px',
+                    border: '1px solid #3b82f6',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Download size={18} color="#60a5fa" />
+                      <span style={{ fontWeight: 700, fontSize: '15px', color: '#f8fafc' }}>
+                        New Version Available: v{updateResult.latestVersion}
+                      </span>
+                    </div>
+                    {updateResult.publishedAt && (
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                        Released {new Date(updateResult.publishedAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+
+                  {updateResult.releaseNotes && (
+                    <div
+                      style={{
+                        backgroundColor: '#1e293b',
+                        borderRadius: '6px',
+                        padding: '12px',
+                        fontSize: '12px',
+                        color: '#cbd5e1',
+                        lineHeight: 1.5,
+                        whiteSpace: 'pre-wrap',
+                        maxHeight: '160px',
+                        overflowY: 'auto',
+                        border: '1px solid #334155',
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, color: '#f8fafc', marginBottom: '6px' }}>Release Notes:</div>
+                      {updateResult.releaseNotes}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                    <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                      {isLiveActive
+                        ? 'Stop live presentation to enable installation.'
+                        : 'Application will stage the signed update.'}
+                    </div>
+
+                    <button
+                      type="button"
+                      data-testid="install-update-btn"
+                      onClick={handleInstallUpdate}
+                      disabled={isLiveActive || isInstallingUpdate}
+                      title={isLiveActive ? 'Cannot install while a presentation is live' : 'Install update'}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        backgroundColor: isLiveActive ? '#334155' : '#16a34a',
+                        border: 'none',
+                        color: isLiveActive ? '#94a3b8' : '#ffffff',
+                        padding: '8px 16px',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        cursor: isLiveActive || isInstallingUpdate ? 'not-allowed' : 'pointer',
+                        opacity: isLiveActive ? 0.6 : 1,
+                      }}
+                    >
+                      <Download size={15} />
+                      <span>{isInstallingUpdate ? 'Installing...' : 'Install & Restart'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Status Message After Installation */}
+              {updateInstallStatus && (
+                <div
+                  data-testid="updater-install-status"
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: '6px',
+                    backgroundColor: updateInstallStatus.includes('Error') || updateInstallStatus.includes('Cannot')
+                      ? 'rgba(239, 68, 68, 0.2)'
+                      : 'rgba(34, 197, 94, 0.2)',
+                    border: updateInstallStatus.includes('Error') || updateInstallStatus.includes('Cannot')
+                      ? '1px solid #ef4444'
+                      : '1px solid #22c55e',
+                    color: updateInstallStatus.includes('Error') || updateInstallStatus.includes('Cannot')
+                      ? '#fca5a5'
+                      : '#86efac',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                  }}
+                >
+                  {updateInstallStatus}
+                </div>
+              )}
+
+              {/* Up to date notice */}
+              {updateResult && !updateResult.isAvailable && !updateResult.error && (
+                <div
+                  data-testid="up-to-date-notice"
+                  style={{
+                    padding: '12px 14px',
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    borderRadius: '8px',
+                    border: '1px solid #22c55e',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                  }}
+                >
+                  <CheckCircle2 size={18} color="#4ade80" />
+                  <span style={{ color: '#4ade80', fontWeight: 600, fontSize: '13px' }}>
+                    Church Presenter is up to date (v{updateResult.currentVersion}). No new updates found.
+                  </span>
+                </div>
+              )}
+
+              {/* Offline / Server Error notice */}
+              {updateResult && updateResult.error && (
+                <div
+                  data-testid="updater-error-notice"
+                  style={{
+                    padding: '12px 14px',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    borderRadius: '8px',
+                    border: '1px solid #f59e0b',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '10px',
+                  }}
+                >
+                  <WifiOff size={18} color="#f59e0b" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <div style={{ color: '#fbbf24', fontWeight: 600, fontSize: '13px' }}>
+                      Offline Mode / Feed Inaccessible
+                    </div>
+                    <div style={{ color: '#cbd5e1', fontSize: '12px', marginTop: '2px', lineHeight: 1.4 }}>
+                      {updateResult.error}. Church computers without internet access remain 100% operational offline.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Updater Configuration Options */}
+              <div
+                style={{
+                  padding: '16px',
+                  backgroundColor: '#1e293b',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '14px',
+                }}
+              >
+                <div style={{ fontWeight: 600, color: '#f8fafc', fontSize: '14px' }}>
+                  Update Preferences
+                </div>
+
+                {/* Check on Startup Toggle */}
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    data-testid="updater-startup-checkbox"
+                    checked={updaterConfig.checkOnStartup}
+                    onChange={handleToggleStartupCheck}
+                    style={{
+                      width: '16px',
+                      height: '16px',
+                      accentColor: '#3b82f6',
+                      cursor: 'pointer',
+                    }}
+                  />
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                      Automatically check for updates on application launch
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                      Quietly queries the signed update manifest when launched. Never disrupts running worship presentations.
+                    </div>
+                  </div>
+                </label>
+
+                {/* Feed URL Field */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                    Custom Update Feed URL
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      data-testid="updater-feed-input"
+                      value={feedUrlDraft}
+                      onChange={(e) => setFeedUrlDraft(e.target.value)}
+                      placeholder="https://..."
+                      style={{
+                        flex: 1,
+                        backgroundColor: '#090d16',
+                        border: '1px solid #334155',
+                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        color: '#f8fafc',
+                        fontSize: '12px',
+                        outline: 'none',
+                        fontFamily: 'monospace',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      data-testid="updater-save-feed-btn"
+                      onClick={handleSaveFeedUrl}
+                      style={{
+                        backgroundColor: '#334155',
+                        border: 'none',
+                        color: '#f8fafc',
+                        padding: '8px 14px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="updater-reset-feed-btn"
+                      onClick={handleResetFeedUrl}
+                      style={{
+                        backgroundColor: '#1e293b',
+                        border: '1px solid #334155',
+                        color: '#94a3b8',
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Reset Default
+                    </button>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                    Official signed Tauri feed URL. Custom church intranet feeds can be pointed here for local mirrors.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {activeTab === 'storage' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

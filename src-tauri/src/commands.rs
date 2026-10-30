@@ -2548,6 +2548,45 @@ pub async fn get_stream_deck_profile(
     Ok(crate::dmx::get_stream_deck_profile(osc_port))
 }
 
+// ================= Phase 10.4: Auto-updater =================
+
+#[tauri::command]
+pub async fn get_updater_config(
+    db: State<'_, DbManager>,
+) -> Result<crate::models::UpdaterConfig, String> {
+    crate::updater::get_updater_config(&db)
+}
+
+#[tauri::command]
+pub async fn save_updater_config(
+    config: crate::models::UpdaterConfig,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<crate::models::UpdaterConfig, String> {
+    let saved = crate::updater::save_updater_config(&db, &config)?;
+    app.emit("updater:config-updated", &saved).ok();
+    Ok(saved)
+}
+
+#[tauri::command]
+pub async fn check_for_updates(
+    override_feed_url: Option<String>,
+    db: State<'_, DbManager>,
+    pres_mgr: State<'_, PresentationManager>,
+) -> Result<crate::models::UpdateCheckResult, String> {
+    Ok(crate::updater::check_for_updates(&db, &pres_mgr, override_feed_url.as_deref()))
+}
+
+#[tauri::command]
+pub async fn install_update(
+    pres_mgr: State<'_, PresentationManager>,
+    app: AppHandle,
+) -> Result<crate::models::UpdateInstallResult, String> {
+    let res = crate::updater::install_update(&pres_mgr)?;
+    app.emit("updater:installed", &res).ok();
+    Ok(res)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
