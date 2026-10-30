@@ -315,6 +315,8 @@ pub fn run() {
             commands::update_timer,
             commands::delete_timer,
             commands::get_stage_config,
+            commands::list_stage_configs,
+            commands::delete_stage_config,
             commands::update_stage_config,
             commands::set_media_playback,
             commands::set_timer_state,

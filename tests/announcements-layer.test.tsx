@@ -28,7 +28,7 @@ describe('Phase 9.2: Announcements Layer', () => {
     const mainS1 = await api.createSlide(mainPres.id, { title: 'Main 1', body: 'Main Slide 1' });
     const mainS2 = await api.createSlide(mainPres.id, { title: 'Main 2', body: 'Main Slide 2' });
 
-    const foyerPres = await api.createPresentation('Lobby Announcements', 'Foyer');
+    const foyerPres = await api.createPresentation('Lobby Announcements', 'Announcements');
     const foyerS1 = await api.createSlide(foyerPres.id, { title: 'Welcome', body: 'Welcome to Church' });
     const foyerS2 = await api.createSlide(foyerPres.id, { title: 'Youth', body: 'Youth Friday 7pm' });
 
@@ -77,7 +77,7 @@ describe('Phase 9.2: Announcements Layer', () => {
   });
 
   it('clearAnnouncements clears only announcements while clearAll clears both', async () => {
-    const mainPres = await api.createPresentation('Service Deck', 'General');
+    const mainPres = await api.createPresentation('Service Deck', 'Other');
     const mainSlide = await api.createSlide(mainPres.id, { title: 'Live S1', body: 'Live Body' });
     await api.setLiveSlide(mainPres.id, mainSlide.id);
 
@@ -104,7 +104,7 @@ describe('Phase 9.2: Announcements Layer', () => {
   });
 
   it('AudienceView displays announcements slide on target outputs and main slide on normal outputs', async () => {
-    const mainPres = await api.createPresentation('Main Sanctuary Deck', 'General');
+    const mainPres = await api.createPresentation('Main Sanctuary Deck', 'Other');
     const mainSlide = await api.createSlide(mainPres.id, { title: 'Main', body: 'Worship Lyrics Here' });
     await api.setLiveSlide(mainPres.id, mainSlide.id);
 
@@ -129,7 +129,7 @@ describe('Phase 9.2: Announcements Layer', () => {
   });
 
   it('AnnouncementsControl component renders controls and interacts with API', async () => {
-    const foyerPres = await api.createPresentation('Weekly Announcements', 'Foyer');
+    const foyerPres = await api.createPresentation('Weekly Announcements', 'Announcements');
     await api.createSlide(foyerPres.id, { title: 'Notice 1', body: 'Wednesday Prayer Meeting' });
     await api.createSlide(foyerPres.id, { title: 'Notice 2', body: 'Sunday School 9am' });
 
@@ -164,6 +164,8 @@ describe('Phase 9.2: Announcements Layer', () => {
           foregroundColor: '#ffffff',
           fontSize: 'medium',
           textAlignment: 'center',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         },
         nextSlide: null,
         isLive: true,

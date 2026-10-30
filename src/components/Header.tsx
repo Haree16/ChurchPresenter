@@ -61,6 +61,7 @@ interface HeaderProps {
   onOpenTimerModal: () => void;
   onOpenStageModal: () => void;
   onOpenOutputModal?: () => void;
+  onOpenMultiViewerModal?: () => void;
   onOpenOverlayModal?: () => void;
   onOpenIntegrationsModal?: () => void;
   onOpenDiagnosticsModal?: () => void;
@@ -85,6 +86,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenTimerModal,
   onOpenStageModal,
   onOpenOutputModal,
+  onOpenMultiViewerModal,
   onOpenOverlayModal,
   onOpenIntegrationsModal,
   onOpenDiagnosticsModal,
@@ -531,6 +533,24 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Layers size={14} />
             <span>Outputs</span>
+          </button>
+        )}
+
+        {onOpenMultiViewerModal && (
+          <button
+            type="button"
+            data-testid="header-multiviewer-btn"
+            onClick={onOpenMultiViewerModal}
+            title="Open Multi-Viewer Broadcast Monitor"
+            style={{
+              ...headerBtn,
+              backgroundColor: '#1e293b',
+              color: '#38bdf8',
+              border: '1px solid #0284c7',
+            }}
+          >
+            <LayoutGrid size={14} />
+            <span>Multi-Viewer</span>
           </button>
         )}
 

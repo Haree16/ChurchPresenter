@@ -25,10 +25,23 @@ Today a Look (`looks.rs`) stores logo, blackout and props globally.
 - **Operator Panel**: Added `AnnouncementsControl` component to `PreviewPanel`, displaying second live slot thumbnail, slide position (`Slide X of Y`), interval control, loop toggle, and dedicated next/prev/clear buttons.
 - **Verification**: Verified with both Cargo unit tests and Vitest component/integration test suite (`tests/announcements-layer.test.tsx`). Main presentation and announcements layer operate independently without collisions.
 
-## 9.3 Per-screen stage layouts
-Today there is one stage layout for all stage screens (`stage_layout.rs`).
-- Key layouts by stage output id; the editor picks which screen it edits.
-- Add a multi-viewer panel (shows what a chosen main output displays).
+## 9.3 Per-screen stage layouts [COMPLETED]
+- **Keyed by Stage Output ID**: In SQLite and in-memory mock store, `stage_configs.id` now supports arbitrary output IDs (e.g. `output-stage-pastor`, `output-stage-vocalist`, `output-stage-choir`) with automatic fallback to `default-stage`.
+- **Database & Tauri API**:
+  - `get_stage_config(id)` returns specific screen config or falls back to `default-stage`.
+  - Added `list_stage_configs()` and `delete_stage_config(id)` in `db.rs`, `commands.rs`, and registered in `lib.rs`.
+- **New Multi-Viewer Panel**:
+  - Added `multiviewer` panel kind to `StagePanelKind` in both backend Rust (`stage_layout.rs`) and frontend (`stageLayouts.ts`, `types/index.ts`).
+  - Allowed panel capacity expanded from 7 to 8 (`MAX_PANELS = 8`, `MAX_STAGE_PANELS = 8`).
+  - Rendered in `StageCanvas` as a live audience mini-preview tile directly on stage confidence monitors.
+- **Stage Layout Editor Polish**:
+  - `StageLayoutEditor` features a Target Screen dropdown allowing operators to choose between global default (`default-stage`) or any specific configured stage screen.
+  - Adding panels, tweaking presets, and saving targets the selected screen layout.
+- **Broadcast Multi-Viewer Production Monitor Modal**:
+  - Added `MultiViewerModal.tsx` accessible directly from operator header (`header-multiviewer-btn`).
+  - Displays synchronized live multi-viewer tiles for all configured outputs (Main Audience, Stage Displays, Livestream Overlays, Foyer Loops).
+  - Displays broadcast live status, real-time clock, aspect ratio indicators, and primary focus follow switcher.
+- **Verification**: Verified with 290 passing backend Rust unit tests (`cargo test`) and 481 passing Vitest frontend unit tests (`npm test`), including dedicated tests in `tests/stage-layout-and-multiviewer.test.tsx`.
 
 ## 9.4 Editor polish
 - Rotate and resize handles on elements; alignment guides and snapping.

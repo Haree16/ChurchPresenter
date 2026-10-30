@@ -117,6 +117,40 @@ export const StageCanvas = React.forwardRef<HTMLDivElement, StageCanvasProps>(fu
             {state.currentItemId ? 'Keep tempo steady. Watch pastor for cues.' : 'Stage display connected and ready.'}
           </div>
         );
+      case 'multiviewer':
+        return (
+          <>
+            {label('Audience Live Preview (Multi-Viewer)', '#a855f7')}
+            <div
+              data-testid="stage-panel-multiviewer-preview"
+              style={{
+                flex: 1,
+                width: '100%',
+                borderRadius: '4px',
+                backgroundColor: isBlackout ? '#000000' : currentSlide?.backgroundColor || '#0a0f1d',
+                color: isBlackout ? '#ffffff' : currentSlide?.foregroundColor || '#ffffff',
+                border: '1px solid #334155',
+                overflow: 'hidden',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                textAlign: 'center',
+                padding: '4px',
+                fontSize: '0.6em',
+                lineHeight: 1.2,
+                position: 'relative',
+              }}
+            >
+              {isBlackout ? (
+                <span style={{ color: '#ef4444', fontWeight: 700 }}>[ BLACKOUT ]</span>
+              ) : !isLive || !currentSlide ? (
+                <span style={{ color: dim }}>[ STANDBY ]</span>
+              ) : (
+                <div style={{ maxHeight: '100%', overflow: 'hidden' }}>{currentSlide.body}</div>
+              )}
+            </div>
+          </>
+        );
     }
   };
 

@@ -20,6 +20,7 @@ import { OutputManagerModal } from './Production/OutputManagerModal';
 import { LivestreamOverlayModal } from './Production/LivestreamOverlayModal';
 import { ProductionIntegrationsModal } from './Production/ProductionIntegrationsModal';
 import { DiagnosticsModal } from './Production/DiagnosticsModal';
+import { MultiViewerModal } from './Production/MultiViewerModal';
 import { SettingsModal } from './Settings/SettingsModal';
 import { Slide, AudienceWindowStatus, StageWindowStatus, RemoteServerStatus, KeyBinding } from '../types';
 import { api } from '../services/api';
@@ -166,6 +167,7 @@ export const OperatorView: React.FC = () => {
   const [isTimerModalOpen, setIsTimerModalOpen] = useState(false);
   const [isStagePreviewOpen, setIsStagePreviewOpen] = useState(false);
   const [isOutputModalOpen, setIsOutputModalOpen] = useState(false);
+  const [isMultiViewerModalOpen, setIsMultiViewerModalOpen] = useState(false);
   const [isOverlayModalOpen, setIsOverlayModalOpen] = useState(false);
   const [isIntegrationsModalOpen, setIsIntegrationsModalOpen] = useState(false);
   const [isDiagnosticsModalOpen, setIsDiagnosticsModalOpen] = useState(false);
@@ -214,6 +216,7 @@ export const OperatorView: React.FC = () => {
     isTimerModalOpen ||
     isStagePreviewOpen ||
     isOutputModalOpen ||
+    isMultiViewerModalOpen ||
     isOverlayModalOpen ||
     isIntegrationsModalOpen ||
     isDiagnosticsModalOpen ||
@@ -323,6 +326,7 @@ export const OperatorView: React.FC = () => {
         onOpenTimerModal={() => setIsTimerModalOpen(true)}
         onOpenStageModal={() => setIsStagePreviewOpen(true)}
         onOpenOutputModal={() => setIsOutputModalOpen(true)}
+        onOpenMultiViewerModal={() => setIsMultiViewerModalOpen(true)}
         onOpenOverlayModal={() => setIsOverlayModalOpen(true)}
         onOpenIntegrationsModal={() => setIsIntegrationsModalOpen(true)}
         onOpenDiagnosticsModal={() => setIsDiagnosticsModalOpen(true)}
@@ -659,6 +663,13 @@ export const OperatorView: React.FC = () => {
       <OutputManagerModal
         isOpen={isOutputModalOpen}
         onClose={() => setIsOutputModalOpen(false)}
+      />
+
+      {/* Phase 9.3: Broadcast Multi-Viewer Production Monitor Modal */}
+      <MultiViewerModal
+        isOpen={isMultiViewerModalOpen}
+        onClose={() => setIsMultiViewerModalOpen(false)}
+        presentationState={presentationState}
       />
 
       {/* Phase 5: Livestream & OBS Transparent Overlay Modal */}

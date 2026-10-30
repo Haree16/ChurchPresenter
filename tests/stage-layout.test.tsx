@@ -28,8 +28,8 @@ afterEach(async () => {
 });
 
 describe('layout rules', () => {
-  it('lists the seven panel kinds with labels and default sizes', () => {
-    expect(STAGE_PANEL_KINDS.map((k) => k.kind)).toEqual(['current', 'next', 'clock', 'timer', 'message', 'status', 'notes']);
+  it('lists the panel kinds with labels and default sizes', () => {
+    expect(STAGE_PANEL_KINDS.map((k) => k.kind)).toEqual(['current', 'next', 'clock', 'timer', 'message', 'status', 'notes', 'multiviewer']);
     expect(kindLabel('current')).toBe('Current slide');
     expect(defaultFontPct('next')).toBeLessThan(defaultFontPct('current'));
   });
@@ -229,7 +229,7 @@ describe('StageLayoutEditor', () => {
     expect((screen.getByTestId('add-panel-current') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByTestId('add-panel-next'));
     expect(screen.getAllByTestId('panel-row').map((r) => r.textContent)).toEqual(['Current slide', 'Next slide']);
-    for (const k of ['clock', 'timer', 'message', 'status', 'notes']) fireEvent.click(screen.getByTestId(`add-panel-${k}`));
+    for (const k of ['clock', 'timer', 'message', 'status', 'notes', 'multiviewer']) fireEvent.click(screen.getByTestId(`add-panel-${k}`));
     expect(screen.getAllByTestId('panel-row')).toHaveLength(MAX_STAGE_PANELS);
   });
 

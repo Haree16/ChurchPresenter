@@ -5,11 +5,11 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const MAX_PANELS: usize = 7;
+pub const MAX_PANELS: usize = 8;
 pub const MAX_PANEL_FONT_PCT: f64 = 30.0;
 
 /// The things a stage panel can show. Each may appear once per layout.
-pub const PANEL_KINDS: [&str; 7] = ["current", "next", "clock", "timer", "message", "status", "notes"];
+pub const PANEL_KINDS: [&str; 8] = ["current", "next", "clock", "timer", "message", "status", "notes", "multiviewer"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

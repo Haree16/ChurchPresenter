@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Trash2, X } from 'lucide-react';
+import { Trash2, X, Monitor } from 'lucide-react';
 import { api } from '../../services/api';
-import { PresentationState, Slide, StageConfig, StagePanel, StagePanelKind } from '../../types';
+import { OutputConfig, PresentationState, Slide, StageConfig, StagePanel, StagePanelKind } from '../../types';
 import { StageCanvas } from './StageCanvas';
 import {
   MAX_STAGE_FONT_PCT,
@@ -50,6 +50,8 @@ const button: React.CSSProperties = {
 };
 
 export const StageLayoutEditor: React.FC<StageLayoutEditorProps> = ({ isOpen, onClose, onSaved }) => {
+  const [stageOutputs, setStageOutputs] = useState<OutputConfig[]>([]);
+  const [selectedScreenId, setSelectedScreenId] = useState<string>('default-stage');
   const [config, setConfig] = useState<StageConfig | null>(null);
   const [panels, setPanels] = useState<StagePanel[]>([]);
   const [highContrast, setHighContrast] = useState(true);
@@ -89,17 +91,25 @@ export const StageLayoutEditor: React.FC<StageLayoutEditorProps> = ({ isOpen, on
     };
   }, []);
 
-  useEffect(() => {
-    if (!isOpen) return;
+  const loadConfigForScreen = useCallback((screenId: string) => {
     setError(null);
     setMessage(null);
     setSelectedId(null);
-    api.getStageConfig().then((cfg) => {
+    api.getStageConfig(screenId).then((cfg) => {
       setConfig(cfg);
       setPanels(cfg.panels ? cfg.panels.map((p) => ({ ...p })) : []);
       setHighContrast(cfg.highContrast);
     });
-  }, [isOpen]);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    api.listOutputs().then((outs) => {
+      const stageOuts = outs.filter((o) => o.outputType === 'stage');
+      setStageOutputs(stageOuts);
+    }).catch(() => {});
+    loadConfigForScreen(selectedScreenId);
+  }, [isOpen, selectedScreenId, loadConfigForScreen]);
 
   if (!isOpen) return null;
 
@@ -134,7 +144,7 @@ export const StageLayoutEditor: React.FC<StageLayoutEditorProps> = ({ isOpen, on
     setError(null);
     setMessage(null);
     try {
-      const saved = await api.updateStageConfig({ ...config, panels, highContrast });
+      const saved = await api.updateStageConfig({ ...config, id: selectedScreenId, panels, highContrast });
       setConfig(saved);
       setMessage(panels.length === 0 ? 'Saved. The stage display uses the classic layout.' : 'Layout saved.');
       onSaved?.(saved);
@@ -170,7 +180,34 @@ export const StageLayoutEditor: React.FC<StageLayoutEditorProps> = ({ isOpen, on
     >
       <div style={{ width: 'min(980px, 96vw)', maxHeight: '94vh', overflowY: 'auto', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '16px', color: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <strong style={{ fontSize: '15px' }}>Stage display layout</strong>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <strong style={{ fontSize: '15px' }}>Stage display layout</strong>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Monitor size={14} color="#38bdf8" />
+              <select
+                data-testid="stage-screen-select"
+                value={selectedScreenId}
+                onChange={(e) => setSelectedScreenId(e.target.value)}
+                style={{
+                  backgroundColor: '#1e293b',
+                  color: '#f8fafc',
+                  border: '1px solid #334155',
+                  borderRadius: '6px',
+                  padding: '3px 8px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="default-stage">Default Stage Layout (Global)</option>
+                {stageOutputs.map((out) => (
+                  <option key={out.id} value={out.id}>
+                    {out.name} ({out.id})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
           <button type="button" aria-label="Close" onClick={onClose} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
             <X size={18} />
           </button>

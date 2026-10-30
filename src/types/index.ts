@@ -675,7 +675,7 @@ export interface TimerState {
 }
 
 /** The things a stage panel can show. Each may appear once per layout. */
-export type StagePanelKind = 'current' | 'next' | 'clock' | 'timer' | 'message' | 'status' | 'notes';
+export type StagePanelKind = 'current' | 'next' | 'clock' | 'timer' | 'message' | 'status' | 'notes' | 'multiviewer';
 
 /** A panel on the stage display, positioned in percent of the stage screen. */
 export interface StagePanel {

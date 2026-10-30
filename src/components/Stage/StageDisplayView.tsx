@@ -5,14 +5,24 @@ import { PresentationState, StageConfig, TimerState } from '../../types';
 import { api } from '../../services/api';
 
 interface StageDisplayViewProps {
+  outputId?: string;
   previewMode?: boolean;
   onClose?: () => void;
 }
 
 export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
+  outputId,
   previewMode = false,
   onClose,
 }) => {
+  const effectiveOutputId =
+    outputId ||
+    (typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('outputId') ||
+        new URLSearchParams(window.location.search).get('output') ||
+        'default-stage'
+      : 'default-stage');
+
   const [presentationState, setPresentationState] = useState<PresentationState>({
     currentPresentationId: null,
     currentSlideId: null,
@@ -25,7 +35,7 @@ export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
   });
 
   const [stageConfig, setStageConfig] = useState<StageConfig>({
-    id: 'default-stage',
+    id: effectiveOutputId,
     fontSize: 'large',
     showNotes: true,
     showTimer: true,
@@ -46,13 +56,17 @@ export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
       setPresentationState(state);
     });
 
-    api.getStageConfig().then((cfg) => {
+    api.getStageConfig(effectiveOutputId).then((cfg) => {
       if (cfg) setStageConfig(cfg);
     });
 
     let unsubscribeConfig: (() => void) | undefined;
     let disposed = false;
-    api.subscribeStageConfig((cfg) => setStageConfig(cfg)).then((unsub) => {
+    api.subscribeStageConfig((cfg) => {
+      if (cfg.id === effectiveOutputId || cfg.id === 'default-stage') {
+        setStageConfig(cfg);
+      }
+    }).then((unsub) => {
       if (disposed) unsub();
       else unsubscribeConfig = unsub;
     });

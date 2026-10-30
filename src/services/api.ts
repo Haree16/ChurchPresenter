@@ -569,16 +569,18 @@ class MockDataStore {
     },
   ];
 
-  private stageConfig: StageConfig = {
-    id: 'default-stage',
-    fontSize: 'large',
-    showNotes: true,
-    showTimer: true,
-    showNext: true,
-    highContrast: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
+  private stageConfigs: StageConfig[] = [
+    {
+      id: 'default-stage',
+      fontSize: 'large',
+      showNotes: true,
+      showTimer: true,
+      showNext: true,
+      highContrast: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  ];
 
   private stageStatus: StageWindowStatus = {
     isOpen: false,
@@ -3703,7 +3705,7 @@ class MockDataStore {
       serviceItems: this.serviceItems,
       serviceItemSlides: this.serviceItemSlides,
       timers: this.timers,
-      stageConfigs: [this.stageConfig],
+      stageConfigs: this.stageConfigs,
       outputConfigs: this.outputs,
       overlayConfigs: [this.overlayConfig],
       remoteDevices: this.remoteDevices,
@@ -3849,8 +3851,31 @@ class MockDataStore {
     this.timers = this.timers.filter((t) => t.id !== id);
   }
 
-  public async getStageConfig(_id?: string): Promise<StageConfig> {
-    return { ...this.stageConfig, panels: JSON.parse(JSON.stringify(this.stageConfig.panels || [])) };
+  public async getStageConfig(id?: string): Promise<StageConfig> {
+    const configId = id || 'default-stage';
+    const found = this.stageConfigs.find((c) => c.id === configId);
+    if (found) {
+      return { ...found, panels: JSON.parse(JSON.stringify(found.panels || [])) };
+    }
+    const def = this.stageConfigs.find((c) => c.id === 'default-stage') || this.stageConfigs[0];
+    return {
+      ...def,
+      panels: JSON.parse(JSON.stringify(def?.panels || [])),
+    };
+  }
+
+  public async listStageConfigs(): Promise<StageConfig[]> {
+    return this.stageConfigs.map((c) => ({
+      ...c,
+      panels: JSON.parse(JSON.stringify(c.panels || [])),
+    }));
+  }
+
+  public async deleteStageConfig(id: string): Promise<void> {
+    if (id === 'default-stage') {
+      throw new Error('Cannot delete default-stage layout');
+    }
+    this.stageConfigs = this.stageConfigs.filter((c) => c.id !== id);
   }
 
   private stageConfigListeners = new Set<(c: StageConfig) => void>();
@@ -3865,12 +3890,18 @@ class MockDataStore {
   public async updateStageConfig(config: StageConfig): Promise<StageConfig> {
     const problem = validatePanels(config.panels);
     if (problem) throw new Error(problem);
-    this.stageConfig = {
+    const updated = {
       ...config,
       panels: JSON.parse(JSON.stringify(config.panels || [])),
       updatedAt: new Date().toISOString(),
     };
-    const saved = { ...this.stageConfig, panels: JSON.parse(JSON.stringify(this.stageConfig.panels || [])) };
+    const idx = this.stageConfigs.findIndex((c) => c.id === config.id);
+    if (idx >= 0) {
+      this.stageConfigs[idx] = updated;
+    } else {
+      this.stageConfigs.push(updated);
+    }
+    const saved = { ...updated, panels: JSON.parse(JSON.stringify(updated.panels || [])) };
     this.stageConfigListeners.forEach((cb) => cb(saved));
     return saved;
   }
@@ -5948,9 +5979,23 @@ export const api = {
 
   getStageConfig: async (id?: string): Promise<StageConfig> => {
     if (isTauri()) {
-      return await invoke<StageConfig>('get_stage_config', { id });
+      return await invoke<StageConfig>('get_stage_config', { id: id ?? null });
     }
     return mockStore.getStageConfig(id);
+  },
+
+  listStageConfigs: async (): Promise<StageConfig[]> => {
+    if (isTauri()) {
+      return await invoke<StageConfig[]>('list_stage_configs');
+    }
+    return mockStore.listStageConfigs();
+  },
+
+  deleteStageConfig: async (id: string): Promise<void> => {
+    if (isTauri()) {
+      return await invoke<void>('delete_stage_config', { id });
+    }
+    return mockStore.deleteStageConfig(id);
   },
 
   updateStageConfig: async (config: StageConfig): Promise<StageConfig> => {

@@ -1,6 +1,6 @@
 import { StagePanel, StagePanelKind } from '../types';
 
-export const MAX_STAGE_PANELS = 7;
+export const MAX_STAGE_PANELS = 8;
 export const MAX_STAGE_FONT_PCT = 30;
 
 export const STAGE_PANEL_KINDS: { kind: StagePanelKind; label: string; defaultFontPct: number; size: { w: number; h: number } }[] = [
@@ -11,6 +11,7 @@ export const STAGE_PANEL_KINDS: { kind: StagePanelKind; label: string; defaultFo
   { kind: 'message', label: 'Stage message', defaultFontPct: 5, size: { w: 90, h: 12 } },
   { kind: 'status', label: 'Status', defaultFontPct: 3, size: { w: 30, h: 8 } },
   { kind: 'notes', label: 'Notes / cue', defaultFontPct: 3.2, size: { w: 90, h: 10 } },
+  { kind: 'multiviewer', label: 'Multi-viewer preview', defaultFontPct: 4, size: { w: 36, h: 28 } },
 ];
 
 export const kindLabel = (kind: StagePanelKind) => STAGE_PANEL_KINDS.find((k) => k.kind === kind)?.label ?? kind;

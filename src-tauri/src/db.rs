@@ -3305,6 +3305,12 @@ impl DbManager {
         Ok(list)
     }
 
+    pub fn delete_stage_config(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM stage_configs WHERE id = ?1;", params![id])?;
+        Ok(())
+    }
+
     // ================= Slide Generation from Song =================
 
     pub fn generate_slides_from_song(

@@ -1521,6 +1521,24 @@ pub async fn get_stage_config(
 }
 
 #[tauri::command]
+pub async fn list_stage_configs(
+    db: State<'_, DbManager>,
+) -> Result<Vec<StageConfig>, String> {
+    db.list_stage_configs().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_stage_config(
+    id: String,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<(), String> {
+    db.delete_stage_config(&id).map_err(|e| e.to_string())?;
+    app.emit("stage:config-deleted", &id).ok();
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn update_stage_config(
     config: StageConfig,
     db: State<'_, DbManager>,
