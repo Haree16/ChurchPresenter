@@ -37,6 +37,8 @@ export interface SlideElement {
   fill?: string | null;
   /** 0 (invisible) to 1 (solid). */
   opacity?: number | null;
+  /** Rotation in degrees (-360 to 360). */
+  rotation?: number | null;
 }
 
 /** Safe margin, text outline and extra elements for a slide or theme. Empty = default look. */

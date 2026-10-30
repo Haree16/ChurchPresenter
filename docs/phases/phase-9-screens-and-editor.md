@@ -43,10 +43,23 @@ Today a Look (`looks.rs`) stores logo, blackout and props globally.
   - Displays broadcast live status, real-time clock, aspect ratio indicators, and primary focus follow switcher.
 - **Verification**: Verified with 290 passing backend Rust unit tests (`cargo test`) and 481 passing Vitest frontend unit tests (`npm test`), including dedicated tests in `tests/stage-layout-and-multiviewer.test.tsx`.
 
-## 9.4 Editor polish
-- Rotate and resize handles on elements; alignment guides and snapping.
-- Draw elements on the stage display and the phone preview (not done today).
-- "New slide from template" button.
+## 9.4 Editor polish [COMPLETED]
+- **Element Rotation & Resize Handles**:
+  - Added `rotation: Option<f64>` / `rotation?: number | null` to `SlideElement` in backend Rust (`layout.rs`) and frontend (`types/index.ts`). Validated in range `[-360.0, 360.0]` and clamped into `[-180.0, 180.0]`.
+  - Added 8 interactive resize handles (`nw`, `n`, `ne`, `e`, `se`, `s`, `sw`, `w`) and top circular rotation handle (`rot`) with connecting stem in `SlideElements.tsx`.
+  - Holding `Shift` during rotation snaps cleanly to 15-degree increments.
+  - Added rotation number input, slider, and quick 0° reset & +90° rotation buttons in `ElementsEditor.tsx`.
+- **Canvas Alignment Guides & Snapping**:
+  - Implemented `snapElementPosition` in `slideElements.ts` to automatically snap dragged and resized elements against canvas boundaries (0%, 50% slide center, 100%) and neighbor elements' edges and centers.
+  - Dynamically renders dashed cyan guide lines (`snap-guide-x`, `snap-guide-y`) while snapping is active.
+- **Element Rendering on Stage Displays & Phone Remote**:
+  - `StageCanvas.tsx`: Renders rich slide elements in `case 'current'` for confidence monitors.
+  - `StageDisplayView.tsx`: Renders rich slide elements in the confidence current slide view.
+  - `remote.rs`: Mobile phone remote preview (`get_remote_html`) now renders slide elements (`#live-elements`) dynamically over the live card.
+- **"New Slide from Template" Button**:
+  - Added `new-slide-from-template-btn` in `SlideGrid.tsx` with a template selection popover displaying all saved slide templates with color swatches and element counts.
+  - Instantiates new slides with the template's background/foreground styling, font sizes, text alignments, and cloned elements via `cloneElements`.
+- **Verification**: Verified with 290 passing backend Rust unit tests (`cargo test`) and 486 passing Vitest unit tests (`npm test`), including dedicated tests in `tests/editor-polish-and-templates.test.tsx`.
 
 ## 9.5 Scrolling text and messages
 - Props gain a scroll mode (speed, direction); a message prop for lobby tickers.

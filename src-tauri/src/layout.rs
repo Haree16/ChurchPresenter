@@ -50,6 +50,9 @@ pub struct SlideElement {
     /// 0 (invisible) to 1 (solid).
     #[serde(default)]
     pub opacity: Option<f64>,
+    /// Rotation in degrees (-360 to 360).
+    #[serde(default)]
+    pub rotation: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -158,6 +161,11 @@ pub fn validate_element(el: &SlideElement) -> Result<(), String> {
     if let Some(o) = el.opacity {
         if !in_range(o, 0.0, 1.0) {
             return Err("opacity must be between 0 and 1.".to_string());
+        }
+    }
+    if let Some(r) = el.rotation {
+        if !in_range(r, -360.0, 360.0) {
+            return Err("rotation must be between -360 and 360 degrees.".to_string());
         }
     }
     for (label, c) in [("colour", &el.color), ("fill", &el.fill)] {
@@ -326,6 +334,7 @@ mod tests {
             text: Some("Welcome".into()), font_size_pct: Some(8.0), color: Some("#ffffff".into()),
             align: Some("center".into()), weight: Some("bold".into()),
             image_path: None, shape: None, fill: None, opacity: None,
+            rotation: None,
         }
     }
     fn image_el(id: &str, path: &str) -> SlideElement {
@@ -343,9 +352,13 @@ mod tests {
         let l = with(vec![text_el("a"), image_el("b", "media/logo.png"), shape_el("c", "rect"), shape_el("d", "ellipse")]);
         assert!(validate_layout(&l).is_ok());
         assert!(!l.is_empty());
-        // edges: full-slide box, opacity bounds
-        let full = SlideElement { x: 0.0, y: 0.0, w: 100.0, h: 100.0, opacity: Some(0.0), ..text_el("e") };
+        // edges: full-slide box, opacity bounds, rotation bounds
+        let full = SlideElement { x: 0.0, y: 0.0, w: 100.0, h: 100.0, opacity: Some(0.0), rotation: Some(45.0), ..text_el("e") };
         assert!(validate_layout(&with(vec![full])).is_ok());
+        let rotated_neg = SlideElement { rotation: Some(-180.0), ..text_el("f") };
+        assert!(validate_layout(&with(vec![rotated_neg])).is_ok());
+        let bad_rot = SlideElement { rotation: Some(361.0), ..text_el("g") };
+        assert!(validate_layout(&with(vec![bad_rot])).is_err());
     }
 
     #[test]

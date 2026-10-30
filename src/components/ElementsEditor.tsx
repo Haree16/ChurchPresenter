@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, Image as ImageIcon, Square, Trash2, Type } from 'lucide-react';
+import { ArrowDown, ArrowUp, Image as ImageIcon, RotateCw, Square, Trash2, Type } from 'lucide-react';
 import { api } from '../services/api';
 import { MediaAsset, SlideElement } from '../types';
 import {
@@ -191,6 +191,44 @@ export const ElementsEditor: React.FC<ElementsEditorProps> = ({ elements, onChan
               onChange={(e) => update({ opacity: Number(e.target.value) / 100 })}
             />
           </label>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label style={{ ...label, flex: 1 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <RotateCw size={11} /> Rotation ({Math.round(selected.rotation || 0)}°)
+              </span>
+              <input
+                data-testid="element-rotation"
+                type="number"
+                min={-180}
+                max={180}
+                step={1}
+                value={Math.round(selected.rotation || 0)}
+                onChange={(e) => update({ rotation: Number(e.target.value) })}
+                style={field}
+              />
+            </label>
+            <div style={{ display: 'flex', gap: '4px', alignSelf: 'flex-end' }}>
+              <button
+                type="button"
+                data-testid="element-rotate-0"
+                style={{ ...smallButton, padding: '4px 6px' }}
+                title="Reset rotation to 0°"
+                onClick={() => update({ rotation: 0 })}
+              >
+                0°
+              </button>
+              <button
+                type="button"
+                data-testid="element-rotate-90"
+                style={{ ...smallButton, padding: '4px 6px' }}
+                title="Rotate +90°"
+                onClick={() => update({ rotation: ((selected.rotation || 0) + 90) % 360 })}
+              >
+                +90°
+              </button>
+            </div>
+          </div>
 
           {selected.kind === 'text' && (
             <>

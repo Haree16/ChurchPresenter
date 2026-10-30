@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { GroupTag } from '../GroupTag';
 import { StageCanvas } from './StageCanvas';
+import { SlideElements } from '../SlideElements';
 import { PresentationState, StageConfig, TimerState } from '../../types';
 import { api } from '../../services/api';
 
@@ -392,6 +393,7 @@ export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
           <div
             className="multilingual-text"
             style={{
+              position: 'relative',
               flex: 1,
               display: 'flex',
               alignItems: 'center',
@@ -411,6 +413,9 @@ export const StageDisplayView: React.FC<StageDisplayViewProps> = ({
               : !isLive || !currentSlide
               ? '[ NO LIVE SLIDE SELECTED ]'
               : currentSlide.body}
+            {!isBlackout && isLive && currentSlide?.layout?.elements && (
+              <SlideElements elements={currentSlide.layout.elements} />
+            )}
           </div>
         </div>
 

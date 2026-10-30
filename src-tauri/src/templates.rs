@@ -177,6 +177,7 @@ mod tests {
             id: id.into(), kind: "text".into(), x: 5.0, y: 5.0, w: 50.0, h: 15.0, text: Some("Church name".into()),
             font_size_pct: Some(6.0), color: Some("#ffffff".into()), align: Some("left".into()), weight: Some("bold".into()),
             image_path: None, shape: None, fill: None, opacity: None,
+            rotation: None,
         }
     }
 

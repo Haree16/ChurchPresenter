@@ -1,10 +1,12 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { SlideElement } from '../types';
 import { mediaService } from '../services/mediaService';
-import { isSafeMediaPath } from '../services/slideElements';
+import { isSafeMediaPath, SnapGuide } from '../services/slideElements';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const safeColor = (c: string | null | undefined, fallback: string) => (c && HEX.test(c) ? c : fallback);
+
+export type ResizeHandleType = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'rot';
 
 /** Height of an element in pixels, kept up to date as it resizes. 0 until it is on screen. */
 export function useElementHeight(ref: React.RefObject<HTMLElement>): number {
@@ -34,6 +36,10 @@ interface SlideElementsProps {
   onSelect?: (id: string) => void;
   /** Called on pointer down on an element; the slide editor starts a drag from here. */
   onElementPointerDown?: (id: string, e: React.PointerEvent) => void;
+  /** Called on pointer down on a resize or rotate handle. */
+  onHandlePointerDown?: (id: string, handle: ResizeHandleType, e: React.PointerEvent) => void;
+  /** Active snapping alignment guides to display over the slide. */
+  guides?: SnapGuide[];
   interactive?: boolean;
 }
 
@@ -48,6 +54,8 @@ export const SlideElements: React.FC<SlideElementsProps> = ({
   selectedId,
   onSelect,
   onElementPointerDown,
+  onHandlePointerDown,
+  guides,
   interactive = false,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -55,6 +63,84 @@ export const SlideElements: React.FC<SlideElementsProps> = ({
   const height = heightPx ?? measured;
 
   if (!elements || elements.length === 0) return null;
+
+  const renderHandles = (el: SlideElement) => {
+    if (!interactive || selectedId !== el.id) return null;
+
+    const handleStyle: React.CSSProperties = {
+      position: 'absolute',
+      width: '8px',
+      height: '8px',
+      backgroundColor: '#ffffff',
+      border: '1px solid #0284c7',
+      borderRadius: '2px',
+      zIndex: 10,
+      pointerEvents: 'auto',
+    };
+
+    const handleDefs: { type: ResizeHandleType; style: React.CSSProperties; cursor: string }[] = [
+      { type: 'nw', style: { left: '-4px', top: '-4px' }, cursor: 'nwse-resize' },
+      { type: 'n', style: { left: 'calc(50% - 4px)', top: '-4px' }, cursor: 'ns-resize' },
+      { type: 'ne', style: { right: '-4px', top: '-4px' }, cursor: 'nesw-resize' },
+      { type: 'e', style: { right: '-4px', top: 'calc(50% - 4px)' }, cursor: 'ew-resize' },
+      { type: 'se', style: { right: '-4px', bottom: '-4px' }, cursor: 'nwse-resize' },
+      { type: 's', style: { left: 'calc(50% - 4px)', bottom: '-4px' }, cursor: 'ns-resize' },
+      { type: 'sw', style: { left: '-4px', bottom: '-4px' }, cursor: 'nesw-resize' },
+      { type: 'w', style: { left: '-4px', top: 'calc(50% - 4px)' }, cursor: 'ew-resize' },
+    ];
+
+    return (
+      <>
+        {/* Rotate handle stem */}
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '-20px',
+            width: '1px',
+            height: '20px',
+            backgroundColor: '#0284c7',
+            pointerEvents: 'none',
+          }}
+        />
+        {/* Rotate circular handle */}
+        <div
+          data-testid="element-handle-rot"
+          title="Drag to rotate (Hold Shift to snap)"
+          style={{
+            position: 'absolute',
+            left: 'calc(50% - 5px)',
+            top: '-26px',
+            width: '10px',
+            height: '10px',
+            backgroundColor: '#38bdf8',
+            border: '2px solid #ffffff',
+            borderRadius: '50%',
+            zIndex: 11,
+            cursor: 'grab',
+            pointerEvents: 'auto',
+          }}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            onHandlePointerDown?.(el.id, 'rot', e);
+          }}
+        />
+
+        {/* 8 Resize handles */}
+        {handleDefs.map((h) => (
+          <div
+            key={h.type}
+            data-testid={`element-handle-${h.type}`}
+            style={{ ...handleStyle, ...h.style, cursor: h.cursor }}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              onHandlePointerDown?.(el.id, h.type, e);
+            }}
+          />
+        ))}
+      </>
+    );
+  };
 
   return (
     <div
@@ -69,6 +155,43 @@ export const SlideElements: React.FC<SlideElementsProps> = ({
         pointerEvents: 'none',
       }}
     >
+      {/* Visual Alignment Guides */}
+      {interactive &&
+        guides &&
+        guides.map((g, i) =>
+          g.type === 'x' ? (
+            <div
+              key={`guide-x-${i}`}
+              data-testid="snap-guide-x"
+              style={{
+                position: 'absolute',
+                left: `${g.position}%`,
+                top: 0,
+                bottom: 0,
+                width: '1px',
+                borderLeft: '1px dashed #38bdf8',
+                zIndex: 20,
+                pointerEvents: 'none',
+              }}
+            />
+          ) : (
+            <div
+              key={`guide-y-${i}`}
+              data-testid="snap-guide-y"
+              style={{
+                position: 'absolute',
+                top: `${g.position}%`,
+                left: 0,
+                right: 0,
+                height: '1px',
+                borderTop: '1px dashed #38bdf8',
+                zIndex: 20,
+                pointerEvents: 'none',
+              }}
+            />
+          )
+        )}
+
       {elements.map((el) => {
         const selected = interactive && selectedId === el.id;
         const box: React.CSSProperties = {
@@ -79,8 +202,9 @@ export const SlideElements: React.FC<SlideElementsProps> = ({
           height: `${el.h}%`,
           opacity: el.opacity ?? 1,
           boxSizing: 'border-box',
-          overflow: 'hidden',
           outline: selected ? '2px solid #38bdf8' : undefined,
+          transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
+          transformOrigin: 'center center',
           pointerEvents: interactive ? 'auto' : undefined,
           cursor: interactive ? 'move' : undefined,
           touchAction: interactive ? 'none' : undefined,
@@ -103,8 +227,9 @@ export const SlideElements: React.FC<SlideElementsProps> = ({
                 src={mediaService.resolveMediaUrl(el.imagePath)}
                 alt=""
                 draggable={false}
-                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', pointerEvents: 'none' }}
               />
+              {renderHandles(el)}
             </div>
           );
         }
@@ -121,7 +246,9 @@ export const SlideElements: React.FC<SlideElementsProps> = ({
                 borderRadius: el.shape === 'ellipse' ? '50%' : undefined,
               }}
               {...handlers}
-            />
+            >
+              {renderHandles(el)}
+            </div>
           );
         }
 
@@ -146,11 +273,13 @@ export const SlideElements: React.FC<SlideElementsProps> = ({
               lineHeight: 1.2,
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
+              overflow: 'hidden',
               backgroundColor: el.fill && HEX.test(el.fill) ? el.fill : undefined,
             }}
             {...handlers}
           >
             {el.text}
+            {renderHandles(el)}
           </div>
         );
       })}

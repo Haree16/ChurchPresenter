@@ -30,6 +30,7 @@ export function validateElement(el: SlideElement): string | null {
   if (!inRange(el.w, 1, 100) || !inRange(el.h, 1, 100)) return 'size must be between 1 and 100.';
   if (el.x + el.w > 100 + 1e-6 || el.y + el.h > 100 + 1e-6) return 'it must stay inside the slide.';
   if (el.opacity != null && !inRange(el.opacity, 0, 1)) return 'opacity must be between 0 and 1.';
+  if (el.rotation != null && !inRange(el.rotation, -360, 360)) return 'rotation must be between -360 and 360 degrees.';
   if (el.color != null && !HEX.test(el.color)) return 'colour must look like #ffffff.';
   if (el.fill != null && !HEX.test(el.fill)) return 'fill must look like #ffffff.';
 
@@ -93,13 +94,108 @@ export function createElement(kind: SlideElement['kind'], imagePath?: string): S
 export function clampElement(el: SlideElement): SlideElement {
   const w = Math.min(Math.max(el.w, 1), 100);
   const h = Math.min(Math.max(el.h, 1), 100);
+  let rot = el.rotation != null ? Math.round(el.rotation * 10) / 10 : undefined;
+  if (rot != null) {
+    while (rot > 180) rot -= 360;
+    while (rot < -180) rot += 360;
+  }
   return {
     ...el,
     w,
     h,
     x: Math.min(Math.max(el.x, 0), 100 - w),
     y: Math.min(Math.max(el.y, 0), 100 - h),
+    rotation: rot,
   };
+}
+
+export interface SnapGuide {
+  type: 'x' | 'y';
+  position: number; // percentage (0-100)
+}
+
+export interface SnapResult {
+  x: number;
+  y: number;
+  guides: SnapGuide[];
+}
+
+/**
+ * Snaps position (x, y) with dimensions (w, h) against slide bounds (0%, 50%, 100%)
+ * and other elements' edges and centers.
+ * snapThreshold is in percentage (default 1.5%).
+ */
+export function snapElementPosition(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  otherElements: SlideElement[],
+  snapThreshold: number = 1.5
+): SnapResult {
+  let snappedX = x;
+  let snappedY = y;
+  const guides: SnapGuide[] = [];
+
+  // Horizontal target points for the dragged box: left, center, right
+  const xTargets = [
+    { offset: 0, val: x },
+    { offset: w / 2, val: x + w / 2 },
+    { offset: w, val: x + w },
+  ];
+
+  // Vertical target points for the dragged box: top, middle, bottom
+  const yTargets = [
+    { offset: 0, val: y },
+    { offset: h / 2, val: y + h / 2 },
+    { offset: h, val: y + h },
+  ];
+
+  // Candidates for X snapping: slide center (50%), slide edges (0%, 100%)
+  const xCandidates = [0, 50, 100];
+  // Candidates for Y snapping: slide middle (50%), slide edges (0%, 100%)
+  const yCandidates = [0, 50, 100];
+
+  for (const other of otherElements) {
+    xCandidates.push(other.x, other.x + other.w / 2, other.x + other.w);
+    yCandidates.push(other.y, other.y + other.h / 2, other.y + other.h);
+  }
+
+  // Find closest X snap
+  let minDiffX = snapThreshold;
+  let matchedXGuide: number | null = null;
+  for (const t of xTargets) {
+    for (const c of xCandidates) {
+      const diff = Math.abs(t.val - c);
+      if (diff < minDiffX) {
+        minDiffX = diff;
+        snappedX = c - t.offset;
+        matchedXGuide = c;
+      }
+    }
+  }
+  if (matchedXGuide !== null) {
+    guides.push({ type: 'x', position: matchedXGuide });
+  }
+
+  // Find closest Y snap
+  let minDiffY = snapThreshold;
+  let matchedYGuide: number | null = null;
+  for (const t of yTargets) {
+    for (const c of yCandidates) {
+      const diff = Math.abs(t.val - c);
+      if (diff < minDiffY) {
+        minDiffY = diff;
+        snappedY = c - t.offset;
+        matchedYGuide = c;
+      }
+    }
+  }
+  if (matchedYGuide !== null) {
+    guides.push({ type: 'y', position: matchedYGuide });
+  }
+
+  return { x: snappedX, y: snappedY, guides };
 }
 
 /** Copies of `elements` with fresh ids, for applying a template to a slide. */

@@ -796,10 +796,13 @@ impl RemoteServerManager {
     </div>
 
     <div id="view-controls" style="display: none; flex-direction: column; gap: 16px;">
-      <div class="card">
+      <div class="card" style="position: relative; overflow: hidden;">
         <div class="card-title">Live Slide (<span id="slide-index">0/0</span>)</div>
         <div id="live-group" class="group-tag" style="display: none;"></div>
-        <div id="live-body" class="slide-body">No slide live</div>
+        <div style="position: relative; min-height: 80px;">
+          <div id="live-body" class="slide-body">No slide live</div>
+          <div id="live-elements" style="position: absolute; inset: 0; pointer-events: none; overflow: hidden;"></div>
+        </div>
       </div>
 
       <div class="card" style="opacity: 0.85;">
@@ -914,6 +917,37 @@ impl RemoteServerManager {
         document.getElementById('live-body').innerText = data.currentSlide.body || data.currentSlide.title || '';
       } else {
         document.getElementById('live-body').innerText = '(Blank Screen)';
+      }
+
+      const liveElsContainer = document.getElementById('live-elements');
+      if (liveElsContainer) {
+        liveElsContainer.innerHTML = '';
+        if (data.currentSlide && data.currentSlide.layout && Array.isArray(data.currentSlide.layout.elements)) {
+          for (const el of data.currentSlide.layout.elements) {
+            const div = document.createElement('div');
+            div.style.position = 'absolute';
+            div.style.left = el.x + '%';
+            div.style.top = el.y + '%';
+            div.style.width = el.w + '%';
+            div.style.height = el.h + '%';
+            div.style.opacity = (el.opacity != null) ? el.opacity : 1;
+            div.style.overflow = 'hidden';
+            div.style.boxSizing = 'border-box';
+            if (el.rotation) div.style.transform = 'rotate(' + el.rotation + 'deg)';
+            if (el.kind === 'text') {
+              div.style.color = el.color || '#fff';
+              div.style.fontSize = (el.fontSizePct ? (el.fontSizePct * 1.5) : 11) + 'px';
+              div.style.fontWeight = (el.weight === 'normal') ? 'normal' : 'bold';
+              div.style.textAlign = el.align || 'center';
+              if (el.fill) div.style.background = el.fill;
+              div.textContent = el.text || '';
+            } else if (el.kind === 'shape') {
+              div.style.background = el.fill || '#3b82f6';
+              if (el.shape === 'ellipse') div.style.borderRadius = '50%';
+            }
+            liveElsContainer.appendChild(div);
+          }
+        }
       }
 
       if (data.nextSlide) {

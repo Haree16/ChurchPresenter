@@ -969,6 +969,7 @@ impl<'a, R: Read + Seek> Importer<'a, R> {
                         id, kind: "text".into(), x, y, w, h, text: Some(text), font_size_pct: Some((size_pct * 10.0).round() / 10.0),
                         color: Some(color), align: Some(align),
                         weight: Some(if bold { "bold" } else { "normal" }.into()), image_path: None, shape: None, fill: None, opacity: None,
+                        rotation: None,
                     })
                 }
                 Draft::Shape { rect, shape, fill, opacity } => {
@@ -979,12 +980,14 @@ impl<'a, R: Read + Seek> Importer<'a, R> {
                     place(rect, self.sw, self.sh).map(|(x, y, w, h)| SlideElement {
                     id, kind: "shape".into(), x, y, w, h, text: None, font_size_pct: None, color: None, align: None, weight: None,
                     image_path: None, shape: Some(shape.into()), fill: Some(fill), opacity,
+                    rotation: None,
                     })
                 }
                 Draft::Image { rect, part } => match place(rect, self.sw, self.sh) {
                     Some((x, y, w, h)) => self.image(&part, n).map(|path| SlideElement {
                         id, kind: "image".into(), x, y, w, h, text: None, font_size_pct: None, color: None, align: None, weight: None,
                         image_path: Some(path), shape: None, fill: None, opacity: None,
+                        rotation: None,
                     }),
                     None => None,
                 },

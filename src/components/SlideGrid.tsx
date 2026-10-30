@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Plus,
   Edit3,
@@ -8,11 +8,14 @@ import {
   ArrowDown,
   Layers,
   Radio,
+  LayoutTemplate,
+  X,
 } from 'lucide-react';
-import { Slide, Presentation, PresentationState } from '../types';
+import { Slide, Presentation, PresentationState, SlideTemplate } from '../types';
 import { readableTextColor } from '../services/sectionColors';
 import { SlideElements } from './SlideElements';
 import { composeTextShadow, layoutPaddingPercent } from '../services/slideLayout';
+import { api } from '../services/api';
 
 interface SlideCardProps {
   slide: Slide;
@@ -337,6 +340,7 @@ interface SlideGridProps {
   onGoLive: (slideId: string) => void;
   onEditSlide: (slide: Slide) => void;
   onAddSlide: () => void;
+  onAddSlideFromTemplate?: (template: SlideTemplate) => void;
   onDuplicateSlide: (slideId: string) => void;
   onDeleteSlide: (slideId: string) => void;
   onReorderSlides: (slideIds: string[]) => void;
@@ -349,11 +353,30 @@ export const SlideGrid: React.FC<SlideGridProps> = ({
   onGoLive,
   onEditSlide,
   onAddSlide,
+  onAddSlideFromTemplate,
   onDuplicateSlide,
   onDeleteSlide,
   onReorderSlides,
 }) => {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isTemplateMenuOpen, setIsTemplateMenuOpen] = useState(false);
+  const [templates, setTemplates] = useState<SlideTemplate[]>([]);
+
+  useEffect(() => {
+    if (!isTemplateMenuOpen) return;
+    let cancelled = false;
+    api
+      .listSlideTemplates()
+      .then((list) => {
+        if (!cancelled) setTemplates(list);
+      })
+      .catch(() => {
+        if (!cancelled) setTemplates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isTemplateMenuOpen]);
 
   const handleMoveUp = useCallback(
     (index: number) => {
@@ -447,23 +470,147 @@ export const SlideGrid: React.FC<SlideGridProps> = ({
           </div>
         </div>
 
-        <button
-          onClick={onAddSlide}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '6px 12px',
-            backgroundColor: '#2563eb',
-            borderRadius: '6px',
-            color: '#ffffff',
-            fontSize: '12px',
-            fontWeight: 600,
-          }}
-        >
-          <Plus size={15} />
-          <span>Add Slide</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
+          <button
+            data-testid="add-slide-btn"
+            onClick={onAddSlide}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              backgroundColor: '#2563eb',
+              border: 'none',
+              borderRadius: '6px',
+              color: '#ffffff',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <Plus size={15} />
+            <span>Add Slide</span>
+          </button>
+
+          <button
+            data-testid="new-slide-from-template-btn"
+            onClick={() => setIsTemplateMenuOpen((prev) => !prev)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: '6px',
+              color: '#f8fafc',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <LayoutTemplate size={14} color="#38bdf8" />
+            <span>From Template</span>
+          </button>
+
+          {/* Template Selection Dropdown Menu */}
+          {isTemplateMenuOpen && (
+            <div
+              data-testid="template-selection-menu"
+              style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: '6px',
+                width: '260px',
+                maxHeight: '320px',
+                overflowY: 'auto',
+                backgroundColor: '#0f172a',
+                border: '1px solid #334155',
+                borderRadius: '8px',
+                boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
+                zIndex: 50,
+                padding: '8px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '4px 6px',
+                  borderBottom: '1px solid #1e293b',
+                  marginBottom: '4px',
+                }}
+              >
+                <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
+                  Choose Template
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsTemplateMenuOpen(false)}
+                  style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 0 }}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+
+              {templates.length === 0 ? (
+                <div style={{ padding: '12px 8px', fontSize: '11px', color: '#64748b', textAlign: 'center' }}>
+                  No templates saved yet. Create a template in the Slide Editor to use it here.
+                </div>
+              ) : (
+                templates.map((tpl) => (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    data-testid={`template-option-${tpl.id}`}
+                    onClick={() => {
+                      setIsTemplateMenuOpen(false);
+                      onAddSlideFromTemplate?.(tpl);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px',
+                      borderRadius: '6px',
+                      border: '1px solid #1e293b',
+                      backgroundColor: '#1e293b',
+                      color: '#f8fafc',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: '14px',
+                        height: '14px',
+                        borderRadius: '3px',
+                        backgroundColor: tpl.backgroundColor || '#0a0f1d',
+                        border: '1px solid #475569',
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div style={{ flex: 1, overflow: 'hidden' }}>
+                      <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {tpl.name}
+                      </div>
+                      <div style={{ fontSize: '10px', color: '#64748b' }}>
+                        {tpl.fontSize} • {tpl.layout?.elements?.length || 0} extra elements
+                      </div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Slides Grid View */}

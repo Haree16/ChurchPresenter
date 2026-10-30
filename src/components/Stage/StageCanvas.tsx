@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { PresentationState, StagePanel } from '../../types';
 import { GroupTag } from '../GroupTag';
-import { useElementHeight } from '../SlideElements';
+import { SlideElements, useElementHeight } from '../SlideElements';
 import { defaultFontPct } from '../../services/stageLayouts';
 
 export interface StageTimerView {
@@ -61,8 +61,40 @@ export const StageCanvas = React.forwardRef<HTMLDivElement, StageCanvasProps>(fu
         return (
           <>
             {label('Current slide', '#38bdf8')}
-            <div className="multilingual-text" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', fontWeight: 700, lineHeight: 1.3, whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflow: 'hidden', color: isBlackout ? dim : text }}>
-              {isBlackout ? '[ SCREEN BLACKOUT ACTIVE ]' : !isLive || !currentSlide ? '[ NO LIVE SLIDE SELECTED ]' : currentSlide.body}
+            <div
+              style={{
+                position: 'relative',
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                width: '100%',
+                height: '100%',
+              }}
+            >
+              <div
+                className="multilingual-text"
+                style={{
+                  width: '100%',
+                  textAlign: 'center',
+                  fontWeight: 700,
+                  lineHeight: 1.3,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  overflow: 'hidden',
+                  color: isBlackout ? dim : text,
+                }}
+              >
+                {isBlackout
+                  ? '[ SCREEN BLACKOUT ACTIVE ]'
+                  : !isLive || !currentSlide
+                  ? '[ NO LIVE SLIDE SELECTED ]'
+                  : currentSlide.body}
+              </div>
+              {!isBlackout && isLive && currentSlide?.layout?.elements && (
+                <SlideElements elements={currentSlide.layout.elements} />
+              )}
             </div>
           </>
         );

@@ -3,10 +3,10 @@ import { X, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
 import { Slide, FontSize, SlideElement, SlideTemplate, TextAlignment } from '../types';
 import { LayoutControls, LayoutValues, layoutValuesFrom } from './LayoutControls';
 import { ElementsEditor } from './ElementsEditor';
-import { SlideElements } from './SlideElements';
+import { SlideElements, ResizeHandleType } from './SlideElements';
 import { TemplatePanel } from './TemplatePanel';
 import { buildLayout, composeTextShadow, layoutPaddingPercent, validateLayout, MIN_ADVANCE_SECONDS, MAX_ADVANCE_SECONDS } from '../services/slideLayout';
-import { clampElement, cloneElements } from '../services/slideElements';
+import { clampElement, cloneElements, snapElementPosition, SnapGuide } from '../services/slideElements';
 
 interface SlideEditorModalProps {
   slide: Slide | null;
@@ -34,17 +34,68 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
   const previewRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const dragRef = useRef<{
+    id: string;
+    mode: 'move' | ResizeHandleType;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+    origW: number;
+    origH: number;
+    origRot: number;
+    centerX: number;
+    centerY: number;
+  } | null>(null);
   const elementsRef = useRef<SlideElement[]>([]);
   elementsRef.current = elements;
 
-  // Dragging an element in the preview moves it by the same percentage of the preview's size.
+  // Dragging an element moves it with canvas & element alignment snapping
   const startDrag = useCallback((id: string, e: React.PointerEvent) => {
     const el = elementsRef.current.find((x) => x.id === id);
     if (!el) return;
     e.preventDefault();
-    dragRef.current = { id, startX: e.clientX, startY: e.clientY, origX: el.x, origY: el.y };
+    const rect = previewRef.current?.getBoundingClientRect();
+    const centerX = rect ? rect.left + ((el.x + el.w / 2) / 100) * rect.width : 0;
+    const centerY = rect ? rect.top + ((el.y + el.h / 2) / 100) * rect.height : 0;
+    dragRef.current = {
+      id,
+      mode: 'move',
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: el.x,
+      origY: el.y,
+      origW: el.w,
+      origH: el.h,
+      origRot: el.rotation || 0,
+      centerX,
+      centerY,
+    };
+  }, []);
+
+  // Dragging a handle starts resizing or rotating
+  const startHandleDrag = useCallback((id: string, handle: ResizeHandleType, e: React.PointerEvent) => {
+    const el = elementsRef.current.find((x) => x.id === id);
+    if (!el) return;
+    e.preventDefault();
+    const rect = previewRef.current?.getBoundingClientRect();
+    const centerX = rect ? rect.left + ((el.x + el.w / 2) / 100) * rect.width : 0;
+    const centerY = rect ? rect.top + ((el.y + el.h / 2) / 100) * rect.height : 0;
+    dragRef.current = {
+      id,
+      mode: handle,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: el.x,
+      origY: el.y,
+      origW: el.w,
+      origH: el.h,
+      origRot: el.rotation || 0,
+      centerX,
+      centerY,
+    };
   }, []);
 
   useEffect(() => {
@@ -52,14 +103,86 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
       const drag = dragRef.current;
       const rect = previewRef.current?.getBoundingClientRect();
       if (!drag || !rect || rect.width === 0 || rect.height === 0) return;
+
+      if (drag.mode === 'rot') {
+        // Rotation handle: angle from element center
+        const rad = Math.atan2(e.clientY - drag.centerY, e.clientX - drag.centerX);
+        let deg = (rad * 180) / Math.PI + 90;
+        // Holding Shift snaps to 15-degree increments
+        if (e.shiftKey) {
+          deg = Math.round(deg / 15) * 15;
+        }
+        while (deg > 180) deg -= 360;
+        while (deg < -180) deg += 360;
+        setElements((list) =>
+          list.map((x) => (x.id === drag.id ? { ...x, rotation: Math.round(deg) } : x))
+        );
+        return;
+      }
+
       const dx = ((e.clientX - drag.startX) / rect.width) * 100;
       const dy = ((e.clientY - drag.startY) / rect.height) * 100;
-      setElements((list) =>
-        list.map((x) => (x.id === drag.id ? clampElement({ ...x, x: drag.origX + dx, y: drag.origY + dy }) : x))
-      );
+
+      if (drag.mode === 'move') {
+        const targetX = drag.origX + dx;
+        const targetY = drag.origY + dy;
+        const otherElements = elementsRef.current.filter((el) => el.id !== drag.id);
+        const { x: snappedX, y: snappedY, guides } = snapElementPosition(
+          targetX,
+          targetY,
+          drag.origW,
+          drag.origH,
+          otherElements
+        );
+        setSnapGuides(guides);
+        setElements((list) =>
+          list.map((x) => (x.id === drag.id ? clampElement({ ...x, x: snappedX, y: snappedY }) : x))
+        );
+      } else {
+        // Resize handles: nw, n, ne, e, se, s, sw, w
+        let newX = drag.origX;
+        let newY = drag.origY;
+        let newW = drag.origW;
+        let newH = drag.origH;
+
+        if (drag.mode.includes('e')) {
+          newW = Math.max(2, drag.origW + dx);
+        }
+        if (drag.mode.includes('w')) {
+          const maxDx = drag.origW - 2;
+          const actualDx = Math.min(dx, maxDx);
+          newW = drag.origW - actualDx;
+          newX = drag.origX + actualDx;
+        }
+        if (drag.mode.includes('s')) {
+          newH = Math.max(2, drag.origH + dy);
+        }
+        if (drag.mode.includes('n')) {
+          const maxDy = drag.origH - 2;
+          const actualDy = Math.min(dy, maxDy);
+          newH = drag.origH - actualDy;
+          newY = drag.origY + actualDy;
+        }
+
+        setSnapGuides([]);
+        setElements((list) =>
+          list.map((x) =>
+            x.id === drag.id
+              ? clampElement({
+                  ...x,
+                  x: newX,
+                  y: newY,
+                  w: newW,
+                  h: newH,
+                })
+              : x
+          )
+        );
+      }
     };
     const onUp = () => {
       dragRef.current = null;
+      setSnapGuides([]);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -571,6 +694,8 @@ export const SlideEditorModal: React.FC<SlideEditorModalProps> = ({
                 selectedId={selectedElementId}
                 onSelect={setSelectedElementId}
                 onElementPointerDown={startDrag}
+                onHandlePointerDown={startHandleDrag}
+                guides={snapGuides}
               />
             </div>
             <div

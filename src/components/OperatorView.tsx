@@ -22,7 +22,8 @@ import { ProductionIntegrationsModal } from './Production/ProductionIntegrations
 import { DiagnosticsModal } from './Production/DiagnosticsModal';
 import { MultiViewerModal } from './Production/MultiViewerModal';
 import { SettingsModal } from './Settings/SettingsModal';
-import { Slide, AudienceWindowStatus, StageWindowStatus, RemoteServerStatus, KeyBinding } from '../types';
+import { Slide, SlideTemplate, AudienceWindowStatus, StageWindowStatus, RemoteServerStatus, KeyBinding } from '../types';
+import { cloneElements } from '../services/slideElements';
 import { api } from '../services/api';
 import { goToSlideNumber } from '../services/slideJump';
 import { runKeyBinding } from '../services/runKeyBinding';
@@ -287,6 +288,29 @@ export const OperatorView: React.FC = () => {
     }
   };
 
+  const handleAddSlideFromTemplate = async (template: SlideTemplate) => {
+    if (!selectedPresentationId) return;
+    const newSlide = await createSlide({
+      title: template.name || `Slide ${slides.length + 1}`,
+      body: '',
+      backgroundColor: template.backgroundColor || '#0a0f1d',
+      foregroundColor: template.foregroundColor || '#ffffff',
+      fontSize: template.fontSize || 'large',
+      textAlignment: template.textAlignment || 'center',
+      backgroundImage: template.backgroundImage || null,
+      layout: template.layout
+        ? {
+            ...template.layout,
+            elements: cloneElements(template.layout.elements),
+          }
+        : undefined,
+    });
+    if (newSlide) {
+      setEditingSlide(newSlide);
+      setIsEditorOpen(true);
+    }
+  };
+
   const handleToggleAudienceWindow = async () => {
     if (audienceStatus.isOpen) {
       await api.closeAudienceWindow();
@@ -493,6 +517,7 @@ export const OperatorView: React.FC = () => {
             onGoLive={goLive}
             onEditSlide={handleEditSlide}
             onAddSlide={handleAddSlide}
+            onAddSlideFromTemplate={handleAddSlideFromTemplate}
             onDuplicateSlide={duplicateSlide}
             onDeleteSlide={deleteSlide}
             onReorderSlides={reorderSlides}
