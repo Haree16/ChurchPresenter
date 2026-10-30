@@ -2438,6 +2438,64 @@ fn image_slide(presentation_id: &str, img_path: &std::path::Path, idx: usize) ->
     }
 }
 
+// ================= Phase 10.1: Planning Center Integration =================
+
+#[tauri::command]
+pub async fn get_planning_center_status(
+    db: State<'_, DbManager>,
+) -> Result<crate::planning_center::PcoStatus, String> {
+    db.get_planning_center_status().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn save_planning_center_credentials(
+    app_id: String,
+    secret: String,
+    db: State<'_, DbManager>,
+) -> Result<crate::planning_center::PcoStatus, String> {
+    db.save_planning_center_credentials(&app_id, &secret)
+}
+
+#[tauri::command]
+pub async fn disconnect_planning_center(
+    db: State<'_, DbManager>,
+) -> Result<(), String> {
+    db.disconnect_planning_center().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_planning_center_service_types(
+    db: State<'_, DbManager>,
+) -> Result<Vec<crate::planning_center::PcoServiceType>, String> {
+    db.list_planning_center_service_types()
+}
+
+#[tauri::command]
+pub async fn list_planning_center_plans(
+    service_type_id: String,
+    db: State<'_, DbManager>,
+) -> Result<Vec<crate::planning_center::PcoPlan>, String> {
+    db.list_planning_center_plans(&service_type_id)
+}
+
+#[tauri::command]
+pub async fn get_planning_center_plan_details(
+    service_type_id: String,
+    plan_id: String,
+    db: State<'_, DbManager>,
+) -> Result<crate::planning_center::PcoPlanDetail, String> {
+    db.get_planning_center_plan_details(&service_type_id, &plan_id)
+}
+
+#[tauri::command]
+pub async fn import_planning_center_plan(
+    service_type_id: String,
+    plan_id: String,
+    db: State<'_, DbManager>,
+) -> Result<crate::planning_center::PcoImportResult, String> {
+    db.import_planning_center_plan(&service_type_id, &plan_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

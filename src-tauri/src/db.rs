@@ -1526,6 +1526,28 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 26: planning center integration =================
+        if current_version < 26 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS planning_center_config (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    app_id TEXT NOT NULL,
+                    secret TEXT NOT NULL,
+                    organization_name TEXT,
+                    last_synced_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (26, ?1);",
+                params![Utc::now().to_rfc3339()],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 

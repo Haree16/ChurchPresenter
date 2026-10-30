@@ -65,6 +65,11 @@ import {
   SlideHit,
   ServiceTemplateSummary,
   PptxImportResult,
+  PlanningCenterStatus,
+  PcoServiceType,
+  PcoPlan,
+  PcoPlanDetail,
+  PcoImportResult,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
@@ -4713,6 +4718,163 @@ class MockDataStore {
     return true;
   }
 
+  // ================= Planning Center Mock Store =================
+
+  private pcoStatus: PlanningCenterStatus = { isConnected: false };
+
+  public async getPlanningCenterStatus(): Promise<PlanningCenterStatus> {
+    return { ...this.pcoStatus };
+  }
+
+  public async savePlanningCenterCredentials(appId: string, secret: string): Promise<PlanningCenterStatus> {
+    if (!appId.trim() || !secret.trim()) throw new Error('Both Application ID and Secret are required.');
+    const masked = appId.length <= 8 ? '••••••••' : `${appId.slice(0, 4)}••••${appId.slice(-4)}`;
+    this.pcoStatus = {
+      isConnected: true,
+      organizationName: 'Grace Community Church',
+      appIdMasked: masked,
+      lastSyncedAt: new Date().toISOString(),
+    };
+    return { ...this.pcoStatus };
+  }
+
+  public async disconnectPlanningCenter(): Promise<void> {
+    this.pcoStatus = { isConnected: false, organizationName: null, appIdMasked: null, lastSyncedAt: null };
+  }
+
+  public async listPlanningCenterServiceTypes(): Promise<PcoServiceType[]> {
+    if (!this.pcoStatus.isConnected) throw new Error('Planning Center is not connected.');
+    return [
+      { id: 'st-1', name: 'Sunday Morning Service' },
+      { id: 'st-2', name: 'Midweek Prayer & Worship' },
+    ];
+  }
+
+  public async listPlanningCenterPlans(serviceTypeId: string): Promise<PcoPlan[]> {
+    if (!this.pcoStatus.isConnected) throw new Error('Planning Center is not connected.');
+    return [
+      {
+        id: 'plan-101',
+        serviceTypeId,
+        dates: 'Sunday, Nov 1, 2026',
+        title: 'Sunday Worship',
+        seriesTitle: 'Living by Faith',
+        sortDate: '2026-11-01T09:30:00Z',
+      },
+      {
+        id: 'plan-102',
+        serviceTypeId,
+        dates: 'Sunday, Nov 8, 2026',
+        title: 'Sunday Worship',
+        seriesTitle: 'Living by Faith',
+        sortDate: '2026-11-08T09:30:00Z',
+      },
+    ];
+  }
+
+  public async getPlanningCenterPlanDetails(serviceTypeId: string, planId: string): Promise<PcoPlanDetail> {
+    if (!this.pcoStatus.isConnected) throw new Error('Planning Center is not connected.');
+    return {
+      plan: {
+        id: planId,
+        serviceTypeId,
+        dates: 'Sunday, Nov 1, 2026',
+        title: 'Sunday Worship',
+        seriesTitle: 'Living by Faith',
+        sortDate: '2026-11-01T09:30:00Z',
+      },
+      items: [
+        {
+          id: 'item-1',
+          title: 'Welcome & Countdown',
+          itemType: 'regular',
+          servicePosition: 'pre',
+          sequence: 1,
+          length: 300,
+          description: '5 minute countdown video',
+        },
+        {
+          id: 'item-2',
+          title: 'Praise & Worship',
+          itemType: 'header',
+          servicePosition: 'during',
+          sequence: 2,
+        },
+        {
+          id: 'item-3',
+          title: 'Way Maker',
+          itemType: 'song',
+          servicePosition: 'during',
+          sequence: 3,
+          length: 360,
+          description: 'Key of E',
+          songId: 'song-waymaker',
+          songTitle: 'Way Maker',
+          ccliNumber: '7115744',
+          author: 'Osinachi Kalu Okoro Egbu',
+        },
+        {
+          id: 'item-4',
+          title: 'Sermon',
+          itemType: 'regular',
+          servicePosition: 'during',
+          sequence: 4,
+          length: 1800,
+          description: 'Living by Faith - Part 1',
+        },
+      ],
+    };
+  }
+
+  public async importPlanningCenterPlan(serviceTypeId: string, planId: string): Promise<PcoImportResult> {
+    const details = await this.getPlanningCenterPlanDetails(serviceTypeId, planId);
+    const service = await this.createService({
+      title: `${details.plan.title || 'Sunday Worship'} (${details.plan.dates})`,
+      serviceDate: details.plan.sortDate,
+      category: 'Sunday Worship',
+      description: `Planning Center Plan #${planId}`,
+      notes: `Series: ${details.plan.seriesTitle || 'None'}`,
+    });
+
+    let matched = 0;
+    let placeholders = 0;
+
+    for (const item of details.items) {
+      if (item.itemType === 'song') {
+        const matching = this.songs.find(
+          (s) => (item.ccliNumber && s.ccliNumber === item.ccliNumber) || s.title.toLowerCase() === item.title.toLowerCase()
+        );
+        if (matching) {
+          await this.addSongToService(service.id, matching.id);
+          matched++;
+        } else {
+          await this.addServiceItem({
+            serviceId: service.id,
+            itemType: 'divider',
+            title: `♪ ${item.title} [Add to Library]`,
+            notes: `CCLI: ${item.ccliNumber || 'None'}\nAuthor: ${item.author || 'Unknown'}`,
+          });
+          placeholders++;
+        }
+      } else {
+        await this.addServiceItem({
+          serviceId: service.id,
+          itemType: 'divider',
+          title: item.title,
+          notes: item.description ?? undefined,
+        });
+      }
+    }
+
+    return {
+      serviceId: service.id,
+      serviceTitle: service.title,
+      matchedSongsCount: matched,
+      placeholderSongsCount: placeholders,
+      totalItemsCount: details.items.length,
+    };
+  }
+
   /** Browser store: stands in for the desktop import with a small editable presentation. */
   public async importPptxNative(filePath: string, title?: string): Promise<PptxImportResult> {
     if (!/\.pptx$/i.test(filePath.trim())) throw new Error('Only .pptx files can be imported this way.');
@@ -6645,6 +6807,58 @@ export const api = {
 
   getStageMessage: async (): Promise<string | null> => {
     return mockStore.getStageMessage();
+  },
+
+  // ================= Phase 10.1: Planning Center Integration =================
+
+  getPlanningCenterStatus: async (): Promise<PlanningCenterStatus> => {
+    if (isTauri()) {
+      return await invoke<PlanningCenterStatus>('get_planning_center_status');
+    }
+    return mockStore.getPlanningCenterStatus();
+  },
+
+  savePlanningCenterCredentials: async (appId: string, secret: string): Promise<PlanningCenterStatus> => {
+    if (isTauri()) {
+      return await invoke<PlanningCenterStatus>('save_planning_center_credentials', { appId, secret });
+    }
+    return mockStore.savePlanningCenterCredentials(appId, secret);
+  },
+
+  disconnectPlanningCenter: async (): Promise<void> => {
+    if (isTauri()) {
+      await invoke<void>('disconnect_planning_center');
+      return;
+    }
+    return mockStore.disconnectPlanningCenter();
+  },
+
+  listPlanningCenterServiceTypes: async (): Promise<PcoServiceType[]> => {
+    if (isTauri()) {
+      return await invoke<PcoServiceType[]>('list_planning_center_service_types');
+    }
+    return mockStore.listPlanningCenterServiceTypes();
+  },
+
+  listPlanningCenterPlans: async (serviceTypeId: string): Promise<PcoPlan[]> => {
+    if (isTauri()) {
+      return await invoke<PcoPlan[]>('list_planning_center_plans', { serviceTypeId });
+    }
+    return mockStore.listPlanningCenterPlans(serviceTypeId);
+  },
+
+  getPlanningCenterPlanDetails: async (serviceTypeId: string, planId: string): Promise<PcoPlanDetail> => {
+    if (isTauri()) {
+      return await invoke<PcoPlanDetail>('get_planning_center_plan_details', { serviceTypeId, planId });
+    }
+    return mockStore.getPlanningCenterPlanDetails(serviceTypeId, planId);
+  },
+
+  importPlanningCenterPlan: async (serviceTypeId: string, planId: string): Promise<PcoImportResult> => {
+    if (isTauri()) {
+      return await invoke<PcoImportResult>('import_planning_center_plan', { serviceTypeId, planId });
+    }
+    return mockStore.importPlanningCenterPlan(serviceTypeId, planId);
   },
 };
 

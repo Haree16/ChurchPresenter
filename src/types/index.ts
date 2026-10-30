@@ -109,6 +109,55 @@ export interface Presentation {
 
 export type PropScrollMode = 'none' | 'left' | 'right' | 'up';
 
+/** Planning Center Services integration models. */
+export interface PlanningCenterStatus {
+  isConnected: boolean;
+  organizationName?: string | null;
+  appIdMasked?: string | null;
+  lastSyncedAt?: string | null;
+}
+
+export interface PcoServiceType {
+  id: string;
+  name: string;
+}
+
+export interface PcoPlan {
+  id: string;
+  serviceTypeId: string;
+  dates: string;
+  title?: string | null;
+  seriesTitle?: string | null;
+  sortDate: string;
+}
+
+export interface PcoItem {
+  id: string;
+  title: string;
+  itemType: 'song' | 'header' | 'regular' | string;
+  servicePosition: 'pre' | 'during' | 'post' | string;
+  sequence: number;
+  length?: number | null;
+  description?: string | null;
+  songId?: string | null;
+  songTitle?: string | null;
+  ccliNumber?: string | null;
+  author?: string | null;
+}
+
+export interface PcoPlanDetail {
+  plan: PcoPlan;
+  items: PcoItem[];
+}
+
+export interface PcoImportResult {
+  serviceId: string;
+  serviceTitle: string;
+  matchedSongsCount: number;
+  placeholderSongsCount: number;
+  totalItemsCount: number;
+}
+
 /** A saved overlay (text lower-third, logo bug, ...) toggled over the audience output. */
 export interface Prop {
   id: string;

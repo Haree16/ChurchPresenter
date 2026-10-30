@@ -19,6 +19,7 @@ import {
   Loader2,
   Play,
   RotateCcw,
+  Link2,
 } from 'lucide-react';
 import {
   Service,
@@ -38,6 +39,7 @@ import { BiblePassageModal } from './BiblePassageModal';
 import { SermonAnnouncementModal } from './SermonAnnouncementModal';
 import { ServiceMetadataModal } from './ServiceMetadataModal';
 import { ServiceTemplatesModal, SaveServiceTemplateDialog } from './ServiceTemplatesModal';
+import { PlanningCenterModal } from '../PlanningCenterModal';
 
 interface ServicePlannerViewProps {
   presentationState: PresentationState;
@@ -75,6 +77,7 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
   // UI / Modal States
   const [isNewServiceOpen, setIsNewServiceOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [isPcoOpen, setIsPcoOpen] = useState(false);
   const [templateSource, setTemplateSource] = useState<Service | null>(null);
   const [isEditServiceOpen, setIsEditServiceOpen] = useState(false);
   const [isBibleModalOpen, setIsBibleModalOpen] = useState(false);
@@ -605,27 +608,50 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
             <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
               Services
             </span>
-            <button
-              type="button"
-              data-testid="from-template-btn"
-              onClick={() => setIsTemplatesOpen(true)}
-              title="Start a new service from a template"
-              style={{
-                padding: '4px 8px',
-                backgroundColor: '#1e293b',
-                border: '1px solid #334155',
-                borderRadius: '5px',
-                color: '#cbd5e1',
-                fontSize: '11px',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '3px',
-                cursor: 'pointer',
-              }}
-            >
-              <Layers size={12} /> Templates
-            </button>
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              <button
+                type="button"
+                data-testid="planning-center-btn"
+                onClick={() => setIsPcoOpen(true)}
+                title="Import from Planning Center Services"
+                style={{
+                  padding: '4px 8px',
+                  backgroundColor: '#1e293b',
+                  border: '1px solid #334155',
+                  borderRadius: '5px',
+                  color: '#38bdf8',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  cursor: 'pointer',
+                }}
+              >
+                <Link2 size={12} /> PCO
+              </button>
+              <button
+                type="button"
+                data-testid="from-template-btn"
+                onClick={() => setIsTemplatesOpen(true)}
+                title="Start a new service from a template"
+                style={{
+                  padding: '4px 8px',
+                  backgroundColor: '#1e293b',
+                  border: '1px solid #334155',
+                  borderRadius: '5px',
+                  color: '#cbd5e1',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  cursor: 'pointer',
+                }}
+              >
+                <Layers size={12} /> Templates
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => setIsNewServiceOpen(true)}
@@ -1333,6 +1359,14 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
       />
 
       <ServiceTemplatesModal isOpen={isTemplatesOpen} onClose={() => setIsTemplatesOpen(false)} onCreated={handleServiceFromTemplate} />
+      <PlanningCenterModal
+        isOpen={isPcoOpen}
+        onClose={() => setIsPcoOpen(false)}
+        onServiceImported={async (serviceId) => {
+          await loadServices();
+          setSelectedServiceId(serviceId);
+        }}
+      />
       <SaveServiceTemplateDialog
         service={templateSource}
         onClose={() => setTemplateSource(null)}

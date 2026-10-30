@@ -24,6 +24,7 @@ mod theme_io;
 mod remote;
 mod search;
 mod service_templates;
+pub mod planning_center;
 
 use db::DbManager;
 use midi::MidiService;
@@ -389,6 +390,14 @@ pub fn run() {
             commands::import_pptx_native,
             commands::import_presentation_document,
             commands::set_stage_message,
+            // Phase 10.1: Planning Center Integration
+            commands::get_planning_center_status,
+            commands::save_planning_center_credentials,
+            commands::disconnect_planning_center,
+            commands::list_planning_center_service_types,
+            commands::list_planning_center_plans,
+            commands::get_planning_center_plan_details,
+            commands::import_planning_center_plan,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

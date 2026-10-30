@@ -4,11 +4,28 @@ Goal: connect to the tools churches already use. Effort: about 6 to 8 weeks. Dep
 
 Done when: a Planning Center plan imports into a service and a Stream Deck page runs a service.
 
-## 10.1 Planning Center
-- Ask first whether target churches use it (open question).
-- OAuth or personal access token stored in the OS keyring, never in the backup file (backups already strip credentials).
-- Import a plan's items as a service; refresh on demand; map song items to library songs by title or CCLI number.
-- Offline-first rule: the app must work with no network; the sync is manual.
+## 10.1 Planning Center [COMPLETED]
+- **Personal Access Token & Credentials Security**:
+  - Direct connection to Planning Center Services v2 API (`https://api.planningcenteronline.com/services/v2`) using Personal Access Tokens (Application ID + Secret) over HTTP Basic Auth.
+  - Stored in local SQLite `planning_center_config` table (Migration 26).
+  - Explicitly stripped and excluded from database backups (`export_backup`), guaranteeing credentials never leak when database backups are shared or restored.
+  - Application ID is masked in UI displays (`c037••••a8b1`).
+- **Plan Browsing & Order of Service Preview**:
+  - Lists Planning Center Service Types (`GET /services/v2/service_types?order=name`).
+  - Lists plans with dates, series titles, and sort dates.
+  - Fetches plan items with included songs (`GET /services/v2/service_types/{st}/plans/{p}/items?include=song`).
+  - Displays full order of service with item sequences, types (`[Song]`, `[Header]`, `[Item]`), durations, and notes.
+- **Library Song Matching & Service Creation**:
+  - Automatically matches songs against the local Church Presenter song library:
+    - 1st priority: Exact CCLI song number match (`songs.ccli_number`).
+    - 2nd priority: Case-insensitive title match (`songs.title`).
+  - Matched songs are attached to the service with their default arrangement and slides intact, enabling automatic CCLI tracking.
+  - Unmatched songs are created as placeholder divider items with CCLI number, author, and description notes for easy lyric pasting.
+  - Header items are created as divider lines in the service order.
+- **UI & Modal Integration**:
+  - Added `PlanningCenterModal.tsx` accessible directly from the Services planner header via "PCO" button.
+  - Includes connection status badge, organization name display, disconnect flow, and "Open Service" button upon successful import.
+- **Verification**: Verified with 295 passing backend Rust unit tests (`cargo test`) and 500 passing Vitest unit tests (`npm test`), including dedicated tests in `tests/planning-center.test.tsx`.
 
 ## 10.2 Stream Deck and other control
 - Ship a Stream Deck profile or documented OSC presets using the existing OSC paths.

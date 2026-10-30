@@ -135,7 +135,7 @@ describe('Phase 9.5: Scrolling Text & Messages (Ticker marquee)', () => {
     it('displays Ticker badge for scrolling props and toggles them live', async () => {
       await reset();
       const tickerProp = await api.createProp(baseTextProp({ name: 'Live Ticker', scrollMode: 'left' }));
-      const staticProp = await api.createProp(baseTextProp({ name: 'Static Bug', scrollMode: 'none' }));
+      await api.createProp(baseTextProp({ name: 'Static Bug', scrollMode: 'none' }));
 
       const state = await api.getPresentationState();
       render(<PropsControl presentationState={state} />);
