@@ -4,12 +4,13 @@ import { AlertBanner } from './AlertBanner';
 import { PropsLayer } from './PropsLayer';
 import { SlideElements } from './SlideElements';
 import { composeTextShadow, layoutPadding } from '../services/slideLayout';
-import { PresentationState, Theme, MediaAsset, LiveVideoConfig } from '../types';
+import { PresentationState, Theme, MediaAsset, LiveVideoConfig, OutputConfig } from '../types';
 import { api } from '../services/api';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { goToSlideNumber } from '../services/slideJump';
 import { mediaService, getMediaTypeFromExtension } from '../services/mediaService';
 import { liveVideoService } from '../services/liveVideoService';
+import { EdgeBlendOverlay } from './Broadcast/EdgeBlendOverlay';
 
 interface AudienceViewProps {
   outputId?: string;
@@ -40,6 +41,22 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
   const [liveVideoConfig, setLiveVideoConfig] = useState<LiveVideoConfig | null>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement>(null);
+
+  // Phase 11.6: Edge Blending Output Configuration
+  const [outputConfig, setOutputConfig] = useState<OutputConfig | null>(null);
+
+  useEffect(() => {
+    const id = outputId || 'output-audience';
+    api.getOutput(id).then(setOutputConfig).catch(() => {});
+    const unlisten = api.onOutputEdgeBlendUpdated((cfg) => {
+      if (cfg.id === id) {
+        setOutputConfig(cfg);
+      }
+    });
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [outputId]);
 
   useEffect(() => {
     let unlistenConfig: (() => void) | undefined;
@@ -801,6 +818,18 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
             }}
           />
         </div>
+      )}
+
+      {/* Phase 11.6: Edge Blending & Alignment Test Pattern Overlay */}
+      {outputConfig && (
+        <EdgeBlendOverlay
+          enabled={outputConfig.edgeBlendEnabled}
+          edge={outputConfig.edgeBlendEdge}
+          overlapPixels={outputConfig.edgeBlendOverlapPixels}
+          gamma={outputConfig.edgeBlendGamma}
+          blackLevelLift={outputConfig.edgeBlendBlackLevelLift}
+          showTestPattern={outputConfig.edgeBlendTestPattern}
+        />
       )}
     </div>
   );

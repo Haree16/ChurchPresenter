@@ -464,6 +464,10 @@ pub fn run() {
             commands::stop_ndi_output,
             commands::get_ndi_status,
             commands::send_ndi_frame,
+            // Phase 11.6: Edge Blending
+            commands::update_output_edge_blend,
+            commands::toggle_output_edge_blend,
+            commands::toggle_output_edge_blend_test_pattern,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -75,6 +75,9 @@ export function validateStep(step: MacroStep): string | null {
     case 'ndi':
       if (!step.command) return 'choose an NDI command.';
       return null;
+    case 'edge_blend':
+      if (!step.command) return 'choose an edge blend command.';
+      return null;
     default:
       return `unknown step type '${(step as { type: string }).type}'.`;
   }
@@ -144,6 +147,12 @@ export function stepLabel(
       if (step.command === 'stop') return 'NDI: Stop Stream';
       if (step.command === 'toggle') return 'NDI: Toggle Stream';
       return `NDI: ${step.command}`;
+    case 'edge_blend':
+      if (step.command === 'enable') return 'Edge Blend: Enable Overlap';
+      if (step.command === 'disable') return 'Edge Blend: Disable Overlap';
+      if (step.command === 'toggle') return 'Edge Blend: Toggle Overlap';
+      if (step.command === 'test_pattern') return 'Edge Blend: Toggle Test Pattern';
+      return `Edge Blend: ${step.command}`;
   }
 }
 
@@ -171,6 +180,8 @@ export function newStep(type: MacroStep['type']): MacroStep {
     case 'alpha_key':
       return { type, command: 'toggle' };
     case 'ndi':
+      return { type, command: 'toggle' };
+    case 'edge_blend':
       return { type, command: 'toggle' };
   }
 }

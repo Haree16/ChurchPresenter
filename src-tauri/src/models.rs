@@ -738,6 +738,14 @@ pub type OverlayWindowStatus = StageWindowStatus;
 
 // ================= Phase 5 Models =================
 
+fn default_edge_blend_edge() -> String {
+    "none".to_string()
+}
+
+fn default_edge_blend_gamma() -> f64 {
+    2.2
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputConfig {
@@ -754,6 +762,18 @@ pub struct OutputConfig {
     pub is_enabled: bool,
     pub is_active: bool,
     pub error: Option<String>,
+    #[serde(default)]
+    pub edge_blend_enabled: bool,
+    #[serde(default = "default_edge_blend_edge")]
+    pub edge_blend_edge: String, // "none", "left", "right", "top", "bottom", "both_horizontal"
+    #[serde(default)]
+    pub edge_blend_overlap_pixels: u32,
+    #[serde(default = "default_edge_blend_gamma")]
+    pub edge_blend_gamma: f64,
+    #[serde(default)]
+    pub edge_blend_black_level_lift: f64,
+    #[serde(default)]
+    pub edge_blend_test_pattern: bool,
     pub created_at: String,
     pub updated_at: String,
 }

@@ -2008,6 +2008,19 @@ class MockDataStore {
           this.ndiConfig.isActive = !this.ndiConfig.isActive;
         }
         return;
+      case 'edge_blend': {
+        const targetId = step.outputId || 'output-audience';
+        if (step.command === 'enable') {
+          await this.updateOutputEdgeBlend(targetId, true, 'right', 200, 2.2, 0.0, false);
+        } else if (step.command === 'disable') {
+          await this.updateOutputEdgeBlend(targetId, false, 'none', 0, 2.2, 0.0, false);
+        } else if (step.command === 'toggle') {
+          await this.toggleOutputEdgeBlend(targetId);
+        } else if (step.command === 'test_pattern') {
+          await this.toggleOutputEdgeBlendTestPattern(targetId);
+        }
+        return;
+      }
       case 'wait':
         return; // handled by the runner
     }
@@ -4251,6 +4264,61 @@ class MockDataStore {
     this.outputs = this.outputs.filter((item) => item.id !== id);
   }
 
+  // Phase 11.6: Edge Blending Mock Methods
+  public async updateOutputEdgeBlend(
+    outputId: string,
+    enabled: boolean,
+    edge: string,
+    overlapPixels: number,
+    gamma: number,
+    blackLevelLift: number,
+    testPattern: boolean
+  ): Promise<OutputConfig> {
+    const idx = this.outputs.findIndex((item) => item.id === outputId);
+    if (idx !== -1) {
+      this.outputs[idx] = {
+        ...this.outputs[idx],
+        edgeBlendEnabled: enabled,
+        edgeBlendEdge: edge,
+        edgeBlendOverlapPixels: overlapPixels,
+        edgeBlendGamma: gamma,
+        edgeBlendBlackLevelLift: blackLevelLift,
+        edgeBlendTestPattern: testPattern,
+        updatedAt: new Date().toISOString(),
+      };
+      return JSON.parse(JSON.stringify(this.outputs[idx]));
+    }
+    throw new Error(`Output not found: ${outputId}`);
+  }
+
+  public async toggleOutputEdgeBlend(outputId: string): Promise<OutputConfig> {
+    const out = this.outputs.find((item) => item.id === outputId);
+    if (!out) throw new Error(`Output not found: ${outputId}`);
+    return this.updateOutputEdgeBlend(
+      outputId,
+      !out.edgeBlendEnabled,
+      out.edgeBlendEdge || 'none',
+      out.edgeBlendOverlapPixels || 0,
+      out.edgeBlendGamma ?? 2.2,
+      out.edgeBlendBlackLevelLift ?? 0.0,
+      out.edgeBlendTestPattern ?? false
+    );
+  }
+
+  public async toggleOutputEdgeBlendTestPattern(outputId: string): Promise<OutputConfig> {
+    const out = this.outputs.find((item) => item.id === outputId);
+    if (!out) throw new Error(`Output not found: ${outputId}`);
+    return this.updateOutputEdgeBlend(
+      outputId,
+      out.edgeBlendEnabled ?? false,
+      out.edgeBlendEdge || 'none',
+      out.edgeBlendOverlapPixels || 0,
+      out.edgeBlendGamma ?? 2.2,
+      out.edgeBlendBlackLevelLift ?? 0.0,
+      !out.edgeBlendTestPattern
+    );
+  }
+
   public async getOverlayConfig(): Promise<LivestreamOverlayConfig> {
     return JSON.parse(JSON.stringify(this.overlayConfig));
   }
@@ -4594,6 +4662,12 @@ class MockDataStore {
         return this.getPresentationState();
       case 'stop_ndi_output':
         await this.stopNdiOutput();
+        return this.getPresentationState();
+      case 'toggle_edge_blend':
+        await this.toggleOutputEdgeBlend('output-audience');
+        return this.getPresentationState();
+      case 'toggle_edge_blend_test_pattern':
+        await this.toggleOutputEdgeBlendTestPattern('output-audience');
         return this.getPresentationState();
       default:
         return this.getPresentationState();
@@ -6951,6 +7025,59 @@ export const api = {
       return await invoke<void>('delete_output', { id });
     }
     return mockStore.deleteOutput(id);
+  },
+
+  // Phase 11.6: Edge Blending API
+  updateOutputEdgeBlend: async (
+    outputId: string,
+    enabled: boolean,
+    edge: string,
+    overlapPixels: number,
+    gamma: number,
+    blackLevelLift: number,
+    testPattern: boolean
+  ): Promise<OutputConfig> => {
+    if (isTauri()) {
+      return await invoke<OutputConfig>('update_output_edge_blend', {
+        outputId,
+        enabled,
+        edge,
+        overlapPixels,
+        gamma,
+        blackLevelLift,
+        testPattern,
+      });
+    }
+    return mockStore.updateOutputEdgeBlend(outputId, enabled, edge, overlapPixels, gamma, blackLevelLift, testPattern);
+  },
+
+  toggleOutputEdgeBlend: async (outputId: string): Promise<OutputConfig> => {
+    if (isTauri()) {
+      return await invoke<OutputConfig>('toggle_output_edge_blend', { outputId });
+    }
+    return mockStore.toggleOutputEdgeBlend(outputId);
+  },
+
+  toggleOutputEdgeBlendTestPattern: async (outputId: string): Promise<OutputConfig> => {
+    if (isTauri()) {
+      return await invoke<OutputConfig>('toggle_output_edge_blend_test_pattern', { outputId });
+    }
+    return mockStore.toggleOutputEdgeBlendTestPattern(outputId);
+  },
+
+  onOutputEdgeBlendUpdated: (callback: (config: OutputConfig) => void): (() => void) => {
+    if (isTauri()) {
+      let unlisten: UnlistenFn | undefined;
+      listen<OutputConfig>('output:edge-blend-updated', (event) => {
+        callback(event.payload);
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        if (unlisten) unlisten();
+      };
+    }
+    return () => {};
   },
 
   // ================= Phase 5: Livestream Overlay =================

@@ -108,7 +108,8 @@ impl ActionDispatcher {
             | "obs_start_stream" | "obs_stop_stream" | "obs_start_record" | "obs_stop_record"
             | "toggle_live_camera" | "switch_next_camera"
             | "toggle_alpha_key" | "open_alpha_key_outputs" | "close_alpha_key_outputs"
-            | "toggle_ndi_output" | "start_ndi_output" | "stop_ndi_output" => {
+            | "toggle_ndi_output" | "start_ndi_output" | "stop_ndi_output"
+            | "toggle_edge_blend" | "toggle_edge_blend_test_pattern" => {
                 pres_mgr.get_state()
             }
             unknown => return Err(format!("Unsupported action '{}'", unknown)),
@@ -255,6 +256,23 @@ impl ActionDispatcher {
                 }
                 let _ = db.update_ndi_config(&cfg);
                 app.emit("ndi:config-updated", &cfg).ok();
+            }
+            app.emit(
+                "action:dispatched",
+                serde_json::json!({ "action": action_name, "timestamp": Utc::now().to_rfc3339() }),
+            )
+            .ok();
+            return Ok(pres_mgr.get_state());
+        }
+
+        if action_name == "toggle_edge_blend" || action_name == "toggle_edge_blend_test_pattern" {
+            let target_id = "output-audience";
+            let res = match action_name {
+                "toggle_edge_blend_test_pattern" => db.toggle_edge_blend_test_pattern(target_id),
+                _ => db.toggle_edge_blend(target_id),
+            };
+            if let Ok(updated_output) = res {
+                app.emit("output:edge-blend-updated", &updated_output).ok();
             }
             app.emit(
                 "action:dispatched",

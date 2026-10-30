@@ -1873,6 +1873,35 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 35: Edge Blending (Multi-Projector Overlap) =================
+        if current_version < 35 {
+            let tx = conn.unchecked_transaction()?;
+
+            let _ = tx.execute("ALTER TABLE output_configs ADD COLUMN edge_blend_enabled INTEGER NOT NULL DEFAULT 0;", []);
+            let _ = tx.execute("ALTER TABLE output_configs ADD COLUMN edge_blend_edge TEXT NOT NULL DEFAULT 'none';", []);
+            let _ = tx.execute("ALTER TABLE output_configs ADD COLUMN edge_blend_overlap_pixels INTEGER NOT NULL DEFAULT 0;", []);
+            let _ = tx.execute("ALTER TABLE output_configs ADD COLUMN edge_blend_gamma REAL NOT NULL DEFAULT 2.2;", []);
+            let _ = tx.execute("ALTER TABLE output_configs ADD COLUMN edge_blend_black_level_lift REAL NOT NULL DEFAULT 0.0;", []);
+            let _ = tx.execute("ALTER TABLE output_configs ADD COLUMN edge_blend_test_pattern INTEGER NOT NULL DEFAULT 0;", []);
+
+            let now = Utc::now().to_rfc3339();
+
+            // Seed Edge Blending actions in action_mappings
+            tx.execute(
+                "INSERT OR IGNORE INTO action_mappings (id, action_name, display_label, category, keyboard_shortcut, is_enabled, created_at, updated_at)
+                 VALUES
+                 ('act-toggle-edge-blend', 'toggle_edge_blend', 'Toggle Edge Blending', 'display', NULL, 1, ?1, ?1),
+                 ('act-toggle-edge-blend-test-pattern', 'toggle_edge_blend_test_pattern', 'Toggle Edge Blend Test Pattern', 'display', NULL, 1, ?1, ?1);",
+                params![now],
+            )?;
+
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (35, ?1);",
+                params![now],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -6397,8 +6426,8 @@ impl DbManager {
         let mut outputs_count = 0;
         for out in &backup.output_configs {
             tx.execute(
-                "INSERT INTO output_configs (id, name, output_type, target_monitor_id, resolution_width, resolution_height, aspect_ratio, safe_margin_percent, content_source, theme_id, is_enabled, is_active, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                "INSERT INTO output_configs (id, name, output_type, target_monitor_id, resolution_width, resolution_height, aspect_ratio, safe_margin_percent, content_source, theme_id, is_enabled, is_active, edge_blend_enabled, edge_blend_edge, edge_blend_overlap_pixels, edge_blend_gamma, edge_blend_black_level_lift, edge_blend_test_pattern, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
                  ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name,
                     output_type = excluded.output_type,
@@ -6410,6 +6439,12 @@ impl DbManager {
                     content_source = excluded.content_source,
                     theme_id = excluded.theme_id,
                     is_enabled = excluded.is_enabled,
+                    edge_blend_enabled = excluded.edge_blend_enabled,
+                    edge_blend_edge = excluded.edge_blend_edge,
+                    edge_blend_overlap_pixels = excluded.edge_blend_overlap_pixels,
+                    edge_blend_gamma = excluded.edge_blend_gamma,
+                    edge_blend_black_level_lift = excluded.edge_blend_black_level_lift,
+                    edge_blend_test_pattern = excluded.edge_blend_test_pattern,
                     updated_at = excluded.updated_at;",
                 params![
                     out.id,
@@ -6424,6 +6459,12 @@ impl DbManager {
                     out.theme_id,
                     if out.is_enabled { 1 } else { 0 },
                     if out.is_active { 1 } else { 0 },
+                    if out.edge_blend_enabled { 1 } else { 0 },
+                    out.edge_blend_edge,
+                    out.edge_blend_overlap_pixels,
+                    out.edge_blend_gamma,
+                    out.edge_blend_black_level_lift,
+                    if out.edge_blend_test_pattern { 1 } else { 0 },
                     out.created_at,
                     out.updated_at
                 ],
@@ -6756,7 +6797,8 @@ impl DbManager {
         let mut stmt = conn.prepare(
             "SELECT id, name, output_type, target_monitor_id, resolution_width, resolution_height,
                     aspect_ratio, safe_margin_percent, content_source, theme_id, is_enabled, is_active,
-                    created_at, updated_at
+                    edge_blend_enabled, edge_blend_edge, edge_blend_overlap_pixels, edge_blend_gamma,
+                    edge_blend_black_level_lift, edge_blend_test_pattern, created_at, updated_at
              FROM output_configs
              ORDER BY created_at ASC;",
         )?;
@@ -6775,9 +6817,15 @@ impl DbManager {
                 theme_id: row.get(9)?,
                 is_enabled: row.get::<_, i32>(10)? != 0,
                 is_active: row.get::<_, i32>(11)? != 0,
+                edge_blend_enabled: row.get::<_, i32>(12).unwrap_or(0) != 0,
+                edge_blend_edge: row.get::<_, String>(13).unwrap_or_else(|_| "none".to_string()),
+                edge_blend_overlap_pixels: row.get::<_, u32>(14).unwrap_or(0),
+                edge_blend_gamma: row.get::<_, f64>(15).unwrap_or(2.2),
+                edge_blend_black_level_lift: row.get::<_, f64>(16).unwrap_or(0.0),
+                edge_blend_test_pattern: row.get::<_, i32>(17).unwrap_or(0) != 0,
                 error: None,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
+                created_at: row.get(18)?,
+                updated_at: row.get(19)?,
             })
         })?;
 
@@ -6793,7 +6841,8 @@ impl DbManager {
         let mut stmt = conn.prepare(
             "SELECT id, name, output_type, target_monitor_id, resolution_width, resolution_height,
                     aspect_ratio, safe_margin_percent, content_source, theme_id, is_enabled, is_active,
-                    created_at, updated_at
+                    edge_blend_enabled, edge_blend_edge, edge_blend_overlap_pixels, edge_blend_gamma,
+                    edge_blend_black_level_lift, edge_blend_test_pattern, created_at, updated_at
              FROM output_configs
              WHERE id = ?1;",
         )?;
@@ -6812,9 +6861,15 @@ impl DbManager {
                 theme_id: row.get(9)?,
                 is_enabled: row.get::<_, i32>(10)? != 0,
                 is_active: row.get::<_, i32>(11)? != 0,
+                edge_blend_enabled: row.get::<_, i32>(12).unwrap_or(0) != 0,
+                edge_blend_edge: row.get::<_, String>(13).unwrap_or_else(|_| "none".to_string()),
+                edge_blend_overlap_pixels: row.get::<_, u32>(14).unwrap_or(0),
+                edge_blend_gamma: row.get::<_, f64>(15).unwrap_or(2.2),
+                edge_blend_black_level_lift: row.get::<_, f64>(16).unwrap_or(0.0),
+                edge_blend_test_pattern: row.get::<_, i32>(17).unwrap_or(0) != 0,
                 error: None,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
+                created_at: row.get(18)?,
+                updated_at: row.get(19)?,
             })
         })?;
 
@@ -6829,8 +6884,8 @@ impl DbManager {
         let conn = self.conn.lock().unwrap();
         let now = Utc::now().to_rfc3339();
         conn.execute(
-            "INSERT INTO output_configs (id, name, output_type, target_monitor_id, resolution_width, resolution_height, aspect_ratio, safe_margin_percent, content_source, theme_id, is_enabled, is_active, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13);",
+            "INSERT INTO output_configs (id, name, output_type, target_monitor_id, resolution_width, resolution_height, aspect_ratio, safe_margin_percent, content_source, theme_id, is_enabled, is_active, edge_blend_enabled, edge_blend_edge, edge_blend_overlap_pixels, edge_blend_gamma, edge_blend_black_level_lift, edge_blend_test_pattern, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20);",
             params![
                 output.id,
                 output.name,
@@ -6844,6 +6899,13 @@ impl DbManager {
                 output.theme_id,
                 if output.is_enabled { 1 } else { 0 },
                 if output.is_active { 1 } else { 0 },
+                if output.edge_blend_enabled { 1 } else { 0 },
+                output.edge_blend_edge,
+                output.edge_blend_overlap_pixels,
+                output.edge_blend_gamma,
+                output.edge_blend_black_level_lift,
+                if output.edge_blend_test_pattern { 1 } else { 0 },
+                now,
                 now
             ],
         )?;
@@ -6857,7 +6919,10 @@ impl DbManager {
             "UPDATE output_configs
              SET name = ?2, output_type = ?3, target_monitor_id = ?4, resolution_width = ?5,
                  resolution_height = ?6, aspect_ratio = ?7, safe_margin_percent = ?8,
-                 content_source = ?9, theme_id = ?10, is_enabled = ?11, updated_at = ?12
+                 content_source = ?9, theme_id = ?10, is_enabled = ?11,
+                 edge_blend_enabled = ?12, edge_blend_edge = ?13, edge_blend_overlap_pixels = ?14,
+                 edge_blend_gamma = ?15, edge_blend_black_level_lift = ?16, edge_blend_test_pattern = ?17,
+                 updated_at = ?18
              WHERE id = ?1;",
             params![
                 output.id,
@@ -6871,10 +6936,82 @@ impl DbManager {
                 output.content_source,
                 output.theme_id,
                 if output.is_enabled { 1 } else { 0 },
+                if output.edge_blend_enabled { 1 } else { 0 },
+                output.edge_blend_edge,
+                output.edge_blend_overlap_pixels,
+                output.edge_blend_gamma,
+                output.edge_blend_black_level_lift,
+                if output.edge_blend_test_pattern { 1 } else { 0 },
                 now
             ],
         )?;
         Ok(())
+    }
+
+    pub fn update_edge_blend(
+        &self,
+        id: &str,
+        enabled: bool,
+        edge: &str,
+        overlap_pixels: u32,
+        gamma: f64,
+        black_level_lift: f64,
+        test_pattern: bool,
+    ) -> Result<OutputConfig> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE output_configs
+             SET edge_blend_enabled = ?2,
+                 edge_blend_edge = ?3,
+                 edge_blend_overlap_pixels = ?4,
+                 edge_blend_gamma = ?5,
+                 edge_blend_black_level_lift = ?6,
+                 edge_blend_test_pattern = ?7,
+                 updated_at = ?8
+             WHERE id = ?1;",
+            params![
+                id,
+                if enabled { 1 } else { 0 },
+                edge,
+                overlap_pixels,
+                gamma,
+                black_level_lift,
+                if test_pattern { 1 } else { 0 },
+                now
+            ],
+        )?;
+        drop(conn);
+        self.get_output(id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)
+    }
+
+    pub fn toggle_edge_blend(&self, id: &str) -> Result<OutputConfig> {
+        let current = self.get_output(id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)?;
+        self.update_edge_blend(
+            id,
+            !current.edge_blend_enabled,
+            &current.edge_blend_edge,
+            current.edge_blend_overlap_pixels,
+            current.edge_blend_gamma,
+            current.edge_blend_black_level_lift,
+            current.edge_blend_test_pattern,
+        )
+    }
+
+    pub fn toggle_edge_blend_test_pattern(&self, id: &str) -> Result<OutputConfig> {
+        let current = self.get_output(id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)?;
+        self.update_edge_blend(
+            id,
+            current.edge_blend_enabled,
+            &current.edge_blend_edge,
+            current.edge_blend_overlap_pixels,
+            current.edge_blend_gamma,
+            current.edge_blend_black_level_lift,
+            !current.edge_blend_test_pattern,
+        )
     }
 
     pub fn delete_output(&self, id: &str) -> Result<()> {
@@ -8211,12 +8348,34 @@ mod tests {
             is_enabled: true,
             is_active: false,
             error: None,
+            edge_blend_enabled: true,
+            edge_blend_edge: "right".to_string(),
+            edge_blend_overlap_pixels: 200,
+            edge_blend_gamma: 2.2,
+            edge_blend_black_level_lift: 0.02,
+            edge_blend_test_pattern: false,
             created_at: Utc::now().to_rfc3339(),
             updated_at: Utc::now().to_rfc3339(),
         };
         db.create_output(&custom_out).unwrap();
         let fetched = db.get_output("output-aux-foyer").unwrap().unwrap();
         assert_eq!(fetched.name, "Foyer Screen");
+        assert!(fetched.edge_blend_enabled);
+        assert_eq!(fetched.edge_blend_edge, "right");
+        assert_eq!(fetched.edge_blend_overlap_pixels, 200);
+
+        // Edge Blend methods test
+        let toggled = db.toggle_edge_blend("output-aux-foyer").unwrap();
+        assert!(!toggled.edge_blend_enabled);
+        let pattern_toggled = db.toggle_edge_blend_test_pattern("output-aux-foyer").unwrap();
+        assert!(pattern_toggled.edge_blend_test_pattern);
+        let updated_eb = db.update_edge_blend("output-aux-foyer", true, "left", 350, 2.4, 0.05, false).unwrap();
+        assert!(updated_eb.edge_blend_enabled);
+        assert_eq!(updated_eb.edge_blend_edge, "left");
+        assert_eq!(updated_eb.edge_blend_overlap_pixels, 350);
+        assert_eq!(updated_eb.edge_blend_gamma, 2.4);
+        assert_eq!(updated_eb.edge_blend_black_level_lift, 0.05);
+        assert!(!updated_eb.edge_blend_test_pattern);
 
         // 2. Livestream overlay
         let overlay = db.get_overlay_config().unwrap();

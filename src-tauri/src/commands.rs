@@ -1633,6 +1633,47 @@ pub async fn delete_output(
     db.delete_output(&id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn update_output_edge_blend(
+    output_id: String,
+    enabled: bool,
+    edge: String,
+    overlap_pixels: u32,
+    gamma: f64,
+    black_level_lift: f64,
+    test_pattern: bool,
+    app: AppHandle,
+    db: State<'_, DbManager>,
+) -> Result<OutputConfig, String> {
+    let out = db
+        .update_edge_blend(&output_id, enabled, &edge, overlap_pixels, gamma, black_level_lift, test_pattern)
+        .map_err(|e| e.to_string())?;
+    app.emit("output:edge-blend-updated", &out).ok();
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn toggle_output_edge_blend(
+    output_id: String,
+    app: AppHandle,
+    db: State<'_, DbManager>,
+) -> Result<OutputConfig, String> {
+    let out = db.toggle_edge_blend(&output_id).map_err(|e| e.to_string())?;
+    app.emit("output:edge-blend-updated", &out).ok();
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn toggle_output_edge_blend_test_pattern(
+    output_id: String,
+    app: AppHandle,
+    db: State<'_, DbManager>,
+) -> Result<OutputConfig, String> {
+    let out = db.toggle_edge_blend_test_pattern(&output_id).map_err(|e| e.to_string())?;
+    app.emit("output:edge-blend-updated", &out).ok();
+    Ok(out)
+}
+
 // ================= Phase 5: Livestream Overlay =================
 
 #[tauri::command]

@@ -57,6 +57,7 @@ const STEP_TYPES: { type: MacroStep['type']; label: string }[] = [
   { type: 'camera', label: 'Camera / Video' },
   { type: 'alpha_key', label: 'Alpha Key (Key & Fill)' },
   { type: 'ndi', label: 'NDI Video Output' },
+  { type: 'edge_blend', label: 'Edge Blending (Multi-Projector)' },
 ];
 
 export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, onClose }) => {
@@ -334,6 +335,28 @@ export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, on
               <option value="toggle">Toggle Stream</option>
               <option value="start">Start Stream</option>
               <option value="stop">Stop Stream</option>
+            </select>
+          </div>
+        );
+      case 'edge_blend':
+        return (
+          <div style={{ display: 'flex', gap: '6px', flex: 1, alignItems: 'center' }}>
+            <select
+              data-testid="step-edge-blend-command"
+              aria-label="Edge blend command"
+              style={{ ...field, width: '170px' }}
+              value={step.command}
+              onChange={(e) =>
+                setStep(i, {
+                  type: 'edge_blend',
+                  command: e.target.value as any,
+                })
+              }
+            >
+              <option value="toggle">Toggle Edge Blend</option>
+              <option value="enable">Enable Edge Blend</option>
+              <option value="disable">Disable Edge Blend</option>
+              <option value="test_pattern">Toggle Test Pattern</option>
             </select>
           </div>
         );

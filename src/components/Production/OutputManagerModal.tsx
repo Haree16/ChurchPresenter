@@ -61,6 +61,12 @@ export const OutputManagerModal: React.FC<OutputManagerModalProps> = ({
       isEnabled: true,
       isActive: false,
       error: null,
+      edgeBlendEnabled: false,
+      edgeBlendEdge: 'none',
+      edgeBlendOverlapPixels: 0,
+      edgeBlendGamma: 2.2,
+      edgeBlendBlackLevelLift: 0.0,
+      edgeBlendTestPattern: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -384,6 +390,166 @@ export const OutputManagerModal: React.FC<OutputManagerModalProps> = ({
                   </div>
                 </div>
 
+                {/* Phase 11.6: Edge Blending (Multi-Projector Overlap) Configuration */}
+                <div
+                  data-testid="edge-blend-edit-section"
+                  className="p-4 bg-slate-800/40 rounded-xl border border-slate-800 space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-semibold text-slate-200">
+                        Multi-Projector Edge Blending
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        Calibrate luminance falloff and gamma curve across projector overlap seams.
+                      </p>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                      <input
+                        type="checkbox"
+                        data-testid="toggle-edge-blend-enabled"
+                        checked={editingOutput.edgeBlendEnabled ?? false}
+                        onChange={(e) =>
+                          setEditingOutput({
+                            ...editingOutput,
+                            edgeBlendEnabled: e.target.checked,
+                          })
+                        }
+                        className="rounded bg-slate-800 border-slate-700 text-blue-600 focus:ring-0"
+                      />
+                      Enable Blending
+                    </label>
+                  </div>
+
+                  {editingOutput.edgeBlendEnabled && (
+                    <div className="space-y-3 pt-2 border-t border-slate-800">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                            Blend Edge
+                          </label>
+                          <select
+                            data-testid="select-edge-blend-edge"
+                            value={editingOutput.edgeBlendEdge || 'none'}
+                            onChange={(e) =>
+                              setEditingOutput({
+                                ...editingOutput,
+                                edgeBlendEdge: e.target.value,
+                              })
+                            }
+                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                          >
+                            <option value="none">None</option>
+                            <option value="right">Right Edge (Left Projector)</option>
+                            <option value="left">Left Edge (Right Projector)</option>
+                            <option value="both_horizontal">Both Left & Right (Center Projector)</option>
+                            <option value="bottom">Bottom Edge (Top Projector)</option>
+                            <option value="top">Top Edge (Bottom Projector)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="text-[11px] font-medium text-slate-400">
+                              Overlap Width
+                            </label>
+                            <span className="text-[11px] font-mono text-amber-400 font-semibold">
+                              {editingOutput.edgeBlendOverlapPixels ?? 0} px
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="800"
+                            step="10"
+                            data-testid="slider-edge-blend-overlap"
+                            value={editingOutput.edgeBlendOverlapPixels ?? 0}
+                            onChange={(e) =>
+                              setEditingOutput({
+                                ...editingOutput,
+                                edgeBlendOverlapPixels: parseInt(e.target.value, 10),
+                              })
+                            }
+                            className="w-full"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="text-[11px] font-medium text-slate-400">
+                              Luminance Gamma Response
+                            </label>
+                            <span className="text-[11px] font-mono text-blue-400 font-semibold">
+                              {(editingOutput.edgeBlendGamma ?? 2.2).toFixed(1)}
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1.0"
+                            max="3.5"
+                            step="0.1"
+                            data-testid="slider-edge-blend-gamma"
+                            value={editingOutput.edgeBlendGamma ?? 2.2}
+                            onChange={(e) =>
+                              setEditingOutput({
+                                ...editingOutput,
+                                edgeBlendGamma: parseFloat(e.target.value),
+                              })
+                            }
+                            className="w-full"
+                          />
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="text-[11px] font-medium text-slate-400">
+                              Black Floor Lift (Floor Compensation)
+                            </label>
+                            <span className="text-[11px] font-mono text-slate-300 font-semibold">
+                              {((editingOutput.edgeBlendBlackLevelLift ?? 0.0) * 100).toFixed(1)}%
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="0.15"
+                            step="0.005"
+                            data-testid="slider-edge-blend-black-lift"
+                            value={editingOutput.edgeBlendBlackLevelLift ?? 0.0}
+                            onChange={(e) =>
+                              setEditingOutput({
+                                ...editingOutput,
+                                edgeBlendBlackLevelLift: parseFloat(e.target.value),
+                              })
+                            }
+                            className="w-full"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="pt-1 flex items-center justify-between">
+                        <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                          <input
+                            type="checkbox"
+                            data-testid="toggle-edge-blend-test-pattern"
+                            checked={editingOutput.edgeBlendTestPattern ?? false}
+                            onChange={(e) =>
+                              setEditingOutput({
+                                ...editingOutput,
+                                edgeBlendTestPattern: e.target.checked,
+                              })
+                            }
+                            className="rounded bg-slate-800 border-slate-700 text-blue-600 focus:ring-0"
+                          />
+                          Show Alignment Test Grid Pattern on Display
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="pt-4 flex justify-end gap-2 border-t border-slate-800">
                   <button
                     type="button"
@@ -454,6 +620,35 @@ export const OutputManagerModal: React.FC<OutputManagerModalProps> = ({
                     <strong className="text-slate-200">
                       {selectedOutput.safeMarginPercent}%
                     </strong>
+                  </div>
+                </div>
+
+                {/* Edge Blending Status Card */}
+                <div
+                  data-testid="edge-blend-status-card"
+                  className="bg-slate-800/30 p-4 rounded-xl border border-slate-800 text-xs space-y-2"
+                >
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-slate-400 block mb-0.5">Edge Blending:</span>
+                      <strong className={selectedOutput.edgeBlendEnabled ? 'text-emerald-400' : 'text-slate-400'}>
+                        {selectedOutput.edgeBlendEnabled
+                          ? `Active (${selectedOutput.edgeBlendEdge || 'none'}, ${selectedOutput.edgeBlendOverlapPixels || 0}px)`
+                          : 'Disabled'}
+                      </strong>
+                    </div>
+                    <button
+                      type="button"
+                      data-testid="btn-toggle-test-pattern"
+                      onClick={async () => {
+                        const updated = await api.toggleOutputEdgeBlendTestPattern(selectedOutput.id);
+                        setSelectedOutput(updated);
+                        setOutputs((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+                      }}
+                      className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-medium rounded-lg border border-slate-700 transition"
+                    >
+                      {selectedOutput.edgeBlendTestPattern ? 'Hide Test Pattern' : 'Show Test Pattern'}
+                    </button>
                   </div>
                 </div>
 

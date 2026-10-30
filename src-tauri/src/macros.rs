@@ -105,6 +105,12 @@ pub enum MacroStep {
     Ndi {
         command: String,
     },
+    /// Phase 11.6: Edge Blending Step
+    EdgeBlend {
+        command: String, // "enable" | "disable" | "toggle" | "test_pattern"
+        #[serde(default)]
+        output_id: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -225,6 +231,15 @@ pub fn validate_step(step: &MacroStep) -> std::result::Result<(), String> {
             match command.as_str() {
                 "start" | "stop" | "toggle" => Ok(()),
                 other => Err(format!("unknown NDI command: '{}'", other)),
+            }
+        }
+        MacroStep::EdgeBlend { command, .. } => {
+            if command.trim().is_empty() {
+                return Err("choose an edge blend command.".to_string());
+            }
+            match command.as_str() {
+                "enable" | "disable" | "toggle" | "test_pattern" => Ok(()),
+                other => Err(format!("unknown edge blend command: '{}'", other)),
             }
         }
     }
@@ -469,6 +484,25 @@ pub fn apply_step_core(
                     _ => {}
                 }
                 let _ = db.update_ndi_config(&cfg);
+            }
+            Ok(StepOutcome::Done)
+        }
+        MacroStep::EdgeBlend { command, output_id } => {
+            let target_id = output_id.as_deref().unwrap_or("output-audience");
+            match command.as_str() {
+                "enable" => {
+                    let _ = db.update_edge_blend(target_id, true, "right", 200, 2.2, 0.0, false);
+                }
+                "disable" => {
+                    let _ = db.update_edge_blend(target_id, false, "none", 0, 2.2, 0.0, false);
+                }
+                "toggle" => {
+                    let _ = db.toggle_edge_blend(target_id);
+                }
+                "test_pattern" => {
+                    let _ = db.toggle_edge_blend_test_pattern(target_id);
+                }
+                _ => {}
             }
             Ok(StepOutcome::Done)
         }

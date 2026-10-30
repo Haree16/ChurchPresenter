@@ -266,6 +266,11 @@ export type MacroStep =
   | {
       type: 'ndi';
       command: 'start' | 'stop' | 'toggle';
+    }
+  | {
+      type: 'edge_blend';
+      command: 'enable' | 'disable' | 'toggle' | 'test_pattern';
+      outputId?: string;
     };
 
 export type KeyBindingTargetType = 'action' | 'prop' | 'macro' | 'look' | 'clearGroup';
@@ -851,6 +856,13 @@ export interface OutputConfig {
   isEnabled: boolean;
   isActive: boolean;
   error?: string | null;
+  // Phase 11.6: Edge Blending (Multi-Projector Overlap)
+  edgeBlendEnabled?: boolean;
+  edgeBlendEdge?: 'none' | 'left' | 'right' | 'top' | 'bottom' | 'both_horizontal' | string;
+  edgeBlendOverlapPixels?: number;
+  edgeBlendGamma?: number;
+  edgeBlendBlackLevelLift?: number;
+  edgeBlendTestPattern?: boolean;
   createdAt: string;
   updatedAt: string;
 }
