@@ -262,6 +262,10 @@ export type MacroStep =
   | {
       type: 'alpha_key';
       command: 'enable' | 'disable' | 'toggle';
+    }
+  | {
+      type: 'ndi';
+      command: 'start' | 'stop' | 'toggle';
     };
 
 export type KeyBindingTargetType = 'action' | 'prop' | 'macro' | 'look' | 'clearGroup';
@@ -570,6 +574,7 @@ export interface BackupData {
   obsConfigs?: ObsConfig[];
   liveVideoConfigs?: LiveVideoConfig[];
   alphaKeyConfigs?: AlphaKeyConfig[];
+  ndiConfigs?: NdiConfig[];
   actionMappings?: ActionMapping[];
   workspaceState?: WorkspaceState | null;
   settings: Record<string, string>;
@@ -1200,5 +1205,36 @@ export interface AlphaKeyStatus {
   contentSource: AlphaContentSource;
   error?: string | null;
 }
+
+// Phase 11.5: NDI Output (Network Device Interface Streaming over LAN)
+export type NdiOutputSource = 'audience' | 'overlay' | 'stage' | 'alpha_fill' | 'alpha_key';
+export type NdiResolution = '1080p' | '720p' | '4k';
+
+export interface NdiConfig {
+  id: string;
+  isEnabled: boolean;
+  isActive: boolean;
+  streamName: string;
+  outputSource: NdiOutputSource;
+  resolution: NdiResolution;
+  frameRate: number; // 30 or 60
+  includeAlpha: boolean;
+  ndiGroup?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NdiStatus {
+  isBroadcasting: boolean;
+  streamName: string;
+  outputSource: string;
+  resolution: string;
+  frameRate: number;
+  receiverCount: number;
+  isNdiInstalled: boolean;
+  ndiVersion?: string | null;
+  error?: string | null;
+}
+
 
 

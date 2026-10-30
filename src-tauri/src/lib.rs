@@ -29,6 +29,7 @@ pub mod dmx;
 pub mod updater;
 pub mod recorder;
 pub mod obs;
+pub mod ndi;
 
 use db::DbManager;
 use midi::MidiService;
@@ -163,6 +164,7 @@ pub fn run() {
             app.manage(dmx::DmxService::new());
             app.manage(std::sync::Arc::new(recorder::RecorderService::new(app_data_dir.clone())));
             app.manage(std::sync::Arc::new(obs::ObsService::new()));
+            app.manage(std::sync::Arc::new(ndi::NdiService::new()));
 
             Ok(())
         })
@@ -454,6 +456,14 @@ pub fn run() {
             commands::get_alpha_key_status,
             commands::open_alpha_window,
             commands::close_alpha_window,
+            // Phase 11.5: NDI Output
+            commands::get_ndi_config,
+            commands::update_ndi_config,
+            commands::toggle_ndi_output,
+            commands::start_ndi_output,
+            commands::stop_ndi_output,
+            commands::get_ndi_status,
+            commands::send_ndi_frame,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

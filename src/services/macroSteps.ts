@@ -72,6 +72,9 @@ export function validateStep(step: MacroStep): string | null {
     case 'alpha_key':
       if (!step.command) return 'choose an alpha key command.';
       return null;
+    case 'ndi':
+      if (!step.command) return 'choose an NDI command.';
+      return null;
     default:
       return `unknown step type '${(step as { type: string }).type}'.`;
   }
@@ -136,6 +139,11 @@ export function stepLabel(
       if (step.command === 'disable') return 'Alpha Key: Disable Output';
       if (step.command === 'toggle') return 'Alpha Key: Toggle Key & Fill';
       return `Alpha Key: ${step.command}`;
+    case 'ndi':
+      if (step.command === 'start') return 'NDI: Start Stream';
+      if (step.command === 'stop') return 'NDI: Stop Stream';
+      if (step.command === 'toggle') return 'NDI: Toggle Stream';
+      return `NDI: ${step.command}`;
   }
 }
 
@@ -161,6 +169,8 @@ export function newStep(type: MacroStep['type']): MacroStep {
     case 'camera':
       return { type, command: 'toggle' };
     case 'alpha_key':
+      return { type, command: 'toggle' };
+    case 'ndi':
       return { type, command: 'toggle' };
   }
 }

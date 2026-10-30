@@ -85,8 +85,8 @@ import {
   LiveVideoStatus,
   AlphaKeyConfig,
   AlphaKeyStatus,
-  AlphaKeyMode,
-  AlphaContentSource,
+  NdiConfig,
+  NdiStatus,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
@@ -1999,6 +1999,15 @@ class MockDataStore {
           this.alphaKeyConfig.isActive = !this.alphaKeyConfig.isActive;
         }
         return;
+      case 'ndi':
+        if (step.command === 'start') {
+          this.ndiConfig.isActive = true;
+        } else if (step.command === 'stop') {
+          this.ndiConfig.isActive = false;
+        } else if (step.command === 'toggle') {
+          this.ndiConfig.isActive = !this.ndiConfig.isActive;
+        }
+        return;
       case 'wait':
         return; // handled by the runner
     }
@@ -3778,6 +3787,7 @@ class MockDataStore {
       oscConfigs: [this.oscConfig],
       liveVideoConfigs: [this.liveVideoConfig],
       alphaKeyConfigs: [this.alphaKeyConfig],
+      ndiConfigs: [this.ndiConfig],
       actionMappings: this.actionMappings,
       workspaceState: this.workspaceState,
       settings: this.settings,
@@ -4575,6 +4585,15 @@ class MockDataStore {
         return this.getPresentationState();
       case 'close_alpha_key_outputs':
         await this.closeAlphaWindow('all');
+        return this.getPresentationState();
+      case 'toggle_ndi_output':
+        await this.toggleNdiOutput();
+        return this.getPresentationState();
+      case 'start_ndi_output':
+        await this.startNdiOutput();
+        return this.getPresentationState();
+      case 'stop_ndi_output':
+        await this.stopNdiOutput();
         return this.getPresentationState();
       default:
         return this.getPresentationState();
@@ -5527,6 +5546,66 @@ class MockDataStore {
       this.alphaKeyWindows.combinedOpen = false;
     }
     return this.getAlphaKeyStatus();
+  }
+
+  // Phase 11.5: NDI Output
+  private ndiConfig: NdiConfig = {
+    id: 'default-ndi',
+    isEnabled: true,
+    isActive: false,
+    streamName: 'Church Presenter Output',
+    outputSource: 'audience',
+    resolution: '1080p',
+    frameRate: 60,
+    includeAlpha: true,
+    ndiGroup: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  public async getNdiConfig(): Promise<NdiConfig> {
+    return { ...this.ndiConfig };
+  }
+
+  public async updateNdiConfig(config: NdiConfig): Promise<NdiConfig> {
+    this.ndiConfig = { ...this.ndiConfig, ...config, updatedAt: new Date().toISOString() };
+    return { ...this.ndiConfig };
+  }
+
+  public async toggleNdiOutput(): Promise<boolean> {
+    this.ndiConfig.isActive = !this.ndiConfig.isActive;
+    this.ndiConfig.updatedAt = new Date().toISOString();
+    return this.ndiConfig.isActive;
+  }
+
+  public async startNdiOutput(): Promise<boolean> {
+    this.ndiConfig.isActive = true;
+    this.ndiConfig.updatedAt = new Date().toISOString();
+    return true;
+  }
+
+  public async stopNdiOutput(): Promise<boolean> {
+    this.ndiConfig.isActive = false;
+    this.ndiConfig.updatedAt = new Date().toISOString();
+    return false;
+  }
+
+  public async getNdiStatus(): Promise<NdiStatus> {
+    return {
+      isBroadcasting: this.ndiConfig.isActive,
+      streamName: this.ndiConfig.streamName,
+      outputSource: this.ndiConfig.outputSource,
+      resolution: this.ndiConfig.resolution,
+      frameRate: this.ndiConfig.frameRate,
+      receiverCount: this.ndiConfig.isActive ? 1 : 0,
+      isNdiInstalled: true,
+      ndiVersion: 'NDI 5.5.0-mock',
+      error: null,
+    };
+  }
+
+  public async sendNdiFrame(_frameDataBase64: string): Promise<boolean> {
+    return this.ndiConfig.isActive;
   }
 }
 
@@ -7900,6 +7979,86 @@ export const api = {
     if (isTauri()) {
       let unlisten: UnlistenFn | undefined;
       listen<AlphaKeyConfig>('alpha-key:config-updated', (event) => {
+        callback(event.payload);
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        if (unlisten) unlisten();
+      };
+    }
+    return () => {};
+  },
+
+  // Phase 11.5: NDI Output (Network Device Interface Streaming over LAN)
+  getNdiConfig: async (): Promise<NdiConfig> => {
+    if (isTauri()) {
+      return await invoke<NdiConfig>('get_ndi_config');
+    }
+    return mockStore.getNdiConfig();
+  },
+
+  updateNdiConfig: async (config: NdiConfig): Promise<NdiConfig> => {
+    if (isTauri()) {
+      return await invoke<NdiConfig>('update_ndi_config', { config });
+    }
+    return mockStore.updateNdiConfig(config);
+  },
+
+  toggleNdiOutput: async (): Promise<boolean> => {
+    if (isTauri()) {
+      return await invoke<boolean>('toggle_ndi_output');
+    }
+    return mockStore.toggleNdiOutput();
+  },
+
+  startNdiOutput: async (): Promise<boolean> => {
+    if (isTauri()) {
+      return await invoke<boolean>('start_ndi_output');
+    }
+    return mockStore.startNdiOutput();
+  },
+
+  stopNdiOutput: async (): Promise<boolean> => {
+    if (isTauri()) {
+      return await invoke<boolean>('stop_ndi_output');
+    }
+    return mockStore.stopNdiOutput();
+  },
+
+  getNdiStatus: async (): Promise<NdiStatus> => {
+    if (isTauri()) {
+      return await invoke<NdiStatus>('get_ndi_status');
+    }
+    return mockStore.getNdiStatus();
+  },
+
+  sendNdiFrame: async (frameDataBase64: string): Promise<boolean> => {
+    if (isTauri()) {
+      return await invoke<boolean>('send_ndi_frame', { frameDataBase64 });
+    }
+    return mockStore.sendNdiFrame(frameDataBase64);
+  },
+
+  onNdiConfigUpdated: (callback: (config: NdiConfig) => void): (() => void) => {
+    if (isTauri()) {
+      let unlisten: UnlistenFn | undefined;
+      listen<NdiConfig>('ndi:config-updated', (event) => {
+        callback(event.payload);
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        if (unlisten) unlisten();
+      };
+    }
+    return () => {};
+  },
+
+  onNdiStatusChanged: (callback: (status: NdiStatus) => void): (() => void) => {
+    if (isTauri()) {
+      let unlisten: UnlistenFn | undefined;
+      listen<NdiStatus>('ndi:status-changed', (event) => {
         callback(event.payload);
       }).then((fn) => {
         unlisten = fn;

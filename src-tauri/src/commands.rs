@@ -2950,6 +2950,80 @@ pub async fn close_alpha_window(
     DisplayManager::close_alpha_window(&app, &role)
 }
 
+// ================= Phase 11.5: NDI Video Output =================
+
+#[tauri::command]
+pub async fn get_ndi_config(
+    db: State<'_, DbManager>,
+) -> Result<crate::models::NdiConfig, String> {
+    db.get_ndi_config().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_ndi_config(
+    config: crate::models::NdiConfig,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<crate::models::NdiConfig, String> {
+    let mut cfg = config;
+    cfg.updated_at = Utc::now().to_rfc3339();
+    db.update_ndi_config(&cfg).map_err(|e| e.to_string())?;
+    app.emit("ndi:config-updated", &cfg).ok();
+    Ok(cfg)
+}
+
+#[tauri::command]
+pub async fn toggle_ndi_output(
+    ndi: State<'_, std::sync::Arc<crate::ndi::NdiService>>,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<crate::models::NdiStatus, String> {
+    let status = ndi.toggle_broadcasting(&db)?;
+    app.emit("ndi:status-changed", &status).ok();
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn start_ndi_output(
+    stream_name: Option<String>,
+    ndi: State<'_, std::sync::Arc<crate::ndi::NdiService>>,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<crate::models::NdiStatus, String> {
+    let status = ndi.start_broadcasting(&db, stream_name)?;
+    app.emit("ndi:status-changed", &status).ok();
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn stop_ndi_output(
+    ndi: State<'_, std::sync::Arc<crate::ndi::NdiService>>,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<crate::models::NdiStatus, String> {
+    let status = ndi.stop_broadcasting(&db)?;
+    app.emit("ndi:status-changed", &status).ok();
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn get_ndi_status(
+    ndi: State<'_, std::sync::Arc<crate::ndi::NdiService>>,
+    db: State<'_, DbManager>,
+) -> Result<crate::models::NdiStatus, String> {
+    Ok(ndi.get_status(&db))
+}
+
+#[tauri::command]
+pub async fn send_ndi_frame(
+    width: u32,
+    height: u32,
+    data_bytes: usize,
+    ndi: State<'_, std::sync::Arc<crate::ndi::NdiService>>,
+) -> Result<u64, String> {
+    ndi.send_frame(width, height, data_bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

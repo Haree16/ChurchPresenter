@@ -1829,6 +1829,50 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 34: NDI Output (Network Video Streaming) =================
+        if current_version < 34 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS ndi_configs (
+                    id TEXT PRIMARY KEY,
+                    is_enabled INTEGER NOT NULL DEFAULT 1,
+                    is_active INTEGER NOT NULL DEFAULT 0,
+                    stream_name TEXT NOT NULL DEFAULT 'ChurchPresenter - Live Output',
+                    output_source TEXT NOT NULL DEFAULT 'audience',
+                    resolution TEXT NOT NULL DEFAULT '1080p',
+                    frame_rate INTEGER NOT NULL DEFAULT 30,
+                    include_alpha INTEGER NOT NULL DEFAULT 1,
+                    ndi_group TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+
+            let now = Utc::now().to_rfc3339();
+            tx.execute(
+                "INSERT OR IGNORE INTO ndi_configs (id, is_enabled, is_active, stream_name, output_source, resolution, frame_rate, include_alpha, ndi_group, created_at, updated_at)
+                 VALUES ('default-ndi', 1, 0, 'ChurchPresenter - Live Output', 'audience', '1080p', 30, 1, NULL, ?1, ?1);",
+                params![now],
+            )?;
+
+            // Seed NDI actions in action_mappings
+            tx.execute(
+                "INSERT OR IGNORE INTO action_mappings (id, action_name, display_label, category, keyboard_shortcut, is_enabled, created_at, updated_at)
+                 VALUES
+                 ('act-toggle-ndi-output', 'toggle_ndi_output', 'Toggle NDI Video Output', 'broadcast', NULL, 1, ?1, ?1),
+                 ('act-start-ndi-output', 'start_ndi_output', 'Start NDI Video Output', 'broadcast', NULL, 1, ?1, ?1),
+                 ('act-stop-ndi-output', 'stop_ndi_output', 'Stop NDI Video Output', 'broadcast', NULL, 1, ?1, ?1);",
+                params![now],
+            )?;
+
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (34, ?1);",
+                params![now],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -5769,6 +5813,8 @@ impl DbManager {
         let live_video_configs = vec![live_video_config];
         let alpha_key_config = self.get_alpha_key_config()?;
         let alpha_key_configs = vec![alpha_key_config];
+        let ndi_config = self.get_ndi_config()?;
+        let ndi_configs = vec![ndi_config];
         let action_mappings = self.list_action_mappings()?;
 
         let settings = {
@@ -5821,6 +5867,7 @@ impl DbManager {
             obs_configs,
             live_video_configs,
             alpha_key_configs,
+            ndi_configs,
             action_mappings,
             workspace_state,
             settings,
@@ -6598,6 +6645,37 @@ impl DbManager {
                     ak.key_clip_percent,
                     ak.created_at,
                     ak.updated_at
+                ],
+            )?;
+        }
+
+        // Restore NDI configs
+        for ndi in &backup.ndi_configs {
+            tx.execute(
+                "INSERT INTO ndi_configs (id, is_enabled, is_active, stream_name, output_source, resolution, frame_rate, include_alpha, ndi_group, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                 ON CONFLICT(id) DO UPDATE SET
+                    is_enabled = excluded.is_enabled,
+                    is_active = excluded.is_active,
+                    stream_name = excluded.stream_name,
+                    output_source = excluded.output_source,
+                    resolution = excluded.resolution,
+                    frame_rate = excluded.frame_rate,
+                    include_alpha = excluded.include_alpha,
+                    ndi_group = excluded.ndi_group,
+                    updated_at = excluded.updated_at;",
+                params![
+                    ndi.id,
+                    if ndi.is_enabled { 1 } else { 0 },
+                    if ndi.is_active { 1 } else { 0 },
+                    ndi.stream_name,
+                    ndi.output_source,
+                    ndi.resolution,
+                    ndi.frame_rate as i32,
+                    if ndi.include_alpha { 1 } else { 0 },
+                    ndi.ndi_group,
+                    ndi.created_at,
+                    ndi.updated_at
                 ],
             )?;
         }
@@ -7459,6 +7537,67 @@ impl DbManager {
         )?;
         drop(conn);
         self.get_alpha_key_config()
+    }
+
+    // ================= Phase 11.5: NDI Output Config =================
+
+    pub fn get_ndi_config(&self) -> Result<crate::models::NdiConfig> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, is_enabled, is_active, stream_name, output_source, resolution, frame_rate, include_alpha, ndi_group, created_at, updated_at
+             FROM ndi_configs
+             WHERE id = 'default-ndi';",
+        )?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            Ok(crate::models::NdiConfig {
+                id: row.get(0)?,
+                is_enabled: row.get::<_, i64>(1)? != 0,
+                is_active: row.get::<_, i64>(2)? != 0,
+                stream_name: row.get(3)?,
+                output_source: row.get(4)?,
+                resolution: row.get(5)?,
+                frame_rate: row.get::<_, u32>(6)?,
+                include_alpha: row.get::<_, i64>(7)? != 0,
+                ndi_group: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+            })
+        } else {
+            Ok(crate::models::NdiConfig::default())
+        }
+    }
+
+    pub fn update_ndi_config(&self, cfg: &crate::models::NdiConfig) -> Result<crate::models::NdiConfig> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO ndi_configs (id, is_enabled, is_active, stream_name, output_source, resolution, frame_rate, include_alpha, ndi_group, created_at, updated_at)
+             VALUES ('default-ndi', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+             ON CONFLICT(id) DO UPDATE SET
+                is_enabled = excluded.is_enabled,
+                is_active = excluded.is_active,
+                stream_name = excluded.stream_name,
+                output_source = excluded.output_source,
+                resolution = excluded.resolution,
+                frame_rate = excluded.frame_rate,
+                include_alpha = excluded.include_alpha,
+                ndi_group = excluded.ndi_group,
+                updated_at = excluded.updated_at;",
+            params![
+                if cfg.is_enabled { 1 } else { 0 },
+                if cfg.is_active { 1 } else { 0 },
+                &cfg.stream_name,
+                &cfg.output_source,
+                &cfg.resolution,
+                cfg.frame_rate as i32,
+                if cfg.include_alpha { 1 } else { 0 },
+                &cfg.ndi_group,
+                &now,
+            ],
+        )?;
+        drop(conn);
+        self.get_ndi_config()
     }
 
     // ================= Phase 10.2: DMX Lighting Config =================

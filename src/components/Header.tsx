@@ -22,6 +22,7 @@ import {
   Sliders,
   Video,
   Camera,
+  Wifi,
 } from 'lucide-react';
 import {
   PresentationState,
@@ -81,6 +82,8 @@ interface HeaderProps {
   onToggleLiveCamera?: () => void;
   isAlphaKeyActive?: boolean;
   onToggleAlphaKey?: () => void;
+  isNdiActive?: boolean;
+  onToggleNdiOutput?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -93,6 +96,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleLiveCamera,
   isAlphaKeyActive,
   onToggleAlphaKey,
+  isNdiActive,
+  onToggleNdiOutput,
   activeView,
   onChangeView,
   onOpenDisplayModal,
@@ -649,6 +654,24 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Layers size={14} color={isAlphaKeyActive ? '#ffffff' : '#cbd5e1'} />
             <span>{isAlphaKeyActive ? 'KEY ON' : 'Key & Fill'}</span>
+          </button>
+        )}
+
+        {onToggleNdiOutput && (
+          <button
+            type="button"
+            data-testid="header-ndi-toggle-btn"
+            onClick={onToggleNdiOutput}
+            title={isNdiActive ? "NDI Stream Active (Click to Turn Off)" : "NDI Output (Click to Start Stream)"}
+            style={{
+              ...headerBtn,
+              backgroundColor: isNdiActive ? '#0284c7' : '#1e293b',
+              color: isNdiActive ? '#ffffff' : '#cbd5e1',
+              border: isNdiActive ? '1px solid #38bdf8' : '1px solid #334155',
+            }}
+          >
+            <Wifi size={14} color={isNdiActive ? '#ffffff' : '#cbd5e1'} />
+            <span>{isNdiActive ? 'NDI ON' : 'NDI'}</span>
           </button>
         )}
 

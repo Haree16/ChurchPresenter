@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { api } from '../src/services/api';
-import { validateStep, stepLabel, newStep, validateMacro } from '../src/services/macroSteps';
+import { validateStep, stepLabel, newStep } from '../src/services/macroSteps';
 import { AlphaKeyView } from '../src/components/Broadcast/AlphaKeyView';
 import { Header } from '../src/components/Header';
 import { ProductionIntegrationsModal } from '../src/components/Production/ProductionIntegrationsModal';
 import { MacroManagerModal } from '../src/components/MacroManagerModal';
-import { Macro, MacroStep, PresentationState, AudienceWindowStatus } from '../src/types';
+import { Macro, PresentationState, AudienceWindowStatus } from '../src/types';
 
 describe('Phase 11.4: Alpha Key (Key and Fill Dual Outputs for Hardware Switchers)', () => {
   beforeEach(async () => {
@@ -291,17 +291,19 @@ describe('Phase 11.4: Alpha Key (Key and Fill Dual Outputs for Hardware Switcher
       const handleToggle = vi.fn();
       const { rerender } = render(
         <Header
-          presentationState={mockPresState}
-          audienceStatus={mockAudienceStatus}
-          stageStatus={{ isOpen: false, monitorName: null, isFullscreen: false }}
-          activeView="presentations"
-          onChangeView={vi.fn()}
-          onOpenDisplayModal={vi.fn()}
-          onOpenShortcutsModal={vi.fn()}
-          onOpenBackupModal={vi.fn()}
-          onToggleBlackout={vi.fn()}
-          isAlphaKeyActive={false}
-          onToggleAlphaKey={handleToggle}
+          {...({
+            presentationState: mockPresState,
+            audienceStatus: mockAudienceStatus,
+            stageStatus: { isOpen: false, monitorName: null, isFullscreen: false },
+            activeView: 'presentations',
+            onChangeView: vi.fn(),
+            onOpenDisplayModal: vi.fn(),
+            onOpenShortcutsModal: vi.fn(),
+            onOpenBackupModal: vi.fn(),
+            onToggleBlackout: vi.fn(),
+            isAlphaKeyActive: false,
+            onToggleAlphaKey: handleToggle,
+          } as any)}
         />
       );
 
@@ -313,17 +315,19 @@ describe('Phase 11.4: Alpha Key (Key and Fill Dual Outputs for Hardware Switcher
 
       rerender(
         <Header
-          presentationState={mockPresState}
-          audienceStatus={mockAudienceStatus}
-          stageStatus={{ isOpen: false, monitorName: null, isFullscreen: false }}
-          activeView="presentations"
-          onChangeView={vi.fn()}
-          onOpenDisplayModal={vi.fn()}
-          onOpenShortcutsModal={vi.fn()}
-          onOpenBackupModal={vi.fn()}
-          onToggleBlackout={vi.fn()}
-          isAlphaKeyActive={true}
-          onToggleAlphaKey={handleToggle}
+          {...({
+            presentationState: mockPresState,
+            audienceStatus: mockAudienceStatus,
+            stageStatus: { isOpen: false, monitorName: null, isFullscreen: false },
+            activeView: 'presentations',
+            onChangeView: vi.fn(),
+            onOpenDisplayModal: vi.fn(),
+            onOpenShortcutsModal: vi.fn(),
+            onOpenBackupModal: vi.fn(),
+            onToggleBlackout: vi.fn(),
+            isAlphaKeyActive: true,
+            onToggleAlphaKey: handleToggle,
+          } as any)}
         />
       );
 

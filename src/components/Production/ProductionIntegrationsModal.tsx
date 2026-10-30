@@ -21,6 +21,10 @@ import {
   AlphaKeyConfig,
   AlphaKeyStatus,
   DisplayMonitor,
+  NdiConfig,
+  NdiStatus,
+  NdiOutputSource,
+  NdiResolution,
 } from '../../types';
 import { liveVideoService } from '../../services/liveVideoService';
 import {
@@ -46,12 +50,13 @@ import {
   Tv,
   Camera,
   Layers,
+  Wifi,
 } from 'lucide-react';
 
 interface ProductionIntegrationsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'remote' | 'midi' | 'osc' | 'obs' | 'video' | 'alpha_key' | 'actions';
+  initialTab?: 'remote' | 'midi' | 'osc' | 'obs' | 'video' | 'alpha_key' | 'ndi' | 'actions';
 }
 
 export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalProps> = ({
@@ -59,7 +64,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   onClose,
   initialTab = 'remote',
 }) => {
-  const [activeTab, setActiveTab] = useState<'remote' | 'midi' | 'osc' | 'obs' | 'video' | 'alpha_key' | 'actions'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'remote' | 'midi' | 'osc' | 'obs' | 'video' | 'alpha_key' | 'ndi' | 'actions'>(initialTab);
 
   // Who may connect to the remote server and OSC listener (applies on next start)
   const [bindMode, setBindMode] = useState<BindMode>('lan');
@@ -118,6 +123,10 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const [alphaKeyStatus, setAlphaKeyStatus] = useState<AlphaKeyStatus | null>(null);
   const [displayMonitors, setDisplayMonitors] = useState<DisplayMonitor[]>([]);
 
+  // NDI Output state
+  const [ndiConfig, setNdiConfig] = useState<NdiConfig | null>(null);
+  const [ndiStatus, setNdiStatus] = useState<NdiStatus | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -132,7 +141,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode, savedMacros, tlsEnabled, oObsCfg, oObsSt, lvCfg, lvSt, cDevs, akCfg, akSt, dMonitors] =
+      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode, savedMacros, tlsEnabled, oObsCfg, oObsSt, lvCfg, lvSt, cDevs, akCfg, akSt, dMonitors, nCfg, nSt] =
         await Promise.all([
           api.getRemoteServerStatus(),
           api.listRemoteDevices(),
@@ -152,6 +161,8 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
           api.getAlphaKeyConfig(),
           api.getAlphaKeyStatus(),
           api.getAvailableMonitors(),
+          api.getNdiConfig(),
+          api.getNdiStatus(),
         ]);
 
       setMacros(savedMacros);
@@ -191,6 +202,9 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
       setAlphaKeyConfig(akCfg);
       setAlphaKeyStatus(akSt);
       setDisplayMonitors(dMonitors);
+
+      setNdiConfig(nCfg);
+      setNdiStatus(nSt);
     } catch (e) {
       console.error('Failed to load integration states:', e);
     } finally {
@@ -200,7 +214,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
 
   const refreshLiveMonitors = async () => {
     try {
-      const [mStatus, oStatus, rStatus, rDevs, oObsSt, lvSt, akSt] = await Promise.all([
+      const [mStatus, oStatus, rStatus, rDevs, oObsSt, lvSt, akSt, nSt] = await Promise.all([
         api.getMidiStatus(),
         api.getOscStatus(),
         api.getRemoteServerStatus(),
@@ -208,6 +222,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
         api.getObsStatus(),
         api.getLiveVideoStatus(),
         api.getAlphaKeyStatus(),
+        api.getNdiStatus(),
       ]);
       setMidiStatus(mStatus);
       setOscStatus(oStatus);
@@ -216,6 +231,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
       setObsStatus(oObsSt);
       setLiveVideoStatus(lvSt);
       setAlphaKeyStatus(akSt);
+      setNdiStatus(nSt);
       if (oObsSt.currentScene && !obsSelectedScene) {
         setObsSelectedScene(oObsSt.currentScene);
       }
@@ -651,6 +667,36 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
     }
   };
 
+  // NDI Output Handlers
+  const handleToggleNdiActive = async () => {
+    try {
+      const newActive = await api.toggleNdiOutput();
+      if (ndiConfig) {
+        setNdiConfig({ ...ndiConfig, isActive: newActive });
+      }
+      const st = await api.getNdiStatus();
+      setNdiStatus(st);
+      setStatusMessage(`NDI output ${newActive ? 'streaming (ON-AIR)' : 'stopped'}.`);
+    } catch (err) {
+      setStatusMessage(`Error toggling NDI: ${err}`);
+    }
+  };
+
+  const handleUpdateNdiConfig = async (partial: Partial<NdiConfig>) => {
+    try {
+      const current = ndiConfig || (await api.getNdiConfig());
+      const merged = { ...current, ...partial };
+      setNdiConfig(merged);
+      const updated = await api.updateNdiConfig(merged);
+      setNdiConfig(updated);
+      const st = await api.getNdiStatus();
+      setNdiStatus(st);
+      setStatusMessage('NDI configuration saved.');
+    } catch (err) {
+      setStatusMessage(`Error saving NDI config: ${err}`);
+    }
+  };
+
   return (
     <div
       style={{
@@ -946,6 +992,42 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                   backgroundColor: '#10b981',
                 }}
               />
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('ndi')}
+            data-testid="tab-ndi"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '12px 16px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              borderBottom: activeTab === 'ndi' ? '2px solid #3b82f6' : '2px solid transparent',
+              color: activeTab === 'ndi' ? '#60a5fa' : '#94a3b8',
+              fontWeight: 600,
+              fontSize: '13px',
+              cursor: 'pointer',
+            }}
+          >
+            <Wifi size={16} />
+            <span>NDI Output</span>
+            {ndiConfig?.isActive && (
+              <span
+                data-testid="ndi-live-badge"
+                style={{
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  padding: '1px 5px',
+                  borderRadius: '999px',
+                  backgroundColor: '#0284c7',
+                  color: '#ffffff',
+                }}
+              >
+                LIVE
+              </span>
             )}
           </button>
 
@@ -3779,6 +3861,391 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
                       <span>0% (Full Shadow Gradient)</span>
                       <span>50% (High Clip)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================= TAB 8: NDI OUTPUT (NETWORK DEVICE INTERFACE STREAMING) ================= */}
+          {activeTab === 'ndi' && (
+            <div data-testid="ndi-tab-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Header Card */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '16px 20px',
+                  backgroundColor: '#1e293b',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                }}
+              >
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Wifi size={18} style={{ color: '#38bdf8' }} />
+                    NDI® Network Video Output (IP Streaming over LAN)
+                  </h3>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
+                    Broadcast low-latency, full-quality video streams with 32-bit alpha transparency across your church LAN without capture cards.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <button
+                    onClick={handleToggleNdiActive}
+                    data-testid="btn-toggle-ndi-active"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 16px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      backgroundColor: ndiConfig?.isActive ? '#dc2626' : '#0284c7',
+                      color: '#ffffff',
+                      fontWeight: 600,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {ndiConfig?.isActive ? (
+                      <>
+                        <Square size={14} fill="#ffffff" />
+                        <span>Stop NDI Stream</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play size={14} fill="#ffffff" />
+                        <span>Start NDI Stream</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Runtime & License Compliance Status Banner */}
+              <div
+                data-testid="ndi-runtime-banner"
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  backgroundColor: ndiStatus?.isNdiInstalled ? '#064e3b' : '#78350f',
+                  border: `1px solid ${ndiStatus?.isNdiInstalled ? '#059669' : '#d97706'}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {ndiStatus?.isNdiInstalled ? (
+                    <CheckCircle size={20} color="#34d399" />
+                  ) : (
+                    <AlertCircle size={20} color="#fbbf24" />
+                  )}
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                      {ndiStatus?.isNdiInstalled
+                        ? `NDI Runtime Detected (${ndiStatus.ndiVersion || 'NDI SDK 5.x/6.x'})`
+                        : 'NDI Runtime Library Not Detected'}
+                    </div>
+                    <div style={{ fontSize: '12px', color: ndiStatus?.isNdiInstalled ? '#a7f3d0' : '#fde68a' }}>
+                      {ndiStatus?.isNdiInstalled
+                        ? `Dynamic loader successfully bound system library. Active receiver tally: ${ndiStatus.receiverCount} connected.`
+                        : 'To stream native NDI across LAN, install the free official NDI runtime from https://ndi.video (no restart needed).'}
+                    </div>
+                  </div>
+                </div>
+                {!ndiStatus?.isNdiInstalled && (
+                  <a
+                    href="https://ndi.video"
+                    target="_blank"
+                    rel="noreferrer"
+                    data-testid="link-ndi-download"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      backgroundColor: '#d97706',
+                      color: '#ffffff',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    <span>Download NDI SDK</span>
+                    <ExternalLink size={14} />
+                  </a>
+                )}
+              </div>
+
+              {/* Stream Settings & Live Stream Monitor Preview */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px' }}>
+                {/* Configuration Column */}
+                <div
+                  style={{
+                    backgroundColor: '#1e293b',
+                    borderRadius: '8px',
+                    border: '1px solid #334155',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
+                  }}
+                >
+                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>
+                    NDI Stream Configuration
+                  </h4>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                      Stream Announcement Name
+                    </label>
+                    <input
+                      type="text"
+                      data-testid="input-ndi-stream-name"
+                      value={ndiConfig?.streamName ?? 'Church Presenter Output'}
+                      onChange={(e) => handleUpdateNdiConfig({ streamName: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        backgroundColor: '#0f172a',
+                        border: '1px solid #334155',
+                        borderRadius: '6px',
+                        color: '#f8fafc',
+                        fontSize: '13px',
+                      }}
+                    />
+                    <span style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', display: 'block' }}>
+                      Visible to vMix, OBS, TriCaster, and Wirecast as "{ndiConfig?.streamName || 'Church Presenter Output'}"
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                        Output Source
+                      </label>
+                      <select
+                        data-testid="select-ndi-source"
+                        value={ndiConfig?.outputSource ?? 'audience'}
+                        onChange={(e) => handleUpdateNdiConfig({ outputSource: e.target.value as NdiOutputSource })}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          borderRadius: '6px',
+                          color: '#f8fafc',
+                          fontSize: '13px',
+                        }}
+                      >
+                        <option value="audience">Main Audience (Full Output)</option>
+                        <option value="overlay">Livestream Lower-Third (Overlay)</option>
+                        <option value="stage">Stage Confidence Monitor</option>
+                        <option value="alpha_fill">Alpha Fill (RGB Graphics)</option>
+                        <option value="alpha_key">Alpha Key (Matte Mask)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                        Resolution
+                      </label>
+                      <select
+                        data-testid="select-ndi-resolution"
+                        value={ndiConfig?.resolution ?? '1080p'}
+                        onChange={(e) => handleUpdateNdiConfig({ resolution: e.target.value as NdiResolution })}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          borderRadius: '6px',
+                          color: '#f8fafc',
+                          fontSize: '13px',
+                        }}
+                      >
+                        <option value="1080p">1080p (1920x1080 Full HD)</option>
+                        <option value="720p">720p (1280x720 HD)</option>
+                        <option value="4k">4K (3840x2160 UHD)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                        Framerate
+                      </label>
+                      <select
+                        data-testid="select-ndi-framerate"
+                        value={ndiConfig?.frameRate ?? 60}
+                        onChange={(e) => handleUpdateNdiConfig({ frameRate: parseInt(e.target.value, 10) })}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          borderRadius: '6px',
+                          color: '#f8fafc',
+                          fontSize: '13px',
+                        }}
+                      >
+                        <option value="60">60 FPS (Broadcast Smooth)</option>
+                        <option value="30">30 FPS (Low Network Load)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                        NDI LAN Group (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        data-testid="input-ndi-group"
+                        placeholder="e.g. Broadcast, Sanctuary"
+                        value={ndiConfig?.ndiGroup ?? ''}
+                        onChange={(e) => handleUpdateNdiConfig({ ndiGroup: e.target.value || null })}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          borderRadius: '6px',
+                          color: '#f8fafc',
+                          fontSize: '13px',
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: '4px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '10px 14px', backgroundColor: '#0f172a', borderRadius: '6px', border: '1px solid #334155' }}>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                          32-Bit RGBA Alpha Transparency
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                          Transmit native 8-bit alpha transparency channel for direct overlay in vMix, OBS & TriCaster
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={ndiConfig?.includeAlpha ?? true}
+                        onChange={(e) => handleUpdateNdiConfig({ includeAlpha: e.target.checked })}
+                        data-testid="toggle-ndi-alpha"
+                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Stream Monitor Preview & Tally Column */}
+                <div
+                  style={{
+                    backgroundColor: '#1e293b',
+                    borderRadius: '8px',
+                    border: '1px solid #334155',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>
+                      Stream Monitor & Tally
+                    </h4>
+                    {ndiConfig?.isActive && (
+                      <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', backgroundColor: '#dc2626', color: '#fff', fontWeight: 700 }}>
+                        ON-AIR
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Visual Stream Card */}
+                  <div
+                    data-testid="ndi-preview-monitor"
+                    style={{
+                      height: '180px',
+                      borderRadius: '6px',
+                      border: '1px solid #334155',
+                      backgroundColor: '#020617',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: ndiConfig?.includeAlpha
+                        ? 'repeating-conic-gradient(#1e293b 0% 25%, #0f172a 0% 50%) 50% / 20px 20px'
+                        : '#020617',
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: '12px 18px',
+                        borderRadius: '8px',
+                        backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                        border: '1px solid #334155',
+                        textAlign: 'center',
+                        backdropFilter: 'blur(4px)',
+                      }}
+                    >
+                      <Wifi size={28} style={{ color: ndiConfig?.isActive ? '#38bdf8' : '#64748b', margin: '0 auto 6px auto' }} />
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#f8fafc' }}>
+                        {ndiConfig?.streamName || 'Church Presenter Output'}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                        {ndiConfig?.resolution} • {ndiConfig?.frameRate} FPS • {ndiConfig?.includeAlpha ? 'RGBA 32-bit' : 'RGB 24-bit'}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        position: 'absolute',
+                        bottom: '8px',
+                        left: '10px',
+                        right: '10px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <span style={{ fontSize: '10px', color: '#64748b', backgroundColor: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: '4px' }}>
+                        Source: {ndiConfig?.outputSource}
+                      </span>
+                      <span
+                        data-testid="ndi-tally-receivers"
+                        style={{
+                          fontSize: '10px',
+                          color: (ndiStatus?.receiverCount ?? 0) > 0 ? '#34d399' : '#94a3b8',
+                          backgroundColor: 'rgba(0,0,0,0.6)',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {(ndiStatus?.receiverCount ?? 0) > 0
+                          ? `● ${ndiStatus?.receiverCount} Receiver(s) Tally`
+                          : '○ 0 Receivers'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Network Statistics Card */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <div style={{ padding: '8px 12px', backgroundColor: '#0f172a', borderRadius: '6px', border: '1px solid #334155' }}>
+                      <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>Protocol</div>
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc' }}>NDI® SpeedHQ</div>
+                    </div>
+                    <div style={{ padding: '8px 12px', backgroundColor: '#0f172a', borderRadius: '6px', border: '1px solid #334155' }}>
+                      <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>Discovery</div>
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc' }}>mDNS / Avahi LAN</div>
                     </div>
                   </div>
                 </div>

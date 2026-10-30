@@ -498,6 +498,8 @@ pub struct BackupData {
     #[serde(default)]
     pub alpha_key_configs: Vec<AlphaKeyConfig>,
     #[serde(default)]
+    pub ndi_configs: Vec<NdiConfig>,
+    #[serde(default)]
     pub action_mappings: Vec<ActionMapping>,
     #[serde(default)]
     pub workspace_state: Option<WorkspaceState>,
@@ -1323,6 +1325,71 @@ impl Default for AlphaKeyStatus {
             key_window_open: false,
             combined_window_open: false,
             content_source: "overlay".to_string(),
+            error: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NdiConfig {
+    pub id: String,
+    pub is_enabled: bool,
+    pub is_active: bool,
+    pub stream_name: String,
+    pub output_source: String, // "audience", "overlay", "stage", "alpha_fill", "alpha_key"
+    pub resolution: String,    // "1080p", "720p", "4k"
+    pub frame_rate: u32,       // 30, 60, etc.
+    pub include_alpha: bool,
+    pub ndi_group: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl Default for NdiConfig {
+    fn default() -> Self {
+        let now = chrono::Utc::now().to_rfc3339();
+        Self {
+            id: "default-ndi".to_string(),
+            is_enabled: true,
+            is_active: false,
+            stream_name: "ChurchPresenter - Live Output".to_string(),
+            output_source: "audience".to_string(),
+            resolution: "1080p".to_string(),
+            frame_rate: 30,
+            include_alpha: true,
+            ndi_group: None,
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NdiStatus {
+    pub is_broadcasting: bool,
+    pub stream_name: String,
+    pub runtime_installed: bool,
+    pub runtime_version: Option<String>,
+    pub connected_receivers: u32,
+    pub frames_sent: u64,
+    pub fps: f64,
+    pub output_source: String,
+    pub error: Option<String>,
+}
+
+impl Default for NdiStatus {
+    fn default() -> Self {
+        Self {
+            is_broadcasting: false,
+            stream_name: "ChurchPresenter - Live Output".to_string(),
+            runtime_installed: false,
+            runtime_version: None,
+            connected_receivers: 0,
+            frames_sent: 0,
+            fps: 0.0,
+            output_source: "audience".to_string(),
             error: None,
         }
     }

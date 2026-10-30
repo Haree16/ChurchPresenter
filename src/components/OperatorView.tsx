@@ -24,7 +24,7 @@ import { MultiViewerModal } from './Production/MultiViewerModal';
 import { SettingsModal } from './Settings/SettingsModal';
 import { StreamDeckDmxModal } from './StreamDeckDmxModal';
 import { RecordingModal } from './Broadcast/RecordingModal';
-import { Slide, SlideTemplate, AudienceWindowStatus, StageWindowStatus, RemoteServerStatus, RecordingStatus, KeyBinding, LiveVideoConfig, AlphaKeyConfig } from '../types';
+import { Slide, SlideTemplate, AudienceWindowStatus, StageWindowStatus, RemoteServerStatus, RecordingStatus, KeyBinding, LiveVideoConfig, AlphaKeyConfig, NdiConfig } from '../types';
 import { cloneElements } from '../services/slideElements';
 import { api } from '../services/api';
 import { goToSlideNumber } from '../services/slideJump';
@@ -82,6 +82,7 @@ export const OperatorView: React.FC = () => {
   const [recordingStatus, setRecordingStatus] = useState<RecordingStatus | undefined>(undefined);
   const [liveVideoConfig, setLiveVideoConfig] = useState<LiveVideoConfig | null>(null);
   const [alphaKeyConfig, setAlphaKeyConfig] = useState<AlphaKeyConfig | null>(null);
+  const [ndiConfig, setNdiConfig] = useState<NdiConfig | null>(null);
 
   const refreshAudienceStatus = async () => {
     try {
@@ -143,11 +144,17 @@ export const OperatorView: React.FC = () => {
       setAlphaKeyConfig(cfg);
     });
 
+    api.getNdiConfig().then(setNdiConfig).catch(() => {});
+    const unlistenNdi = api.onNdiConfigUpdated((cfg) => {
+      setNdiConfig(cfg);
+    });
+
     return () => {
       clearInterval(interval);
       clearInterval(audienceInterval);
       if (unlistenLiveVideo) unlistenLiveVideo();
       if (unlistenAlphaKey) unlistenAlphaKey();
+      if (unlistenNdi) unlistenNdi();
     };
   }, []);
 
@@ -419,6 +426,11 @@ export const OperatorView: React.FC = () => {
         onToggleAlphaKey={async () => {
           const active = await api.toggleAlphaKey();
           setAlphaKeyConfig((prev) => (prev ? { ...prev, isActive: active } : null));
+        }}
+        isNdiActive={ndiConfig?.isActive}
+        onToggleNdiOutput={async () => {
+          const active = await api.toggleNdiOutput();
+          setNdiConfig((prev) => (prev ? { ...prev, isActive: active } : null));
         }}
       />
 

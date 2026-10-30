@@ -101,6 +101,10 @@ pub enum MacroStep {
     AlphaKey {
         command: String,
     },
+    /// Phase 11.5: NDI Output Step
+    Ndi {
+        command: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -212,6 +216,15 @@ pub fn validate_step(step: &MacroStep) -> std::result::Result<(), String> {
             match command.as_str() {
                 "enable" | "disable" | "toggle" => Ok(()),
                 other => Err(format!("unknown alpha key command: '{}'", other)),
+            }
+        }
+        MacroStep::Ndi { command } => {
+            if command.trim().is_empty() {
+                return Err("choose an NDI command.".to_string());
+            }
+            match command.as_str() {
+                "start" | "stop" | "toggle" => Ok(()),
+                other => Err(format!("unknown NDI command: '{}'", other)),
             }
         }
     }
@@ -444,6 +457,18 @@ pub fn apply_step_core(
                     _ => {}
                 }
                 let _ = db.update_alpha_key_config(&cfg);
+            }
+            Ok(StepOutcome::Done)
+        }
+        MacroStep::Ndi { command } => {
+            if let Ok(mut cfg) = db.get_ndi_config() {
+                match command.as_str() {
+                    "start" => cfg.is_active = true,
+                    "stop" => cfg.is_active = false,
+                    "toggle" => cfg.is_active = !cfg.is_active,
+                    _ => {}
+                }
+                let _ = db.update_ndi_config(&cfg);
             }
             Ok(StepOutcome::Done)
         }

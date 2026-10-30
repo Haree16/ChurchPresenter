@@ -56,6 +56,7 @@ const STEP_TYPES: { type: MacroStep['type']; label: string }[] = [
   { type: 'obs', label: 'OBS Studio' },
   { type: 'camera', label: 'Camera / Video' },
   { type: 'alpha_key', label: 'Alpha Key (Key & Fill)' },
+  { type: 'ndi', label: 'NDI Video Output' },
 ];
 
 export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, onClose }) => {
@@ -312,6 +313,27 @@ export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, on
               <option value="toggle">Toggle Key & Fill</option>
               <option value="enable">Enable Output</option>
               <option value="disable">Disable Output</option>
+            </select>
+          </div>
+        );
+      case 'ndi':
+        return (
+          <div style={{ display: 'flex', gap: '6px', flex: 1, alignItems: 'center' }}>
+            <select
+              data-testid="step-ndi-command"
+              aria-label="NDI command"
+              style={{ ...field, width: '160px' }}
+              value={step.command}
+              onChange={(e) =>
+                setStep(i, {
+                  type: 'ndi',
+                  command: e.target.value as any,
+                })
+              }
+            >
+              <option value="toggle">Toggle Stream</option>
+              <option value="start">Start Stream</option>
+              <option value="stop">Stop Stream</option>
             </select>
           </div>
         );
