@@ -1,4 +1,4 @@
-import { Prop } from '../types';
+import { Prop, PropScrollMode } from '../types';
 
 export const PROP_POSITIONS: { value: Prop['position']; label: string }[] = [
   { value: 'lower-third', label: 'Lower third' },
@@ -11,7 +11,14 @@ export const PROP_POSITIONS: { value: Prop['position']; label: string }[] = [
   { value: 'center', label: 'Center' },
 ];
 
-export const MAX_PROP_TEXT_CHARS = 200;
+export const PROP_SCROLL_MODES: { value: PropScrollMode; label: string }[] = [
+  { value: 'none', label: 'None (Static)' },
+  { value: 'left', label: 'Scroll Left (Ticker)' },
+  { value: 'right', label: 'Scroll Right' },
+  { value: 'up', label: 'Scroll Up (Crawl)' },
+];
+
+export const MAX_PROP_TEXT_CHARS = 500;
 export const MAX_PROP_NAME_CHARS = 60;
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -37,6 +44,20 @@ export function validateProp(p: Partial<Prop>): string | null {
   if (!HEX.test(p.textColor || '')) return 'Text colour must look like #ffffff.';
   if (p.backgroundColor != null && p.backgroundColor !== '' && !HEX.test(p.backgroundColor)) {
     return 'Background colour must look like #000000.';
+  }
+  if (p.scrollMode && p.scrollMode !== 'none') {
+    if (!PROP_SCROLL_MODES.some((x) => x.value === p.scrollMode)) {
+      return `Unknown scroll mode '${p.scrollMode}'.`;
+    }
+    if (p.kind !== 'text') {
+      return 'Only text props can scroll.';
+    }
+  }
+  if (p.scrollSpeed != null && (p.scrollSpeed as any) !== '') {
+    const speed = Number(p.scrollSpeed);
+    if (!Number.isInteger(speed) || speed < 1 || speed > 10) {
+      return 'Scroll speed must be between 1 and 10.';
+    }
   }
   return null;
 }

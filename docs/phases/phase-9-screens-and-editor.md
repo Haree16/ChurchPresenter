@@ -61,9 +61,22 @@ Today a Look (`looks.rs`) stores logo, blackout and props globally.
   - Instantiates new slides with the template's background/foreground styling, font sizes, text alignments, and cloned elements via `cloneElements`.
 - **Verification**: Verified with 290 passing backend Rust unit tests (`cargo test`) and 486 passing Vitest unit tests (`npm test`), including dedicated tests in `tests/editor-polish-and-templates.test.tsx`.
 
-## 9.5 Scrolling text and messages
-- Props gain a scroll mode (speed, direction); a message prop for lobby tickers.
-- Cleared by Clear All and `clear_props`.
+## 9.5 Scrolling text and messages [COMPLETED]
+- **Scrolling Modes & Speed Controls on Props**:
+  - Added `scroll_mode: Option<String>` and `scroll_speed: Option<i32>` to `Prop` in backend Rust (`props.rs`) and frontend (`types/index.ts`, `propLayout.ts`).
+  - Supported scroll modes: `'none'`, `'left'` (ticker right-to-left), `'right'`, `'up'` (crawl bottom-to-top).
+  - Configurable scroll speed: integer from 1 (slow) to 10 (fast), defaulting to 3.
+  - Text length limit expanded from 200 to 500 characters so full announcement notices and scripture readings can be broadcast as tickers.
+  - Image props cannot scroll (enforced in both Rust and TypeScript validation).
+  - Database Migration 25 added `scroll_mode TEXT` and `scroll_speed INTEGER` to SQLite `props` table with automatic backup export/import support.
+- **Hardware-Accelerated Smooth CSS Marquee / Ticker in Audience Output**:
+  - `PropsLayer.tsx` applies CSS keyframe animations (`propScrollLeft`, `propScrollRight`, `propScrollUp`) running on the GPU (`willChange: 'transform'`).
+  - Full-width ticker banner layout when scrolling horizontally on bars or lower-third.
+- **Operator Management & Ticker Badge**:
+  - `PropsManagerModal.tsx` provides Scroll Mode selector, Scroll Speed input, live character counter (`length / 500`), and Ticker mode indicators in the prop list.
+  - `PropsControl.tsx` shows `[Ticker]` badge on operator buttons for active scrolling overlays.
+  - Immediately cleared by *Clear Props* (`clear_props` action) and *Clear All*.
+- **Verification**: Verified with 291 passing backend Rust unit tests (`cargo test`) and 496 passing Vitest unit tests (`npm test`), including dedicated tests in `tests/scrolling-props-and-messages.test.tsx`.
 
 ## Risks
 - Splitting presentation state for the announcements layer touches the core of `presentation.rs`; write tests first and keep the single-layer path unchanged.

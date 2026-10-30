@@ -107,6 +107,8 @@ export interface Presentation {
   slideCount?: number;
 }
 
+export type PropScrollMode = 'none' | 'left' | 'right' | 'up';
+
 /** A saved overlay (text lower-third, logo bug, ...) toggled over the audience output. */
 export interface Prop {
   id: string;
@@ -127,6 +129,10 @@ export interface Prop {
   sizePct: number;
   textColor: string;
   backgroundColor?: string | null;
+  /** Scrolling marquee / ticker mode ('none' | 'left' | 'right' | 'up'). */
+  scrollMode?: PropScrollMode | null;
+  /** Scroll speed from 1 (slow) to 10 (fast). Default 3. */
+  scrollSpeed?: number | null;
   sortOrder?: number;
   createdAt?: string;
   updatedAt?: string;

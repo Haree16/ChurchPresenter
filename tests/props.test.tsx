@@ -28,7 +28,7 @@ describe('validateProp', () => {
     expect(validateProp(textProp({ name: ' ' }))).toMatch(/name/);
     expect(validateProp(textProp({ name: 'n'.repeat(61) }))).toMatch(/too long/);
     expect(validateProp(textProp({ text: ' ' }))).toMatch(/needs some text/);
-    expect(validateProp(textProp({ text: 'x'.repeat(201) }))).toMatch(/too long/);
+    expect(validateProp(textProp({ text: 'x'.repeat(501) }))).toMatch(/too long/);
     expect(validateProp(textProp({ kind: 'image', imagePath: '' }))).toMatch(/needs an image/);
     expect(validateProp(textProp({ kind: 'video' as any }))).toMatch(/Unknown prop type/);
     expect(validateProp(textProp({ position: 'nowhere' as any }))).toMatch(/position/);

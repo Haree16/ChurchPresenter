@@ -17,10 +17,11 @@ pub const PROP_POSITIONS: [&str; 8] = [
     "bottom-bar",
     "center",
 ];
-pub const MAX_PROP_TEXT_CHARS: usize = 200;
+pub const PROP_SCROLL_MODES: [&str; 4] = ["none", "left", "right", "up"];
+pub const MAX_PROP_TEXT_CHARS: usize = 500;
 pub const MAX_PROP_NAME_CHARS: usize = 60;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Prop {
     #[serde(default)]
@@ -42,6 +43,12 @@ pub struct Prop {
     /// `#rrggbb`, or `None` for no backing box.
     #[serde(default)]
     pub background_color: Option<String>,
+    /// "none", "left", "right", or "up" for scrolling text/ticker marquee.
+    #[serde(default)]
+    pub scroll_mode: Option<String>,
+    /// Speed of scrolling (1 to 10), default 3.
+    #[serde(default)]
+    pub scroll_speed: Option<i32>,
     #[serde(default)]
     pub sort_order: i32,
     #[serde(default)]
@@ -94,6 +101,19 @@ pub fn validate_prop(p: &Prop) -> std::result::Result<(), String> {
             return Err("Background colour must look like #000000.".to_string());
         }
     }
+    if let Some(mode) = p.scroll_mode.as_deref() {
+        if !PROP_SCROLL_MODES.contains(&mode) {
+            return Err(format!("Unknown scroll mode '{}'.", mode));
+        }
+        if mode != "none" && p.kind != "text" {
+            return Err("Only text props can scroll.".to_string());
+        }
+    }
+    if let Some(speed) = p.scroll_speed {
+        if !(1..=10).contains(&speed) {
+            return Err("Scroll speed must be between 1 and 10.".to_string());
+        }
+    }
     Ok(())
 }
 
@@ -101,7 +121,7 @@ impl DbManager {
     pub fn list_props(&self) -> Result<Vec<Prop>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, kind, text, image_path, position, size_pct, text_color, background_color, sort_order, created_at, updated_at
+            "SELECT id, name, kind, text, image_path, position, size_pct, text_color, background_color, sort_order, created_at, updated_at, scroll_mode, scroll_speed
              FROM props ORDER BY sort_order ASC, created_at ASC;",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -118,6 +138,8 @@ impl DbManager {
                 sort_order: row.get(9)?,
                 created_at: row.get(10)?,
                 updated_at: row.get(11)?,
+                scroll_mode: row.get(12)?,
+                scroll_speed: row.get(13)?,
             })
         })?;
         rows.collect()
@@ -142,12 +164,12 @@ impl DbManager {
         };
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO props (id, name, kind, text, image_path, position, size_pct, text_color, background_color, sort_order, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12);",
+            "INSERT INTO props (id, name, kind, text, image_path, position, size_pct, text_color, background_color, sort_order, created_at, updated_at, scroll_mode, scroll_speed)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14);",
             params![
                 saved.id, saved.name, saved.kind, saved.text, saved.image_path, saved.position,
                 saved.size_pct, saved.text_color, saved.background_color, saved.sort_order,
-                saved.created_at, saved.updated_at
+                saved.created_at, saved.updated_at, saved.scroll_mode, saved.scroll_speed
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -161,10 +183,11 @@ impl DbManager {
         let changed = conn
             .execute(
                 "UPDATE props SET name = ?2, kind = ?3, text = ?4, image_path = ?5, position = ?6, size_pct = ?7,
-                        text_color = ?8, background_color = ?9, updated_at = ?10 WHERE id = ?1;",
+                        text_color = ?8, background_color = ?9, updated_at = ?10, scroll_mode = ?11, scroll_speed = ?12 WHERE id = ?1;",
                 params![
                     prop.id, prop.name.trim(), prop.kind, prop.text.as_ref().map(|t| t.trim().to_string()),
-                    prop.image_path, prop.position, prop.size_pct, prop.text_color, prop.background_color, now
+                    prop.image_path, prop.position, prop.size_pct, prop.text_color, prop.background_color, now,
+                    prop.scroll_mode, prop.scroll_speed
                 ],
             )
             .map_err(|e| e.to_string())?;
@@ -199,6 +222,8 @@ mod tests {
             size_pct: 6,
             text_color: "#ffffff".into(),
             background_color: Some("#000000".into()),
+            scroll_mode: None,
+            scroll_speed: None,
             sort_order: 0,
             created_at: String::new(),
             updated_at: String::new(),
@@ -220,7 +245,7 @@ mod tests {
         assert!(bad(Prop { kind: "video".into(), ..text_prop() }).contains("Unknown prop type"));
         assert!(bad(Prop { text: Some("   ".into()), ..text_prop() }).contains("needs some text"));
         assert!(bad(Prop { text: None, ..text_prop() }).contains("needs some text"));
-        assert!(bad(Prop { text: Some("x".repeat(201)), ..text_prop() }).contains("too long"));
+        assert!(bad(Prop { text: Some("x".repeat(501)), ..text_prop() }).contains("too long"));
         assert!(bad(Prop { kind: "image".into(), image_path: Some(" ".into()), ..text_prop() }).contains("needs an image"));
         assert!(bad(Prop { kind: "image".into(), image_path: None, ..text_prop() }).contains("needs an image"));
     }
@@ -250,20 +275,62 @@ mod tests {
     }
 
     #[test]
+    fn scroll_mode_and_speed_validation() {
+        let bad = |p: Prop| validate_prop(&p).unwrap_err();
+        for mode in PROP_SCROLL_MODES {
+            assert!(validate_prop(&Prop { scroll_mode: Some(mode.into()), ..text_prop() }).is_ok(), "{mode}");
+        }
+        assert!(bad(Prop { scroll_mode: Some("diagonal".into()), ..text_prop() }).contains("Unknown scroll mode"));
+
+        // Only text props can scroll
+        let image = Prop {
+            kind: "image".into(),
+            text: None,
+            image_path: Some("media/logo.png".into()),
+            scroll_mode: Some("left".into()),
+            ..text_prop()
+        };
+        assert!(bad(image).contains("Only text props can scroll"));
+
+        // Speed must be 1..=10
+        assert!(validate_prop(&Prop { scroll_speed: Some(1), ..text_prop() }).is_ok());
+        assert!(validate_prop(&Prop { scroll_speed: Some(10), ..text_prop() }).is_ok());
+        assert!(bad(Prop { scroll_speed: Some(0), ..text_prop() }).contains("Scroll speed"));
+        assert!(bad(Prop { scroll_speed: Some(11), ..text_prop() }).contains("Scroll speed"));
+    }
+
+    #[test]
     fn create_list_update_delete_round_trip() {
         let db = DbManager::new_in_memory().unwrap();
         assert!(db.list_props().unwrap().is_empty());
 
-        let a = db.create_prop(&Prop { name: "  First  ".into(), ..text_prop() }).unwrap();
+        let a = db.create_prop(&Prop {
+            name: "  First  ".into(),
+            scroll_mode: Some("left".into()),
+            scroll_speed: Some(5),
+            ..text_prop()
+        }).unwrap();
         let b = db.create_prop(&Prop { name: "Second".into(), ..text_prop() }).unwrap();
         assert_eq!(a.name, "First");
+        assert_eq!(a.scroll_mode.as_deref(), Some("left"));
+        assert_eq!(a.scroll_speed, Some(5));
         assert_ne!(a.id, b.id);
         let list = db.list_props().unwrap();
         assert_eq!(list.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), vec!["First", "Second"]);
+        assert_eq!(list[0].scroll_mode.as_deref(), Some("left"));
+        assert_eq!(list[0].scroll_speed, Some(5));
 
-        let updated = db.update_prop(&Prop { text: Some("New words".into()), position: "top-bar".into(), ..a.clone() }).unwrap();
+        let updated = db.update_prop(&Prop {
+            text: Some("New words".into()),
+            position: "top-bar".into(),
+            scroll_mode: Some("up".into()),
+            scroll_speed: Some(8),
+            ..a.clone()
+        }).unwrap();
         assert_eq!(updated.text.as_deref(), Some("New words"));
         assert_eq!(updated.position, "top-bar");
+        assert_eq!(updated.scroll_mode.as_deref(), Some("up"));
+        assert_eq!(updated.scroll_speed, Some(8));
         assert_eq!(updated.created_at, a.created_at);
 
         db.delete_prop(&a.id).unwrap();

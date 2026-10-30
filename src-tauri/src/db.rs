@@ -1514,6 +1514,18 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 25: scrolling text & messages on props =================
+        if current_version < 25 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute("ALTER TABLE props ADD COLUMN scroll_mode TEXT;", [])?;
+            tx.execute("ALTER TABLE props ADD COLUMN scroll_speed INTEGER;", [])?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (25, ?1);",
+                params![Utc::now().to_rfc3339()],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -5632,11 +5644,12 @@ impl DbManager {
         // Restore props
         for pr in &backup.props {
             tx.execute(
-                "INSERT OR IGNORE INTO props (id, name, kind, text, image_path, position, size_pct, text_color, background_color, sort_order, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12);",
+                "INSERT OR IGNORE INTO props (id, name, kind, text, image_path, position, size_pct, text_color, background_color, sort_order, created_at, updated_at, scroll_mode, scroll_speed)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14);",
                 params![
                     pr.id, pr.name, pr.kind, pr.text, pr.image_path, pr.position, pr.size_pct,
-                    pr.text_color, pr.background_color, pr.sort_order, pr.created_at, pr.updated_at
+                    pr.text_color, pr.background_color, pr.sort_order, pr.created_at, pr.updated_at,
+                    pr.scroll_mode, pr.scroll_speed
                 ],
             )?;
         }

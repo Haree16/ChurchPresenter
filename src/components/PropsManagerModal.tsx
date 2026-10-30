@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import { X, Trash2, Plus } from 'lucide-react';
 import { api } from '../services/api';
-import { Prop } from '../types';
+import { Prop, PropScrollMode } from '../types';
 import {
   PROP_POSITIONS,
+  PROP_SCROLL_MODES,
   MAX_PROP_NAME_CHARS,
   MAX_PROP_TEXT_CHARS,
   validateProp,
@@ -25,6 +26,8 @@ const blankProp = (): Prop => ({
   sizePct: 6,
   textColor: '#ffffff',
   backgroundColor: '#000000',
+  scrollMode: 'none',
+  scrollSpeed: 3,
 });
 
 const fieldStyle: React.CSSProperties = {
@@ -170,6 +173,7 @@ export const PropsManagerModal: React.FC<PropsManagerModalProps> = ({ isOpen, on
                 <strong>{p.name}</strong>{' '}
                 <span style={{ color: '#94a3b8' }}>
                   {p.kind === 'text' ? `“${p.text}”` : 'image'} · {PROP_POSITIONS.find((x) => x.value === p.position)?.label}
+                  {p.scrollMode && p.scrollMode !== 'none' && ` · Ticker (${p.scrollMode}, spd ${p.scrollSpeed || 3})`}
                 </span>
               </button>
               <button
@@ -199,10 +203,55 @@ export const PropsManagerModal: React.FC<PropsManagerModalProps> = ({ isOpen, on
           </label>
 
           {draft.kind === 'text' ? (
-            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: '1 / -1' }}>
-              <span style={labelStyle}>Text</span>
-              <input data-testid="prop-text" style={fieldStyle} value={draft.text || ''} maxLength={MAX_PROP_TEXT_CHARS} onChange={(e) => set('text', e.target.value)} />
-            </label>
+            <>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: '1 / -1' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={labelStyle}>Text</span>
+                  <span style={{ fontSize: '10px', color: '#64748b' }}>
+                    {(draft.text || '').length} / {MAX_PROP_TEXT_CHARS}
+                  </span>
+                </div>
+                <textarea
+                  data-testid="prop-text"
+                  rows={2}
+                  style={{ ...fieldStyle, resize: 'vertical' }}
+                  value={draft.text || ''}
+                  maxLength={MAX_PROP_TEXT_CHARS}
+                  onChange={(e) => set('text', e.target.value)}
+                />
+              </label>
+
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={labelStyle}>Scroll mode</span>
+                <select
+                  data-testid="prop-scroll-mode"
+                  style={fieldStyle}
+                  value={draft.scrollMode || 'none'}
+                  onChange={(e) => set('scrollMode', e.target.value as PropScrollMode)}
+                >
+                  {PROP_SCROLL_MODES.map((sm) => (
+                    <option key={sm.value} value={sm.value}>
+                      {sm.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {draft.scrollMode && draft.scrollMode !== 'none' && (
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={labelStyle}>Scroll speed (1 slow - 10 fast)</span>
+                  <input
+                    data-testid="prop-scroll-speed"
+                    type="number"
+                    min={1}
+                    max={10}
+                    style={fieldStyle}
+                    value={draft.scrollSpeed ?? 3}
+                    onChange={(e) => set('scrollSpeed', Math.min(Math.max(Math.round(Number(e.target.value)), 1), 10))}
+                  />
+                </label>
+              )}
+            </>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: '1 / -1' }}>
               <span style={labelStyle}>Image</span>

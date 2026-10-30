@@ -174,6 +174,7 @@ mod tests {
             id: String::new(), name: name.into(), kind: "text".into(), text: Some("hi".into()), image_path: None,
             position: "center".into(), size_pct: 5, text_color: "#ffffff".into(), background_color: None,
             sort_order: 0, created_at: String::new(), updated_at: String::new(),
+            ..Default::default()
         })
         .unwrap()
     }

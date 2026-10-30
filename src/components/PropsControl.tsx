@@ -122,14 +122,19 @@ export const PropsControl: React.FC<PropsControlProps> = ({ presentationState })
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
           {props.map((p) => {
             const on = activeIds.has(p.id);
+            const isTicker = p.scrollMode && p.scrollMode !== 'none';
             return (
               <button
                 key={p.id}
                 type="button"
                 data-testid="prop-toggle"
+                data-scroll-mode={p.scrollMode || 'none'}
                 aria-pressed={on}
                 onClick={() => toggle(p.id)}
                 style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
                   padding: '4px 10px',
                   borderRadius: '6px',
                   border: `1px solid ${on ? '#38bdf8' : '#334155'}`,
@@ -140,7 +145,23 @@ export const PropsControl: React.FC<PropsControlProps> = ({ presentationState })
                   cursor: 'pointer',
                 }}
               >
-                {p.name}
+                <span>{p.name}</span>
+                {isTicker && (
+                  <span
+                    data-testid="prop-ticker-badge"
+                    style={{
+                      fontSize: '9px',
+                      padding: '1px 4px',
+                      borderRadius: '4px',
+                      backgroundColor: on ? '#0284c7' : '#334155',
+                      color: '#38bdf8',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}
+                  >
+                    Ticker
+                  </span>
+                )}
               </button>
             );
           })}
