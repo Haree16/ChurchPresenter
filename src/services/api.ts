@@ -4081,7 +4081,11 @@ class MockDataStore {
     pairingPin: null,
     connectedClientsCount: 0,
     error: null,
+    tlsEnabled: true,
+    tlsFingerprint: 'D8:A4:DE:D6:C1:6C:CD:74:63:0F:BA:15:CE:62:19:C1:3D:95:25:08:29:90:31:21:23:F5:18:EF:66:60:18:DC',
+    remoteUrl: 'https://192.168.1.150:8088/remote',
   };
+  private remoteTlsEnabled: boolean = true;
 
   private midiMappings: MidiMapping[] = [
     {
@@ -4280,20 +4284,38 @@ class MockDataStore {
   }
 
   public async getRemoteServerStatus(): Promise<RemoteServerStatus> {
-    return JSON.parse(JSON.stringify(this.remoteServerStatus));
+    const proto = this.remoteTlsEnabled ? 'https' : 'http';
+    const host = this.remoteServerStatus.lanIps[0] || '127.0.0.1';
+    return {
+      ...this.remoteServerStatus,
+      tlsEnabled: this.remoteTlsEnabled,
+      tlsFingerprint: this.remoteTlsEnabled
+        ? 'D8:A4:DE:D6:C1:6C:CD:74:63:0F:BA:15:CE:62:19:C1:3D:95:25:08:29:90:31:21:23:F5:18:EF:66:60:18:DC'
+        : null,
+      remoteUrl: `${proto}://${host}:${this.remoteServerStatus.port}/remote`,
+    };
+  }
+
+  public async getRemoteTlsEnabled(): Promise<boolean> {
+    return this.remoteTlsEnabled;
+  }
+
+  public async setRemoteTlsEnabled(enabled: boolean): Promise<boolean> {
+    this.remoteTlsEnabled = enabled;
+    return this.remoteTlsEnabled;
   }
 
   public async startRemoteServer(port = 8088): Promise<RemoteServerStatus> {
     this.remoteServerStatus.isRunning = true;
     this.remoteServerStatus.port = port;
     this.remoteServerStatus.pairingPin = Math.floor(100000 + Math.random() * 900000).toString();
-    return JSON.parse(JSON.stringify(this.remoteServerStatus));
+    return this.getRemoteServerStatus();
   }
 
   public async stopRemoteServer(): Promise<RemoteServerStatus> {
     this.remoteServerStatus.isRunning = false;
     this.remoteServerStatus.pairingPin = null;
-    return JSON.parse(JSON.stringify(this.remoteServerStatus));
+    return this.getRemoteServerStatus();
   }
 
   public async listRemoteDevices(): Promise<RemoteDevice[]> {
@@ -4387,7 +4409,11 @@ class MockDataStore {
   }
 
   public async getOscStatus(): Promise<OscStatus> {
-    return JSON.parse(JSON.stringify(this.oscStatus));
+    const hasSecret = !!this.oscConfig.sharedSecret && this.oscConfig.sharedSecret.trim().length > 0;
+    return {
+      ...this.oscStatus,
+      hasSharedSecret: hasSecret,
+    };
   }
 
   public async startOscListener(port = 9000): Promise<OscStatus> {
@@ -6526,6 +6552,20 @@ export const api = {
       return await invoke<void>('delete_remote_device', { id });
     }
     return mockStore.deleteRemoteDevice(id);
+  },
+
+  getRemoteTlsEnabled: async (): Promise<boolean> => {
+    if (isTauri()) {
+      return await invoke<boolean>('get_remote_tls_enabled');
+    }
+    return mockStore.getRemoteTlsEnabled();
+  },
+
+  setRemoteTlsEnabled: async (enabled: boolean): Promise<boolean> => {
+    if (isTauri()) {
+      return await invoke<boolean>('set_remote_tls_enabled', { enabled });
+    }
+    return mockStore.setRemoteTlsEnabled(enabled);
   },
 
   // ================= Phase 5: MIDI Integration =================

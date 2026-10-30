@@ -350,6 +350,8 @@ pub fn run() {
             commands::approve_remote_device,
             commands::update_remote_device_permissions,
             commands::delete_remote_device,
+            commands::get_remote_tls_enabled,
+            commands::set_remote_tls_enabled,
             // Phase 5: MIDI Integration
             commands::get_midi_status,
             commands::list_midi_devices,

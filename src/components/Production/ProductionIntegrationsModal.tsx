@@ -29,6 +29,11 @@ import {
   AlertCircle,
   Check,
   Zap,
+  ShieldCheck,
+  Lock,
+  Key,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 interface ProductionIntegrationsModalProps {
@@ -52,6 +57,8 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const [remoteDevices, setRemoteDevices] = useState<RemoteDevice[]>([]);
   const [remotePort, setRemotePort] = useState<number>(8088);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [remoteTlsEnabled, setRemoteTlsEnabled] = useState<boolean>(true);
+  const [copiedFingerprint, setCopiedFingerprint] = useState<boolean>(false);
 
   // MIDI state
   const [midiStatus, setMidiStatus] = useState<MidiStatus | null>(null);
@@ -72,6 +79,8 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const [oscStatus, setOscStatus] = useState<OscStatus | null>(null);
   const [oscPort, setOscPort] = useState<number>(8000);
   const [macros, setMacros] = useState<Macro[]>([]);
+  const [oscSecretDraft, setOscSecretDraft] = useState<string>('');
+  const [showOscSecret, setShowOscSecret] = useState<boolean>(false);
 
   // Actions state
   const [actionMappings, setActionMappings] = useState<ActionMapping[]>([]);
@@ -91,7 +100,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode, savedMacros] =
+      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode, savedMacros, tlsEnabled] =
         await Promise.all([
           api.getRemoteServerStatus(),
           api.listRemoteDevices(),
@@ -102,6 +111,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
           api.listActionMappings(),
           api.getNetworkBindMode(),
           api.listMacros(),
+          api.getRemoteTlsEnabled(),
         ]);
 
       setMacros(savedMacros);
@@ -109,6 +119,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
       setRemoteStatus(rStatus);
       setRemotePort(rStatus.port || 8088);
       setRemoteDevices(rDevs);
+      setRemoteTlsEnabled(tlsEnabled);
 
       setMidiStatus(mStatus);
       if (mStatus.currentDeviceName) {
@@ -121,6 +132,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
       setOscConfig(oCfg);
       setOscStatus(oStatus);
       setOscPort(oCfg.listenPort || 8000);
+      setOscSecretDraft(oCfg.sharedSecret || '');
 
       setActionMappings(aMappings);
     } catch (e) {
@@ -149,11 +161,13 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
 
   if (!isOpen) return null;
 
+  const isTls = remoteStatus?.tlsEnabled ?? remoteTlsEnabled;
+  const proto = isTls ? 'https' : 'http';
   const lanIp =
     remoteStatus?.isRunning && remoteStatus.bindAddress === '127.0.0.1'
       ? '127.0.0.1'
       : remoteStatus?.lanIps?.[0] || '127.0.0.1';
-  const remoteUrl = `http://${lanIp}:${remotePort}/remote`;
+  const remoteUrl = remoteStatus?.remoteUrl || `${proto}://${lanIp}:${remotePort}/remote`;
 
   const handleBindModeChange = async (mode: BindMode) => {
     try {
@@ -326,6 +340,44 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
     } catch (err) {
       setStatusMessage(`Error: ${err}`);
     }
+  };
+
+  const handleToggleTls = async (enabled: boolean) => {
+    try {
+      await api.setRemoteTlsEnabled(enabled);
+      setRemoteTlsEnabled(enabled);
+      const updated = await api.getRemoteServerStatus();
+      setRemoteStatus(updated);
+      setStatusMessage(`Remote TLS encryption ${enabled ? 'enabled' : 'disabled'}. Takes effect next time server starts.`);
+    } catch (err: any) {
+      setStatusMessage(`Error updating TLS: ${err?.message || err}`);
+    }
+  };
+
+  const handleSaveOscSecret = async () => {
+    if (!oscConfig) return;
+    try {
+      const secret = oscSecretDraft.trim() || null;
+      const updated = await api.updateOscConfig({
+        ...oscConfig,
+        sharedSecret: secret,
+      });
+      setOscConfig(updated);
+      const status = await api.getOscStatus();
+      setOscStatus(status);
+      setStatusMessage(secret ? 'OSC Shared Secret saved & enforced.' : 'OSC Shared Secret cleared (open to LAN).');
+    } catch (err: any) {
+      setStatusMessage(`Error saving OSC secret: ${err?.message || err}`);
+    }
+  };
+
+  const handleGenerateSecret = () => {
+    const chars = 'abcdefghjkmnpqrstuvwxyz23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+    let res = '';
+    for (let i = 0; i < 16; i++) {
+      res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setOscSecretDraft(res);
   };
 
   // Action Dispatch Handlers
@@ -675,6 +727,119 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                 onChange={handleBindModeChange}
                 locked={!!remoteStatus?.isRunning || !!oscStatus?.isRunning}
               />
+
+              {/* Phase 10.5: Remote TLS Security & Certificate Fingerprint Card */}
+              <div
+                data-testid="remote-tls-hardening-card"
+                style={{
+                  padding: '16px',
+                  backgroundColor: '#1e293b',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <ShieldCheck size={18} color="#38bdf8" />
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '13px', color: '#f8fafc' }}>
+                        TLS / HTTPS Transport Encryption
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                        Self-signed TLS encryption protects mobile remote control from local network eavesdropping.
+                      </div>
+                    </div>
+                  </div>
+
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      cursor: remoteStatus?.isRunning ? 'not-allowed' : 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      color: '#f8fafc',
+                      userSelect: 'none',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      data-testid="remote-tls-toggle"
+                      checked={remoteTlsEnabled}
+                      disabled={remoteStatus?.isRunning}
+                      onChange={(e) => handleToggleTls(e.target.checked)}
+                      style={{ accentColor: '#3b82f6', width: '15px', height: '15px' }}
+                    />
+                    <span>{remoteTlsEnabled ? 'TLS Enabled (HTTPS)' : 'TLS Disabled (Plain HTTP)'}</span>
+                  </label>
+                </div>
+
+                {remoteTlsEnabled && remoteStatus?.tlsFingerprint && (
+                  <div
+                    data-testid="remote-tls-fingerprint-box"
+                    style={{
+                      backgroundColor: '#090d16',
+                      borderRadius: '6px',
+                      padding: '10px 14px',
+                      border: '1px solid #1e293b',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '10px',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>
+                        Certificate SHA-256 Fingerprint
+                      </div>
+                      <div
+                        data-testid="remote-tls-fingerprint"
+                        style={{
+                          fontSize: '11px',
+                          fontFamily: 'monospace',
+                          color: '#38bdf8',
+                          marginTop: '2px',
+                          wordBreak: 'break-all',
+                        }}
+                      >
+                        {remoteStatus.tlsFingerprint}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      data-testid="copy-tls-fingerprint-btn"
+                      onClick={() => {
+                        if (remoteStatus.tlsFingerprint) {
+                          navigator.clipboard.writeText(remoteStatus.tlsFingerprint);
+                          setCopiedFingerprint(true);
+                          setTimeout(() => setCopiedFingerprint(false), 2000);
+                        }
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        backgroundColor: '#1e293b',
+                        border: '1px solid #334155',
+                        color: '#f8fafc',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {copiedFingerprint ? <Check size={12} color="#4ade80" /> : <Copy size={12} />}
+                      <span>{copiedFingerprint ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {/* Pairing Info & PIN Box */}
               {remoteStatus?.isRunning && (
@@ -1584,6 +1749,190 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                     {new Date(oscStatus.lastReceivedTime).toLocaleTimeString()}
                   </span>
                 )}
+              </div>
+
+              {/* OSC Packet Authentication & Shared Secret Card */}
+              <div
+                style={{
+                  backgroundColor: '#1e293b',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '14px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Lock size={16} color={oscStatus?.hasSharedSecret ? '#4ade80' : '#94a3b8'} />
+                      <span style={{ fontWeight: 700, fontSize: '14px' }}>
+                        OSC Shared Secret Authentication
+                      </span>
+                      <span
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          backgroundColor: oscStatus?.hasSharedSecret
+                            ? 'rgba(34, 197, 94, 0.2)'
+                            : 'rgba(234, 179, 8, 0.2)',
+                          color: oscStatus?.hasSharedSecret ? '#4ade80' : '#facc15',
+                        }}
+                      >
+                        {oscStatus?.hasSharedSecret ? 'AUTHENTICATION ENFORCED' : 'OPEN / UNRESTRICTED'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
+                      Require a shared passkey for all incoming UDP OSC packets to prevent unauthorized triggers on church networks.
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <input
+                      type={showOscSecret ? 'text' : 'password'}
+                      value={oscSecretDraft}
+                      onChange={(e) => setOscSecretDraft(e.target.value)}
+                      placeholder="No secret configured (open to network)"
+                      style={{
+                        width: '100%',
+                        padding: '8px 36px 8px 12px',
+                        backgroundColor: '#0f172a',
+                        border: '1px solid #334155',
+                        borderRadius: '6px',
+                        color: '#f8fafc',
+                        fontSize: '13px',
+                        fontFamily: 'monospace',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowOscSecret(!showOscSecret)}
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '4px',
+                      }}
+                      title={showOscSecret ? 'Hide secret' : 'Show secret'}
+                    >
+                      {showOscSecret ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={handleGenerateSecret}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 12px',
+                      backgroundColor: '#334155',
+                      border: 'none',
+                      borderRadius: '6px',
+                      color: '#f8fafc',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <Key size={14} /> Generate
+                  </button>
+
+                  <button
+                    onClick={handleSaveOscSecret}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: '#16a34a',
+                      border: 'none',
+                      borderRadius: '6px',
+                      color: '#ffffff',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Save Secret
+                  </button>
+
+                  {oscSecretDraft && (
+                    <button
+                      onClick={async () => {
+                        setOscSecretDraft('');
+                        if (oscConfig) {
+                          try {
+                            const updated = await api.updateOscConfig({
+                              ...oscConfig,
+                              sharedSecret: null,
+                            });
+                            setOscConfig(updated);
+                            const status = await api.getOscStatus();
+                            setOscStatus(status);
+                            setStatusMessage('OSC Shared Secret cleared (open to LAN).');
+                          } catch (err: any) {
+                            setStatusMessage(`Error clearing secret: ${err?.message || err}`);
+                          }
+                        }
+                      }}
+                      style={{
+                        padding: '8px 12px',
+                        backgroundColor: '#dc2626',
+                        border: 'none',
+                        borderRadius: '6px',
+                        color: '#ffffff',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {oscSecretDraft ? (
+                  <div
+                    style={{
+                      backgroundColor: '#0f172a',
+                      borderRadius: '6px',
+                      padding: '10px 12px',
+                      border: '1px solid #1e293b',
+                      fontSize: '11px',
+                      color: '#94a3b8',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                    }}
+                  >
+                    <div style={{ color: '#38bdf8', fontWeight: 600 }}>
+                      How to send authenticated packets from Companion, TouchOSC, or DAWs:
+                    </div>
+                    <div>
+                      • <strong>Path Prefix (Recommended):</strong> Prepend the secret to the OSC path:{' '}
+                      <code style={{ color: '#facc15' }}>/{oscSecretDraft}/cp/next</code> or{' '}
+                      <code style={{ color: '#facc15' }}>/auth:{oscSecretDraft}/cp/next</code>
+                    </div>
+                    <div>
+                      • <strong>Message Argument:</strong> Pass the secret as the first string parameter to{' '}
+                      <code style={{ color: '#facc15' }}>/cp/next "{oscSecretDraft}"</code>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               {oscConfig && (

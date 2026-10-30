@@ -18,6 +18,7 @@ pub struct OscService {
     last_received_time: Arc<Mutex<Option<String>>>,
     last_error: Arc<Mutex<Option<String>>>,
     bind_ip: Arc<Mutex<String>>,
+    has_shared_secret: Arc<AtomicBool>,
 }
 
 impl OscService {
@@ -29,6 +30,7 @@ impl OscService {
             last_received_time: Arc::new(Mutex::new(None)),
             last_error: Arc::new(Mutex::new(None)),
             bind_ip: Arc::new(Mutex::new("0.0.0.0".to_string())),
+            has_shared_secret: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -46,6 +48,7 @@ impl OscService {
             last_received_time,
             error,
             bind_address: self.bind_ip.lock().unwrap().clone(),
+            has_shared_secret: self.has_shared_secret.load(Ordering::SeqCst),
         }
     }
 
@@ -58,6 +61,19 @@ impl OscService {
         bind_ip: &str,
     ) -> Result<OscStatus, String> {
         self.stop_listener();
+
+        let cfg = db.get_osc_config().unwrap_or_else(|_| crate::models::OscConfig {
+            id: "default-osc".to_string(),
+            is_enabled: true,
+            listen_port: port,
+            allowlist_actions: "next_slide,prev_slide,next_item,prev_item,toggle_blackout,toggle_live,start_timer,stop_timer,reset_timer,clear_overlay".to_string(),
+            shared_secret: None,
+            created_at: "".to_string(),
+            updated_at: "".to_string(),
+        });
+
+        let has_secret = cfg.shared_secret.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+        self.has_shared_secret.store(has_secret, Ordering::SeqCst);
 
         let bind_addr = format!("{}:{}", bind_ip, port);
         let socket = UdpSocket::bind(&bind_addr)
@@ -97,7 +113,7 @@ impl OscService {
                             }
                         };
 
-                        Self::handle_packet(&app, &db, &pres_mgr, packet, &last_path_holder, &last_time_holder);
+                        Self::handle_packet(&app, &db, &pres_mgr, packet, &last_path_holder, &last_time_holder, &last_err_holder);
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
                         // normal timeout, continue loop
@@ -124,14 +140,15 @@ impl OscService {
         packet: OscPacket,
         last_path_holder: &Arc<Mutex<Option<String>>>,
         last_time_holder: &Arc<Mutex<Option<String>>>,
+        last_err_holder: &Arc<Mutex<Option<String>>>,
     ) {
         match packet {
             OscPacket::Message(msg) => {
-                Self::handle_message(app, db, pres_mgr, msg, last_path_holder, last_time_holder);
+                Self::handle_message(app, db, pres_mgr, msg, last_path_holder, last_time_holder, last_err_holder);
             }
             OscPacket::Bundle(bundle) => {
                 for pkt in bundle.content {
-                    Self::handle_packet(app, db, pres_mgr, pkt, last_path_holder, last_time_holder);
+                    Self::handle_packet(app, db, pres_mgr, pkt, last_path_holder, last_time_holder, last_err_holder);
                 }
             }
         }
@@ -144,9 +161,59 @@ impl OscService {
         msg: OscMessage,
         last_path_holder: &Arc<Mutex<Option<String>>>,
         last_time_holder: &Arc<Mutex<Option<String>>>,
+        last_err_holder: &Arc<Mutex<Option<String>>>,
     ) {
-        let path = msg.addr.as_str();
+        let raw_path = msg.addr.as_str();
         let now_str = Utc::now().to_rfc3339();
+
+        // Check against allowlist and shared_secret from osc_configs
+        let osc_cfg = db.get_osc_config().unwrap_or_else(|_| crate::models::OscConfig {
+            id: "default-osc".to_string(),
+            is_enabled: true,
+            listen_port: 9000,
+            allowlist_actions: "next_slide,prev_slide,next_item,prev_item,toggle_blackout,toggle_live,start_timer,stop_timer,reset_timer,clear_overlay".to_string(),
+            shared_secret: None,
+            created_at: "".to_string(),
+            updated_at: "".to_string(),
+        });
+
+        let expected_secret = osc_cfg
+            .shared_secret
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+
+        let (path, is_authenticated) = if let Some(secret) = expected_secret {
+            let prefix_slash = format!("/{}", secret);
+            let prefix_auth = format!("/auth:{}", secret);
+
+            if raw_path.starts_with(&prefix_slash) && raw_path[prefix_slash.len()..].starts_with('/') {
+                (&raw_path[prefix_slash.len()..], true)
+            } else if raw_path.starts_with(&prefix_auth) && raw_path[prefix_auth.len()..].starts_with('/') {
+                (&raw_path[prefix_auth.len()..], true)
+            } else {
+                // Check if first argument is secret string
+                let arg_secret_match = msg.args.first().and_then(|arg| match arg {
+                    rosc::OscType::String(s) => Some(s.trim() == secret),
+                    _ => None,
+                }).unwrap_or(false);
+
+                if arg_secret_match {
+                    (raw_path, true)
+                } else {
+                    (raw_path, false)
+                }
+            }
+        } else {
+            (raw_path, true)
+        };
+
+        if !is_authenticated {
+            let err_msg = format!("OSC authentication failed: invalid or missing shared secret for path {}", raw_path);
+            *last_err_holder.lock().unwrap() = Some(err_msg.clone());
+            app.emit("osc:auth-failed", serde_json::json!({ "path": raw_path, "error": err_msg })).ok();
+            return;
+        }
 
         *last_path_holder.lock().unwrap() = Some(path.to_string());
         *last_time_holder.lock().unwrap() = Some(now_str.clone());
@@ -159,16 +226,6 @@ impl OscService {
             }),
         )
         .ok();
-
-        // Check against allowlist from osc_configs
-        let osc_cfg = db.get_osc_config().unwrap_or_else(|_| crate::models::OscConfig {
-            id: "default-osc".to_string(),
-            is_enabled: true,
-            listen_port: 9000,
-            allowlist_actions: "next_slide,prev_slide,next_item,prev_item,toggle_blackout,toggle_live,start_timer,stop_timer,reset_timer,clear_overlay".to_string(),
-            created_at: "".to_string(),
-            updated_at: "".to_string(),
-        });
 
         if let Some(action) = osc_path_to_action(path) {
             if is_action_allowed(&osc_cfg.allowlist_actions, action) {
@@ -292,5 +349,30 @@ mod tests {
             let action = osc_path_to_action(p).unwrap();
             assert!(is_action_allowed(default, action), "{action} missing from default allowlist");
         }
+    }
+
+    #[test]
+    fn test_osc_shared_secret_path_prefix_and_argument_auth() {
+        let secret = "sanctuary2026";
+        let prefix_slash = format!("/{}", secret);
+        let prefix_auth = format!("/auth:{}", secret);
+
+        // Path prefix format 1: /<secret>/slide/next
+        let path1 = "/sanctuary2026/slide/next";
+        assert!(path1.starts_with(&prefix_slash) && path1[prefix_slash.len()..].starts_with('/'));
+        let subpath1 = &path1[prefix_slash.len()..];
+        assert_eq!(subpath1, "/slide/next");
+        assert_eq!(osc_path_to_action(subpath1), Some("next_slide"));
+
+        // Path prefix format 2: /auth:<secret>/slide/next
+        let path2 = "/auth:sanctuary2026/slide/next";
+        assert!(path2.starts_with(&prefix_auth) && path2[prefix_auth.len()..].starts_with('/'));
+        let subpath2 = &path2[prefix_auth.len()..];
+        assert_eq!(subpath2, "/slide/next");
+        assert_eq!(osc_path_to_action(subpath2), Some("next_slide"));
+
+        // Wrong secret prefix
+        let bad_path = "/wrongsecret/slide/next";
+        assert!(!(bad_path.starts_with(&prefix_slash) && bad_path[prefix_slash.len()..].starts_with('/')));
     }
 }

@@ -902,6 +902,9 @@ export interface RemoteServerStatus {
   error?: string | null;
   /** 127.0.0.1 = this computer only, 0.0.0.0 = local network. */
   bindAddress?: string;
+  tlsEnabled?: boolean;
+  tlsFingerprint?: string | null;
+  remoteUrl?: string;
 }
 
 export interface RemotePairRequest {
@@ -914,6 +917,7 @@ export interface RemotePairResponse {
   requiresApproval: boolean;
   sessionToken?: string | null;
   message: string;
+  tlsFingerprint?: string | null;
 }
 
 export interface MidiMapping {
@@ -949,6 +953,7 @@ export interface OscConfig {
   isEnabled: boolean;
   listenPort: number;
   allowlistActions: string;
+  sharedSecret?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -960,6 +965,7 @@ export interface OscStatus {
   lastReceivedTime?: string | null;
   error?: string | null;
   bindAddress?: string;
+  hasSharedSecret?: boolean;
 }
 
 export interface ActionMapping {

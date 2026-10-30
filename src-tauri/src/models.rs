@@ -824,6 +824,12 @@ pub struct RemoteServerStatus {
     /// Address the server listens on (127.0.0.1 = this computer only, 0.0.0.0 = local network).
     #[serde(default)]
     pub bind_address: String,
+    #[serde(default)]
+    pub tls_enabled: bool,
+    #[serde(default)]
+    pub tls_fingerprint: Option<String>,
+    #[serde(default)]
+    pub remote_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -840,6 +846,8 @@ pub struct RemotePairResponse {
     pub requires_approval: bool,
     pub session_token: Option<String>,
     pub message: String,
+    #[serde(default)]
+    pub tls_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -891,6 +899,8 @@ pub struct OscConfig {
     pub is_enabled: bool,
     pub listen_port: u16,
     pub allowlist_actions: String,
+    #[serde(default)]
+    pub shared_secret: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -919,6 +929,8 @@ pub struct OscStatus {
     pub error: Option<String>,
     #[serde(default)]
     pub bind_address: String,
+    #[serde(default)]
+    pub has_shared_secret: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

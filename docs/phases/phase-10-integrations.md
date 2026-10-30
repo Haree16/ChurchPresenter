@@ -93,10 +93,31 @@ Done when: a Planning Center plan imports into a service and a Stream Deck page 
   - On application launch, if `checkOnStartup` is enabled, performs a quiet background check and displays a non-intrusive update banner in the operator view with "View in Settings" and "Dismiss" buttons.
 - **Verification**: Verified with 303 passing backend Rust unit tests and 528 passing Vitest unit tests (`tests/auto-updater.test.tsx`).
 
-## 10.5 Remote hardening
+## 10.5 Remote hardening [COMPLETED]
 From `plan.md` gap 16: remote and OSC listeners are plain HTTP and password-less OSC.
-- TLS for the phone remote (self-signed with a pairing-time fingerprint check).
-- Optional OSC shared secret.
+- **TLS / HTTPS Transport Encryption for Phone Remote**:
+  - Pure Rust self-signed certificate generation (`rcgen`) and `tiny_http` HTTPS support via `ssl-rustls` and `rustls-pemfile`.
+  - Persisted TLS toggle (`remote_tls_enabled`) in SQLite settings, enabled by default for maximum security.
+  - Certificate credentials saved at `AppData/tls/cert.pem` and `key.pem`.
+  - SHA-256 fingerprint computed in canonical format (`XX:XX:...`) and returned in `RemoteServerStatus` and `RemotePairResponse`.
+  - Seamless fallback to HTTP if TLS is explicitly disabled or in environments with legacy clients.
+- **Remote TLS & Fingerprint Management UI**:
+  - Added "TLS / HTTPS Transport Encryption" card to `ProductionIntegrationsModal.tsx` in the Mobile Remote tab.
+  - Toggle checkbox for switching between HTTPS and HTTP modes.
+  - Formatted certificate SHA-256 fingerprint box with instant one-click copy button.
+- **OSC UDP Packet Authentication & Shared Secret**:
+  - Optional `shared_secret` field in `osc_configs` with database migration 29.
+  - Backend OSC receiver enforcement in `osc.rs`: incoming packets must authenticate before triggering any action.
+  - Multi-syntax support for diverse production controllers:
+    - Path prefix: `/<secret>/cp/next` or `/auth:<secret>/cp/next`
+    - OSC message argument: first string argument matching the secret.
+  - Unauthorized packets dropped immediately with security warnings logged.
+- **OSC Shared Secret Management UI**:
+  - Added "OSC Shared Secret Authentication" card to `ProductionIntegrationsModal.tsx` under the OSC tab.
+  - Secret draft input with show/hide eye toggle, 16-character cryptographic random generator button, save and clear buttons.
+  - Live status indicator: "AUTHENTICATION ENFORCED" (green) or "OPEN / UNRESTRICTED" (amber).
+  - Built-in syntax reference and guide for Bitfocus Companion, TouchOSC, QLab, and DAWs.
+- **Verification**: Verified with 306 passing backend Rust unit tests and 537 passing Vitest unit tests (`tests/remote-hardening.test.tsx`).
 
 ## Risks
 - Planning Center API terms and rate limits; read them before building.

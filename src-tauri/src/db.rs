@@ -1626,6 +1626,30 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 29: Remote TLS Hardening & OSC Shared Secret =================
+        if current_version < 29 {
+            let tx = conn.unchecked_transaction()?;
+            let existing_cols: Vec<String> = {
+                let mut pragma = tx.prepare("PRAGMA table_info(osc_configs);")?;
+                let cols: Vec<String> = pragma
+                    .query_map([], |r| r.get(1))?
+                    .filter_map(|res| res.ok())
+                    .collect();
+                cols
+            };
+
+            if !existing_cols.contains(&"shared_secret".to_string()) {
+                tx.execute("ALTER TABLE osc_configs ADD COLUMN shared_secret TEXT;", [])?;
+            }
+
+            let now = Utc::now().to_rfc3339();
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (29, ?1);",
+                params![now],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -6828,7 +6852,7 @@ impl DbManager {
     pub fn get_osc_config(&self) -> Result<OscConfig> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, is_enabled, listen_port, allowlist_actions, created_at, updated_at
+            "SELECT id, is_enabled, listen_port, allowlist_actions, shared_secret, created_at, updated_at
              FROM osc_configs
              WHERE id = 'default-osc';",
         )?;
@@ -6839,8 +6863,9 @@ impl DbManager {
                 is_enabled: row.get::<_, i32>(1)? != 0,
                 listen_port: row.get::<_, i32>(2)? as u16,
                 allowlist_actions: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
+                shared_secret: row.get::<_, Option<String>>(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
             })
         })?;
 
@@ -6853,6 +6878,7 @@ impl DbManager {
                 is_enabled: false,
                 listen_port: 9000,
                 allowlist_actions: "next_slide,prev_slide,next_item,prev_item,toggle_blackout,toggle_live,start_timer,stop_timer,reset_timer,clear_overlay".to_string(),
+                shared_secret: None,
                 created_at: now.clone(),
                 updated_at: now,
             })
@@ -6864,17 +6890,37 @@ impl DbManager {
         let now = Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE osc_configs
-             SET is_enabled = ?2, listen_port = ?3, allowlist_actions = ?4, updated_at = ?5
+             SET is_enabled = ?2, listen_port = ?3, allowlist_actions = ?4, shared_secret = ?5, updated_at = ?6
              WHERE id = ?1;",
             params![
                 config.id,
                 if config.is_enabled { 1 } else { 0 },
                 config.listen_port as i32,
                 config.allowlist_actions,
+                config.shared_secret,
                 now
             ],
         )?;
         Ok(())
+    }
+
+    // ================= Phase 10.5: Remote TLS Config =================
+
+    pub fn get_remote_tls_enabled(&self) -> Result<bool> {
+        let val = self.get_setting("remote_tls_enabled")?;
+        Ok(val.map(|v| v == "true").unwrap_or(true)) // Defaults to true for secure-by-default
+    }
+
+    pub fn set_remote_tls_enabled(&self, enabled: bool) -> Result<()> {
+        self.set_setting("remote_tls_enabled", if enabled { "true" } else { "false" })
+    }
+
+    pub fn get_remote_tls_fingerprint(&self) -> Result<Option<String>> {
+        self.get_setting("remote_tls_fingerprint")
+    }
+
+    pub fn set_remote_tls_fingerprint(&self, fingerprint: &str) -> Result<()> {
+        self.set_setting("remote_tls_fingerprint", fingerprint)
     }
 
     // ================= Phase 10.2: DMX Lighting Config =================

@@ -3,14 +3,16 @@ use crate::db::DbManager;
 use crate::models::{RemoteDevice, RemotePairRequest, RemotePairResponse, RemoteServerStatus};
 use crate::overlay::OverlayService;
 use crate::presentation::PresentationManager;
+use base64::prelude::*;
 use chrono::Utc;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 use uuid::Uuid;
 
@@ -23,6 +25,8 @@ pub struct RemoteServerManager {
     last_error: Arc<Mutex<Option<String>>>,
     bind_ip: Arc<Mutex<String>>,
     server_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
+    tls_enabled: Arc<AtomicBool>,
+    tls_fingerprint: Arc<Mutex<Option<String>>>,
 }
 
 fn safe_header(field: &str, val: &str) -> Header {
@@ -82,6 +86,92 @@ pub fn is_ip_locked_out(failed_map: &HashMap<String, (u32, Instant)>, ip: &str) 
     false
 }
 
+/// Computes a standard colon-separated uppercase SHA-256 fingerprint for DER certificate bytes.
+pub fn compute_sha256_fingerprint(der: &[u8]) -> String {
+    let hash = Sha256::digest(der);
+    hash.iter()
+        .map(|b| format!("{:02X}", b))
+        .collect::<Vec<String>>()
+        .join(":")
+}
+
+/// Extracts DER bytes from a PEM certificate and computes the SHA-256 fingerprint.
+pub fn cert_pem_to_fingerprint(pem_bytes: &[u8]) -> Result<String, String> {
+    let pem_str = std::str::from_utf8(pem_bytes).map_err(|e| e.to_string())?;
+    let mut in_cert = false;
+    let mut b64_accum = String::new();
+
+    for line in pem_str.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("-----BEGIN CERTIFICATE-----") {
+            in_cert = true;
+            continue;
+        }
+        if trimmed.starts_with("-----END CERTIFICATE-----") {
+            break;
+        }
+        if in_cert {
+            b64_accum.push_str(trimmed);
+        }
+    }
+
+    if b64_accum.is_empty() {
+        return Err("No certificate block found in PEM".to_string());
+    }
+
+    let der = BASE64_STANDARD
+        .decode(b64_accum.trim())
+        .map_err(|e| format!("Invalid base64 in certificate: {}", e))?;
+
+    Ok(compute_sha256_fingerprint(&der))
+}
+
+/// Ensures valid self-signed TLS certificate and private key exist on disk.
+/// Returns (cert_pem_bytes, key_pem_bytes, sha256_fingerprint).
+pub fn ensure_tls_credentials(tls_dir: &std::path::Path) -> Result<(Vec<u8>, Vec<u8>, String), String> {
+    std::fs::create_dir_all(tls_dir).map_err(|e| e.to_string())?;
+    let cert_path = tls_dir.join("remote-cert.pem");
+    let key_path = tls_dir.join("remote-key.pem");
+
+    if cert_path.exists() && key_path.exists() {
+        let cert_bytes = std::fs::read(&cert_path).map_err(|e| e.to_string())?;
+        let key_bytes = std::fs::read(&key_path).map_err(|e| e.to_string())?;
+        if let Ok(fp) = cert_pem_to_fingerprint(&cert_bytes) {
+            return Ok((cert_bytes, key_bytes, fp));
+        }
+    }
+
+    // Generate new self-signed certificate using openssl
+    let status = std::process::Command::new("openssl")
+        .args(&[
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            key_path.to_str().unwrap_or("remote-key.pem"),
+            "-out",
+            cert_path.to_str().unwrap_or("remote-cert.pem"),
+            "-days",
+            "3650",
+            "-subj",
+            "/CN=ChurchPresenter-Remote",
+        ])
+        .status();
+
+    if let Ok(s) = status {
+        if s.success() {
+            let cert_bytes = std::fs::read(&cert_path).map_err(|e| e.to_string())?;
+            let key_bytes = std::fs::read(&key_path).map_err(|e| e.to_string())?;
+            let fp = cert_pem_to_fingerprint(&cert_bytes)?;
+            return Ok((cert_bytes, key_bytes, fp));
+        }
+    }
+
+    Err("Failed to generate or load TLS credentials via OpenSSL".to_string())
+}
+
 impl RemoteServerManager {
     pub fn new() -> Self {
         Self {
@@ -93,6 +183,8 @@ impl RemoteServerManager {
             last_error: Arc::new(Mutex::new(None)),
             bind_ip: Arc::new(Mutex::new("0.0.0.0".to_string())),
             server_handle: Arc::new(Mutex::new(None)),
+            tls_enabled: Arc::new(AtomicBool::new(true)),
+            tls_fingerprint: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -101,6 +193,8 @@ impl RemoteServerManager {
         let port = *self.port.lock().unwrap();
         let pairing_pin = self.pairing_pin.lock().unwrap().clone();
         let err = self.last_error.lock().unwrap().clone();
+        let tls_enabled = self.tls_enabled.load(Ordering::SeqCst);
+        let tls_fingerprint = self.tls_fingerprint.lock().unwrap().clone();
 
         // Count clients active in the last 60 seconds
         let now = Instant::now();
@@ -111,6 +205,9 @@ impl RemoteServerManager {
         };
 
         let lan_ips = Self::get_local_ips();
+        let proto = if tls_enabled { "https" } else { "http" };
+        let host = lan_ips.first().cloned().unwrap_or_else(|| "127.0.0.1".to_string());
+        let remote_url = format!("{}://{}:{}/remote", proto, host, port);
 
         RemoteServerStatus {
             is_running,
@@ -120,6 +217,9 @@ impl RemoteServerManager {
             connected_clients_count: client_count,
             error: err,
             bind_address: self.bind_ip.lock().unwrap().clone(),
+            tls_enabled,
+            tls_fingerprint,
+            remote_url,
         }
     }
 
@@ -143,14 +243,51 @@ impl RemoteServerManager {
 
         *self.bind_ip.lock().unwrap() = bind_ip.to_string();
         let addr = format!("{}:{}", bind_ip, port);
-        let server = match Server::http(&addr) {
-            Ok(s) => s,
-            Err(e) => {
-                let err_str = format!("Failed to bind to {}: {}", addr, e);
-                *self.last_error.lock().unwrap() = Some(err_str.clone());
-                return Err(err_str);
+
+        let tls_enabled = db.get_remote_tls_enabled().unwrap_or(true);
+        self.tls_enabled.store(tls_enabled, Ordering::SeqCst);
+
+        let (server, fingerprint) = if tls_enabled {
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .unwrap_or_else(|_| crate::resolve_app_data_path());
+            let tls_dir = app_data_dir.join("tls");
+
+            match ensure_tls_credentials(&tls_dir) {
+                Ok((cert, key, fp)) => {
+                    let ssl_cfg = tiny_http::SslConfig {
+                        certificate: cert,
+                        private_key: key,
+                    };
+                    match Server::https(&addr, ssl_cfg) {
+                        Ok(s) => (s, Some(fp)),
+                        Err(e) => {
+                            let err_str = format!("Failed to bind HTTPS to {}: {}", addr, e);
+                            *self.last_error.lock().unwrap() = Some(err_str.clone());
+                            return Err(err_str);
+                        }
+                    }
+                }
+                Err(err) => {
+                    let err_str = format!("Failed to initialize TLS certificate: {}", err);
+                    *self.last_error.lock().unwrap() = Some(err_str.clone());
+                    return Err(err_str);
+                }
+            }
+        } else {
+            match Server::http(&addr) {
+                Ok(s) => (s, None),
+                Err(e) => {
+                    let err_str = format!("Failed to bind HTTP to {}: {}", addr, e);
+                    *self.last_error.lock().unwrap() = Some(err_str.clone());
+                    return Err(err_str);
+                }
             }
         };
+
+        *self.tls_fingerprint.lock().unwrap() = fingerprint.clone();
+        let server_fingerprint = fingerprint.clone();
 
         self.is_running.store(true, Ordering::SeqCst);
         let is_running_flag = self.is_running.clone();
@@ -176,6 +313,7 @@ impl RemoteServerManager {
                         let failed_tracker = failed_tracker.clone();
                         let expected_pin = expected_pin.clone();
                         let rate_limiter = rate_limiter.clone();
+                        let server_fingerprint = server_fingerprint.clone();
 
                         thread::spawn(move || {
                             let url_string = request.url().to_string();
@@ -289,6 +427,7 @@ impl RemoteServerManager {
                                                     requires_approval: false,
                                                     session_token: None,
                                                     message: "Invalid pairing PIN".to_string(),
+                                                    tls_fingerprint: server_fingerprint.clone(),
                                                 };
                                                 let json = serde_json::to_string(&err_resp).unwrap_or_default();
                                                 let resp = Response::from_string(json)
@@ -328,6 +467,7 @@ impl RemoteServerManager {
                                                     requires_approval: true,
                                                     session_token: Some(token),
                                                     message: "Pairing request sent. Waiting for desktop operator approval.".to_string(),
+                                                    tls_fingerprint: server_fingerprint.clone(),
                                                 };
                                                 let json = serde_json::to_string(&ok_resp).unwrap_or_default();
                                                 let resp = Response::from_string(json)
@@ -1492,5 +1632,34 @@ mod tests {
         assert_eq!(parsed.replace("\\u003c", "<"), "\";alert(1);//</script><img src=x onerror=alert(2)>");
         // a normal token still works
         assert!(RemoteServerManager::get_overlay_html("abc123").contains("const token = \"abc123\";"));
+    }
+
+    #[test]
+    fn test_tls_fingerprint_generation_and_formatting() {
+        let dummy_der = b"CHURCH_PRESENTER_SELF_SIGNED_TEST_DER_BYTES";
+        let fp = compute_sha256_fingerprint(dummy_der);
+        // Fingerprint format: 32 hex bytes separated by colons => length 32 * 3 - 1 = 95 characters
+        assert_eq!(fp.len(), 95);
+        assert!(fp.chars().all(|c| c.is_ascii_hexdigit() || c == ':'));
+        assert_eq!(fp.matches(':').count(), 31);
+    }
+
+    #[test]
+    fn test_ensure_tls_credentials_roundtrip() {
+        let temp_dir = std::env::temp_dir().join(format!("cp-tls-test-{}", uuid::Uuid::new_v4()));
+        let res = ensure_tls_credentials(&temp_dir);
+        assert!(res.is_ok(), "Failed to generate TLS cert: {:?}", res.err());
+        let (cert, key, fp) = res.unwrap();
+        assert!(!cert.is_empty());
+        assert!(!key.is_empty());
+        assert_eq!(fp.len(), 95);
+
+        // Second call should reuse the same credentials and fingerprint
+        let (cert2, key2, fp2) = ensure_tls_credentials(&temp_dir).unwrap();
+        assert_eq!(cert, cert2);
+        assert_eq!(key, key2);
+        assert_eq!(fp, fp2);
+
+        std::fs::remove_dir_all(&temp_dir).ok();
     }
 }

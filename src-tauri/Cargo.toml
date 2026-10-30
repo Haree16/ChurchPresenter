@@ -24,8 +24,9 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2.0"
 midir = "0.10"
 rosc = "0.10"
-tiny_http = "0.12"
+tiny_http = { version = "0.12", features = ["ssl-rustls"] }
 base64 = "0.22"
+sha2 = "0.10"
 zip = { version = "9.1.3", default-features = false, features = ["deflate"] }
 quick-xml = "0.42"
 ureq = { version = "2.10", features = ["json", "tls"] }

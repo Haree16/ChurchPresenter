@@ -1806,6 +1806,22 @@ pub async fn delete_remote_device(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn get_remote_tls_enabled(
+    db: State<'_, DbManager>,
+) -> Result<bool, String> {
+    db.get_remote_tls_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_remote_tls_enabled(
+    enabled: bool,
+    db: State<'_, DbManager>,
+) -> Result<bool, String> {
+    db.set_remote_tls_enabled(enabled).map_err(|e| e.to_string())?;
+    Ok(enabled)
+}
+
 // ================= Phase 5: MIDI Integration =================
 
 #[tauri::command]
