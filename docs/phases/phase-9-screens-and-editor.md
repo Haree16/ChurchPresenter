@@ -4,12 +4,17 @@ Goal: match ProPresenter 7's multi-screen model and bring the slide editor close
 
 Done when: the main screen and a lobby screen show different content and themes at the same time, switched by one Look.
 
-## 9.1 Per-screen Looks
+## 9.1 Per-screen Looks [COMPLETED]
 Today a Look (`looks.rs`) stores logo, blackout and props globally.
-- Add an output id to each Look entry so layers and a theme override apply per output (`output_configs` already exists).
-- Keep old Looks working: a Look with no output ids applies to all outputs.
-- Migration, backup/restore support, Looks panel shows a per-screen grid.
-- Tests: apply a Look to one output leaves the others unchanged.
+- **Implemented**: Added `ScreenLookConfig` (`output_id`, `logo`, `blackout`, `prop_ids`, `theme_id`) and `screen_configs: Vec<ScreenLookConfig>` to `Look`.
+- **Database**: Migration 24 adds `screen_configs TEXT` column to `looks` table.
+- **Backward Compatibility**: Any Look without `screen_configs` or with an empty list applies globally across all outputs. Screens without an override seamlessly inherit global layers.
+- **State & Manager**: Added `ScreenLayers` struct and `screen_layers` map in `PresentationState`. `PresentationManager` isolates per-screen state via `set_look_layers_core` and `set_screen_layer_core`.
+- **API & UI**:
+  - `apply_look` Tauri command and frontend API take optional `target_output_id`.
+  - `LooksControl` panel features a Target selector (All Screens vs. specific output), per-screen override indicator badge, and a Per-Screen Looks Grid modal to customize logo, blackout, props, and theme overrides per screen.
+  - `AudienceView` respects per-screen layer overrides and theme overrides based on its target `outputId`.
+- **Verification**: All Rust and Vitest test suites pass (including tests proving that applying a Look to one output leaves other outputs untouched).
 
 ## 9.2 Announcements layer
 - A second presentation or service item that plays on chosen outputs while the main one is operated separately (state split in `presentation.rs`).

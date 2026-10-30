@@ -4,13 +4,17 @@ import { AlertBanner } from './AlertBanner';
 import { PropsLayer } from './PropsLayer';
 import { SlideElements } from './SlideElements';
 import { composeTextShadow, layoutPadding } from '../services/slideLayout';
-import { PresentationState } from '../types';
+import { PresentationState, Theme } from '../types';
 import { api } from '../services/api';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { goToSlideNumber } from '../services/slideJump';
 import { mediaService, getMediaTypeFromExtension } from '../services/mediaService';
 
-export const AudienceView: React.FC = () => {
+interface AudienceViewProps {
+  outputId?: string;
+}
+
+export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
   const [presentationState, setPresentationState] = useState<PresentationState>({
     currentPresentationId: null,
     currentSlideId: null,
@@ -79,7 +83,31 @@ export const AudienceView: React.FC = () => {
     };
   }, []);
 
-  const { isLive, isBlackout, isLogo, currentSlide, mediaPlayback } = presentationState;
+  const effectiveOutputId =
+    outputId ||
+    (typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('outputId') ||
+        new URLSearchParams(window.location.search).get('output') ||
+        'output-audience'
+      : 'output-audience');
+
+  const screenLayer = presentationState.screenLayers?.[effectiveOutputId];
+  const isLogo = screenLayer ? screenLayer.isLogo : !!presentationState.isLogo;
+  const isBlackout = screenLayer ? screenLayer.isBlackout : !!presentationState.isBlackout;
+  const activeProps = screenLayer ? screenLayer.activeProps : (presentationState.activeProps || []);
+  const screenThemeId = screenLayer?.themeId;
+
+  const [overrideTheme, setOverrideTheme] = useState<Theme | null>(null);
+
+  useEffect(() => {
+    if (screenThemeId) {
+      api.getTheme(screenThemeId).then(setOverrideTheme).catch(() => setOverrideTheme(null));
+    } else {
+      setOverrideTheme(null);
+    }
+  }, [screenThemeId]);
+
+  const { isLive, currentSlide, mediaPlayback } = presentationState;
   // re-read the custom logo each time the logo screen is shown
   const logoUrl = useLogoUrl(!!isLogo);
   // props and alerts show over every kind of output (slide, logo, blackout, video)
@@ -87,7 +115,7 @@ export const AudienceView: React.FC = () => {
     <>
       {node}
       {/* blackout hides props; alerts still show */}
-      {!presentationState.isBlackout && <PropsLayer props={presentationState.activeProps} />}
+      {!isBlackout && <PropsLayer props={activeProps} />}
       <AlertBanner alert={presentationState.alert} />
     </>
   );
@@ -307,13 +335,13 @@ export const AudienceView: React.FC = () => {
       style={{
         width: '100vw',
         height: '100vh',
-        backgroundColor: currentSlide.backgroundColor || '#0a0f1d',
+        backgroundColor: overrideTheme?.backgroundColor || currentSlide.backgroundColor || '#0a0f1d',
         backgroundImage: isImageBackground
           ? `url("${mediaService.resolveMediaUrl(currentSlide.backgroundImage)}")`
           : undefined,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
-        color: currentSlide.foregroundColor || '#ffffff',
+        color: overrideTheme?.textColor || currentSlide.foregroundColor || '#ffffff',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: justifyContent,

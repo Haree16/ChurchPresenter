@@ -1503,6 +1503,17 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 24: per-screen looks (output target layers & theme overrides) =================
+        if current_version < 24 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute("ALTER TABLE looks ADD COLUMN screen_configs TEXT;", [])?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (24, ?1);",
+                params![Utc::now().to_rfc3339()],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -5655,8 +5666,8 @@ impl DbManager {
         // Restore looks
         for lk in &backup.looks {
             tx.execute(
-                "INSERT OR IGNORE INTO looks (id, name, logo, blackout, prop_ids, sort_order, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);",
+                "INSERT OR IGNORE INTO looks (id, name, logo, blackout, prop_ids, sort_order, created_at, updated_at, screen_configs)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9);",
                 params![
                     lk.id,
                     lk.name,
@@ -5665,7 +5676,8 @@ impl DbManager {
                     serde_json::to_string(&lk.prop_ids).unwrap_or_else(|_| "[]".to_string()),
                     lk.sort_order,
                     lk.created_at,
-                    lk.updated_at
+                    lk.updated_at,
+                    serde_json::to_string(&lk.screen_configs).unwrap_or_else(|_| "[]".to_string()),
                 ],
             )?;
         }

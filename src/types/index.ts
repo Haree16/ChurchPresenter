@@ -186,6 +186,15 @@ export interface KeyBinding {
   updatedAt?: string;
 }
 
+/** Configuration of layers and theme override for a specific target screen output. */
+export interface ScreenLookConfig {
+  outputId: string;
+  logo: boolean;
+  blackout: boolean;
+  propIds: string[];
+  themeId?: string | null;
+}
+
 /** A saved arrangement of the output layers: logo, blackout and which props are showing. */
 export interface Look {
   id: string;
@@ -194,6 +203,8 @@ export interface Look {
   blackout: boolean;
   /** Props to show, in drawing order. */
   propIds: string[];
+  /** Optional per-screen overrides. If empty, the global logo/blackout/propIds apply to all outputs. */
+  screenConfigs?: ScreenLookConfig[];
   sortOrder?: number;
   createdAt?: string;
   updatedAt?: string;
@@ -217,6 +228,13 @@ export interface AudienceAlert {
   expiresAtMs?: number | null;
 }
 
+export interface ScreenLayers {
+  isLogo: boolean;
+  isBlackout: boolean;
+  activeProps: Prop[];
+  themeId?: string | null;
+}
+
 export interface PresentationState {
   currentPresentationId: string | null;
   currentSlideId: string | null;
@@ -226,6 +244,7 @@ export interface PresentationState {
   nextSlide: Slide | null;
   isBlackout: boolean;
   isLogo?: boolean;
+  screenLayers?: Record<string, ScreenLayers>;
   alert?: AudienceAlert | null;
   activeProps?: Prop[];
   autoAdvance?: AutoAdvanceStatus | null;

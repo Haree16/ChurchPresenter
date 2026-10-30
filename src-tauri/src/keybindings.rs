@@ -278,6 +278,7 @@ mod tests {
     fn make_look(db: &DbManager) -> crate::looks::Look {
         db.create_look(&crate::looks::Look {
             id: String::new(), name: "L".into(), logo: false, blackout: false, prop_ids: vec![],
+            screen_configs: vec![],
             sort_order: 0, created_at: String::new(), updated_at: String::new(),
         })
         .unwrap()

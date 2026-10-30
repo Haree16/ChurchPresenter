@@ -216,3 +216,218 @@ describe('look steps in macros', () => {
     expect(await api.listMacros()).toHaveLength(0);
   });
 });
+
+describe('Phase 9.1: per-screen looks', () => {
+  it('validates screen configs for empty outputs, duplicate outputs and props rules', () => {
+    expect(
+      validateLook(
+        look({
+          screenConfigs: [
+            { outputId: 'out-1', logo: true, blackout: false, propIds: [] },
+            { outputId: 'out-2', logo: false, blackout: true, propIds: [] },
+          ],
+        })
+      )
+    ).toBeNull();
+
+    // blank output
+    expect(
+      validateLook(
+        look({
+          screenConfigs: [{ outputId: '  ', logo: true, blackout: false, propIds: [] }],
+        })
+      )
+    ).toMatch(/missing an output target/);
+
+    // duplicate output target
+    expect(
+      validateLook(
+        look({
+          screenConfigs: [
+            { outputId: 'screen-1', logo: true, blackout: false, propIds: [] },
+            { outputId: 'screen-1', logo: false, blackout: false, propIds: [] },
+          ],
+        })
+      )
+    ).toMatch(/more than once/);
+
+    // blank prop in screen config
+    expect(
+      validateLook(
+        look({
+          screenConfigs: [{ outputId: 'screen-1', logo: true, blackout: false, propIds: ['valid', ' '] }],
+        })
+      )
+    ).toMatch(/blank prop/);
+
+    // duplicate prop in screen config
+    expect(
+      validateLook(
+        look({
+          screenConfigs: [{ outputId: 'screen-1', logo: true, blackout: false, propIds: ['p1', 'p1'] }],
+        })
+      )
+    ).toMatch(/same prop twice/);
+
+    // max props in screen config
+    const manyProps = Array.from({ length: MAX_LOOK_PROPS + 1 }, (_, i) => `p${i}`);
+    expect(
+      validateLook(
+        look({
+          screenConfigs: [{ outputId: 'screen-1', logo: true, blackout: false, propIds: manyProps }],
+        })
+      )
+    ).toMatch(/at most/);
+  });
+
+  it('lookMatches supports per-screen matching and targetOutputId', () => {
+    const l = look({
+      logo: false,
+      blackout: false,
+      propIds: [],
+      screenConfigs: [
+        { outputId: 'out-audience', logo: true, blackout: false, propIds: [] },
+        { outputId: 'out-stage', logo: false, blackout: true, propIds: [] },
+      ],
+    });
+
+    const stateWithScreens: Pick<PresentationState, 'isLogo' | 'isBlackout' | 'activeProps' | 'screenLayers'> = {
+      isLogo: false,
+      isBlackout: false,
+      activeProps: [],
+      screenLayers: {
+        'out-audience': { isLogo: true, isBlackout: false, activeProps: [] },
+        'out-stage': { isLogo: false, isBlackout: true, activeProps: [] },
+      },
+    };
+
+    expect(lookMatches(l, stateWithScreens)).toBe(true);
+
+    // Match a specific target output
+    expect(lookMatches(l, stateWithScreens, 'out-audience')).toBe(true);
+    expect(lookMatches(l, stateWithScreens, 'out-stage')).toBe(true);
+
+    // Mismatched screen
+    const mismatchState = {
+      ...stateWithScreens,
+      screenLayers: {
+        'out-audience': { isLogo: false, isBlackout: false, activeProps: [] },
+        'out-stage': { isLogo: false, isBlackout: true, activeProps: [] },
+      },
+    };
+    expect(lookMatches(l, mismatchState)).toBe(false);
+    expect(lookMatches(l, mismatchState, 'out-audience')).toBe(false);
+    expect(lookMatches(l, mismatchState, 'out-stage')).toBe(true);
+  });
+
+  it('applying look to a specific output target isolates that output without changing others', async () => {
+    const p1 = await api.createProp(textProp('Prop 1'));
+    const savedLook = await api.createLook(
+      look({
+        name: 'Mixed Look',
+        logo: false,
+        blackout: false,
+        propIds: [],
+        screenConfigs: [
+          { outputId: 'output-stage', logo: false, blackout: true, propIds: [] },
+          { outputId: 'output-audience', logo: true, blackout: false, propIds: [p1.id] },
+        ],
+      })
+    );
+
+    // Initial state: global layers clean
+    await api.clearAll();
+
+    // Apply look to stage output only
+    const state = await api.applyLook(savedLook.id, 'output-stage');
+    expect(state.screenLayers).toBeDefined();
+    expect(state.screenLayers?.['output-stage']).toEqual({
+      isLogo: false,
+      isBlackout: true,
+      activeProps: [],
+      themeId: null,
+    });
+    // Global state and audience screen remain untouched
+    expect(state.isLogo).toBe(false);
+    expect(state.isBlackout).toBe(false);
+    expect(state.screenLayers?.['output-audience']).toBeUndefined();
+
+    // Apply look to audience output
+    const state2 = await api.applyLook(savedLook.id, 'output-audience');
+    expect(state2.screenLayers?.['output-audience']?.isLogo).toBe(true);
+    expect(state2.screenLayers?.['output-audience']?.activeProps[0]?.id).toBe(p1.id);
+    // Stage still has its previous state
+    expect(state2.screenLayers?.['output-stage']?.isBlackout).toBe(true);
+  });
+
+  it('applying look globally applies all per-screen configs to their respective outputs', async () => {
+    const savedLook = await api.createLook(
+      look({
+        name: 'Global Multi-Screen',
+        logo: true,
+        blackout: false,
+        propIds: [],
+        screenConfigs: [
+          { outputId: 'output-stage', logo: false, blackout: true, propIds: [] },
+          { outputId: 'output-audience', logo: false, blackout: false, propIds: [] },
+        ],
+      })
+    );
+
+    const state = await api.applyLook(savedLook.id);
+    // Global defaults
+    expect(state.isLogo).toBe(true);
+    expect(state.isBlackout).toBe(false);
+
+    // Per-screen overrides
+    expect(state.screenLayers?.['output-stage']?.isBlackout).toBe(true);
+    expect(state.screenLayers?.['output-stage']?.isLogo).toBe(false);
+    expect(state.screenLayers?.['output-audience']?.isBlackout).toBe(false);
+    expect(state.screenLayers?.['output-audience']?.isLogo).toBe(false);
+  });
+
+  it('LooksControl UI allows configuring per-screen overrides and applying to specific screen targets', async () => {
+    const savedLook = await api.createLook(look({ name: 'Sunday Service', logo: false }));
+    const spy = vi.spyOn(api, 'applyLook');
+
+    render(<LooksControl presentationState={idle} />);
+    await waitFor(() => expect(screen.getByTestId('look-apply')).toBeTruthy());
+
+    // Test Target selector
+    const targetSelect = screen.getByTestId('look-target-screen') as HTMLSelectElement;
+    expect(targetSelect).toBeTruthy();
+    fireEvent.change(targetSelect, { target: { value: 'output-stage' } });
+
+    // Click apply -> calls applyLook with 'output-stage'
+    fireEvent.click(screen.getByTestId('look-apply'));
+    expect(spy).toHaveBeenCalledWith(savedLook.id, 'output-stage');
+
+    // Click Configure Per-Screen (Edit)
+    fireEvent.click(screen.getByTestId('look-edit'));
+    expect(await screen.findByTestId('look-modal')).toBeTruthy();
+    expect(screen.getByText(/Configure Look: Sunday Service/)).toBeTruthy();
+
+    // Toggle override for output-stage
+    const overrideToggle = screen.getByTestId('look-screen-override-output-stage');
+    fireEvent.click(overrideToggle);
+
+    // Check blackout for output-stage
+    const blackoutCheckbox = await screen.findByTestId('look-screen-blackout-output-stage');
+    fireEvent.click(blackoutCheckbox);
+
+    // Apply to screen directly from modal
+    const screenApplyBtn = screen.getByTestId('look-screen-apply-output-stage');
+    fireEvent.click(screenApplyBtn);
+    expect(spy).toHaveBeenCalledWith(savedLook.id, 'output-stage');
+
+    // Save Changes in modal
+    fireEvent.click(screen.getByTestId('look-modal-save'));
+    await waitFor(() => expect(screen.queryByTestId('look-modal')).toBeNull());
+
+    // Verify look updated in backend/mock
+    const updated = (await api.listLooks()).find((l) => l.id === savedLook.id);
+    expect(updated?.screenConfigs?.find((c) => c.outputId === 'output-stage')?.blackout).toBe(true);
+
+    spy.mockRestore();
+  });
+});

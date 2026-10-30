@@ -126,6 +126,22 @@ pub struct PresentationState {
     pub auto_advance: Option<AutoAdvanceStatus>,
     #[serde(default)]
     pub running_macro: Option<RunningMacro>,
+    /// Per-output layer overrides (logo, blackout, props, theme). If an output isn't listed, it uses global layers.
+    #[serde(default)]
+    pub screen_layers: std::collections::HashMap<String, ScreenLayers>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenLayers {
+    #[serde(default)]
+    pub is_logo: bool,
+    #[serde(default)]
+    pub is_blackout: bool,
+    #[serde(default)]
+    pub active_props: Vec<crate::props::Prop>,
+    #[serde(default)]
+    pub theme_id: Option<String>,
 }
 
 impl Default for PresentationState {
@@ -151,6 +167,7 @@ impl Default for PresentationState {
             active_props: Vec::new(),
             auto_advance: None,
             running_macro: None,
+            screen_layers: std::collections::HashMap::new(),
         }
     }
 }

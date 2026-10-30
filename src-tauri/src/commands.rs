@@ -606,6 +606,7 @@ pub async fn delete_look(id: String, db: State<'_, DbManager>) -> Result<(), Str
 #[tauri::command]
 pub async fn apply_look(
     id: String,
+    target_output_id: Option<String>,
     db: State<'_, DbManager>,
     pres_mgr: State<'_, PresentationManager>,
     app: AppHandle,
@@ -614,7 +615,13 @@ pub async fn apply_look(
         .get_look(&id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "That look no longer exists.".to_string())?;
-    let state = pres_mgr.apply_look_core(&db, &look);
+
+    let state = if let Some(ref out_id) = target_output_id {
+        pres_mgr.apply_look_to_screen_core(&db, &look, out_id)
+    } else {
+        pres_mgr.apply_look_core(&db, &look)
+    };
+
     app.emit("presentation:state-changed", &state).ok();
     Ok(state)
 }

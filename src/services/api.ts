@@ -1793,27 +1793,77 @@ class MockDataStore {
   }
 
   /** Sets the logo, blackout and props to match the look; the live slide is not changed. */
-  public async applyLook(id: string): Promise<PresentationState> {
+  public async applyLook(id: string, targetOutputId?: string): Promise<PresentationState> {
     const look = this.looks.find((l) => l.id === id);
     if (!look) throw new Error('That look no longer exists.');
+
+    const resolveProps = (ids: string[]) =>
+      ids
+        .map((pid) => this.props.find((p) => p.id === pid))
+        .filter((p): p is Prop => !!p)
+        .map((p) => ({ ...p }));
+
+    if (targetOutputId) {
+      const sc = look.screenConfigs?.find((c) => c.outputId === targetOutputId);
+      const logo = sc ? sc.logo : look.logo;
+      const blackout = sc ? sc.blackout : look.blackout;
+      const propIds = sc ? sc.propIds : look.propIds;
+      const themeId = sc?.themeId ?? null;
+
+      if (!this.state.screenLayers) {
+        this.state.screenLayers = {};
+      }
+      this.state.screenLayers[targetOutputId] = {
+        isLogo: logo,
+        isBlackout: blackout,
+        activeProps: resolveProps(propIds),
+        themeId,
+      };
+      this.notify();
+      return this.state;
+    }
+
     this.state.isLogo = look.logo;
     this.state.isBlackout = look.blackout;
-    this.state.activeProps = look.propIds
-      .map((pid) => this.props.find((p) => p.id === pid))
-      .filter((p): p is Prop => !!p)
-      .map((p) => ({ ...p }));
+    this.state.activeProps = resolveProps(look.propIds);
+
+    if (look.screenConfigs && look.screenConfigs.length > 0) {
+      if (!this.state.screenLayers) {
+        this.state.screenLayers = {};
+      }
+      for (const sc of look.screenConfigs) {
+        this.state.screenLayers[sc.outputId] = {
+          isLogo: sc.logo,
+          isBlackout: sc.blackout,
+          activeProps: resolveProps(sc.propIds),
+          themeId: sc.themeId ?? null,
+        };
+      }
+    }
+
     this.notify();
     return this.state;
   }
 
   /** Saves the screen as it is now as a new look. */
   public async captureLook(name: string): Promise<Look> {
+    const screenConfigs = this.state.screenLayers
+      ? Object.entries(this.state.screenLayers).map(([outputId, layers]) => ({
+          outputId,
+          logo: layers.isLogo,
+          blackout: layers.isBlackout,
+          propIds: layers.activeProps.map((p) => p.id),
+          themeId: layers.themeId,
+        }))
+      : [];
+
     return this.createLook({
       id: '',
       name,
       logo: !!this.state.isLogo,
       blackout: !!this.state.isBlackout,
       propIds: (this.state.activeProps || []).map((p) => p.id),
+      screenConfigs,
     });
   }
 
@@ -4763,11 +4813,15 @@ export const api = {
   },
 
   /** Sets the logo, blackout and props to match a saved look. The live slide is not changed. */
-  applyLook: async (id: string): Promise<PresentationState> => {
+  applyLook: async (id: string, targetOutputId?: string): Promise<PresentationState> => {
     if (isTauri()) {
-      return await invoke<PresentationState>('apply_look', { id });
+      return await invoke<PresentationState>('apply_look', {
+        id,
+        targetOutputId: targetOutputId ?? null,
+        target_output_id: targetOutputId ?? null,
+      });
     }
-    return mockStore.applyLook(id);
+    return mockStore.applyLook(id, targetOutputId);
   },
 
   /** Saves the screen as it is now (logo, blackout, props) as a new look. */

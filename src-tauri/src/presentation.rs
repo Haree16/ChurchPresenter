@@ -361,12 +361,48 @@ impl PresentationManager {
         (outcome, state.clone())
     }
 
-    /// Sets the logo, blackout and visible props together (used by Looks).
-    pub fn set_layers_core(&self, logo: bool, blackout: bool, props: Vec<crate::props::Prop>) -> PresentationState {
+    /// Sets global layers as well as per-screen layers (used by Per-Screen Looks).
+    pub fn set_look_layers_core(
+        &self,
+        logo: bool,
+        blackout: bool,
+        props: Vec<crate::props::Prop>,
+        screen_layers: std::collections::HashMap<String, crate::models::ScreenLayers>,
+    ) -> PresentationState {
         let mut state = self.state.lock().unwrap();
         state.is_logo = logo;
         state.is_blackout = blackout;
         state.active_props = props;
+        state.screen_layers = screen_layers;
+        state.clone()
+    }
+
+    /// Applies layers specifically to a single target screen output, preserving other screens.
+    pub fn set_screen_layer_core(
+        &self,
+        target_output_id: &str,
+        logo: bool,
+        blackout: bool,
+        props: Vec<crate::props::Prop>,
+        theme_id: Option<String>,
+    ) -> PresentationState {
+        let mut state = self.state.lock().unwrap();
+        state.screen_layers.insert(
+            target_output_id.to_string(),
+            crate::models::ScreenLayers {
+                is_logo: logo,
+                is_blackout: blackout,
+                active_props: props.clone(),
+                theme_id,
+            },
+        );
+
+        if target_output_id == "output-audience" {
+            state.is_logo = logo;
+            state.is_blackout = blackout;
+            state.active_props = props;
+        }
+
         state.clone()
     }
 

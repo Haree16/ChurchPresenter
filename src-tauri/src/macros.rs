@@ -739,6 +739,7 @@ mod tests {
         let (db, pres) = setup();
         let saved = db.create_look(&crate::looks::Look {
             id: String::new(), name: "Pre".into(), logo: true, blackout: false, prop_ids: vec![],
+            screen_configs: vec![],
             sort_order: 0, created_at: String::new(), updated_at: String::new(),
         }).unwrap();
         let step = MacroStep::Look { look_id: saved.id.clone() };
