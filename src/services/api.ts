@@ -3035,6 +3035,16 @@ class MockDataStore {
     this.mediaAssets = this.mediaAssets.filter((m) => m.id !== id);
   }
 
+  public async updateMediaAsset(asset: MediaAsset): Promise<MediaAsset> {
+    const idx = this.mediaAssets.findIndex((m) => m.id === asset.id);
+    if (idx === -1) {
+      this.mediaAssets.push(asset);
+      return { ...asset };
+    }
+    this.mediaAssets[idx] = { ...this.mediaAssets[idx], ...asset };
+    return { ...this.mediaAssets[idx] };
+  }
+
   // ================= Phase 2: Slide Generation & Interchange =================
 
   public async generateSlidesFromSong(
@@ -5750,6 +5760,23 @@ export const api = {
       return await invoke<void>('delete_media_asset', { id });
     }
     return mockStore.deleteMediaAsset(id);
+  },
+
+  updateMediaAsset: async (asset: MediaAsset): Promise<MediaAsset> => {
+    if (isTauri()) {
+      return await invoke<MediaAsset>('update_media_asset', { asset });
+    }
+    return mockStore.updateMediaAsset(asset);
+  },
+
+  onMediaAssetUpdated: async (callback: (asset: MediaAsset) => void): Promise<() => void> => {
+    if (isTauri()) {
+      const unlisten: UnlistenFn = await listen<MediaAsset>('media:asset-updated', (event) => callback(event.payload));
+      return () => {
+        unlisten();
+      };
+    }
+    return () => {};
   },
 
   // ================= Phase 2: Slide Generation & Interchange =================

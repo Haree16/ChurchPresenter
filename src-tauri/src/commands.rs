@@ -1127,6 +1127,7 @@ pub async fn import_media_asset(
         height: None,
         thumbnail_path: None,
         created_at: Utc::now().to_rfc3339(),
+        ..Default::default()
     };
 
     db.create_media_asset(&asset).map_err(|e| e.to_string())
@@ -1151,6 +1152,17 @@ pub async fn check_media_asset_usage(
 #[tauri::command]
 pub async fn delete_media_asset(id: String, db: State<'_, DbManager>) -> Result<(), String> {
     db.delete_media_asset(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_media_asset(
+    asset: MediaAsset,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<MediaAsset, String> {
+    let updated = db.update_media_asset(&asset).map_err(|e| e.to_string())?;
+    app.emit("media:asset-updated", &updated).ok();
+    Ok(updated)
 }
 
 // ================= Phase 2: Slide Generation & Song Import/Export =================

@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useLogoUrl } from '../hooks/useLogoUrl';
 import { AlertBanner } from './AlertBanner';
 import { PropsLayer } from './PropsLayer';
 import { SlideElements } from './SlideElements';
 import { composeTextShadow, layoutPadding } from '../services/slideLayout';
-import { PresentationState, Theme } from '../types';
+import { PresentationState, Theme, MediaAsset } from '../types';
 import { api } from '../services/api';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { goToSlideNumber } from '../services/slideJump';
@@ -33,6 +33,42 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
   const prevSlideIdRef = useRef<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
+
+  // Phase 10.3: Load media asset inspector metadata (crop, rotation, volume, trim, loop)
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const loadAssets = async () => {
+      try {
+        const list = await api.listMediaAssets();
+        setMediaAssets(list);
+      } catch (e) {
+        // Fallback in case not supported in current environment
+      }
+    };
+    void loadAssets();
+
+    api
+      .onMediaAssetUpdated((updated: MediaAsset) => {
+        setMediaAssets((prev) => {
+          const idx = prev.findIndex((m) => m.id === updated.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = updated;
+            return next;
+          }
+          return [updated, ...prev];
+        });
+      })
+      .then((unsub) => {
+        unlisten = unsub;
+      })
+      .catch(() => {});
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   // Keys pressed while the output window has focus control the presentation, as in the
   // operator window: arrows/space step, a typed number plus Enter jumps to that slide.
@@ -201,6 +237,59 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
     (!currentSlide || !currentSlide.body.trim()) &&
     mediaPlayback.mediaUrl;
 
+  // Resolve active media asset settings (crop, rotation, volume, trim, loop)
+  const activeMediaAsset = useMemo(() => {
+    const rawTarget = currentSlide?.backgroundImage || mediaPlayback?.mediaUrl;
+    if (!rawTarget) return null;
+    return (
+      mediaAssets.find((a) => {
+        if (rawTarget.includes(a.id)) return true;
+        if (rawTarget.includes(a.filename)) return true;
+        if (rawTarget.includes(a.relativePath)) return true;
+        return false;
+      }) || null
+    );
+  }, [mediaAssets, currentSlide?.backgroundImage, mediaPlayback?.mediaUrl]);
+
+  // Video timeupdate boundary enforcement (trimIn, trimOut)
+  const handleVideoTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    if (!activeMediaAsset) return;
+    const v = e.currentTarget;
+    const trimIn = activeMediaAsset.trimIn ?? 0;
+    const trimOut = activeMediaAsset.trimOut;
+
+    if (trimOut !== null && trimOut !== undefined && v.currentTime >= trimOut) {
+      if (activeMediaAsset.isLooping !== false) {
+        v.currentTime = trimIn;
+      } else {
+        v.pause();
+      }
+    } else if (v.currentTime < trimIn) {
+      v.currentTime = trimIn;
+    }
+  };
+
+  const handleVideoLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    if (!activeMediaAsset) return;
+    const v = e.currentTarget;
+    if (activeMediaAsset.trimIn && activeMediaAsset.trimIn > 0) {
+      v.currentTime = activeMediaAsset.trimIn;
+    }
+  };
+
+  const mediaCropStyle: React.CSSProperties = activeMediaAsset
+    ? {
+        clipPath:
+          activeMediaAsset.cropTop ||
+          activeMediaAsset.cropRight ||
+          activeMediaAsset.cropBottom ||
+          activeMediaAsset.cropLeft
+            ? `inset(${activeMediaAsset.cropTop ?? 0}% ${activeMediaAsset.cropRight ?? 0}% ${activeMediaAsset.cropBottom ?? 0}% ${activeMediaAsset.cropLeft ?? 0}%)`
+            : undefined,
+        transform: activeMediaAsset.rotation ? `rotate(${activeMediaAsset.rotation}deg)` : undefined,
+      }
+    : {};
+
   // Clear-to-logo: church logo on black, unless blackout takes priority
   if (isLogo && !isBlackout) {
     return withAlert(
@@ -269,13 +358,16 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
           ref={videoRef}
           src={mediaPlayback.mediaUrl || ''}
           autoPlay={mediaPlayback.isPlaying}
-          loop={mediaPlayback.isLooping}
+          loop={activeMediaAsset ? activeMediaAsset.isLooping !== false : mediaPlayback.isLooping}
           muted={mediaPlayback.isMuted}
           playsInline
+          onTimeUpdate={handleVideoTimeUpdate}
+          onLoadedMetadata={handleVideoLoadedMetadata}
           style={{
             width: '100%',
             height: '100%',
             objectFit,
+            ...mediaCropStyle,
           }}
           onError={() => {
             api.logClientDiagnostic(
@@ -390,9 +482,11 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
           data-testid="audience-motion-background"
           src={motionVideoUrl}
           autoPlay
-          loop
+          loop={activeMediaAsset ? activeMediaAsset.isLooping !== false : true}
           muted={mediaPlayback ? mediaPlayback.isMuted : true}
           playsInline
+          onTimeUpdate={handleVideoTimeUpdate}
+          onLoadedMetadata={handleVideoLoadedMetadata}
           style={{
             position: 'absolute',
             inset: 0,
@@ -401,6 +495,7 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
             objectFit: 'cover',
             zIndex: 0,
             pointerEvents: 'none',
+            ...mediaCropStyle,
           }}
           onError={() => {
             setBgFailed(true);

@@ -272,6 +272,7 @@ pub fn run() {
             commands::set_custom_logo,
             commands::clear_custom_logo,
             commands::delete_media_asset,
+            commands::update_media_asset,
             // Phase 2: Slide Generation & Interchange
             commands::generate_slides_from_song,
             commands::export_song,

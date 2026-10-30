@@ -1578,6 +1578,54 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 28: Media Inspector per-media settings =================
+        if current_version < 28 {
+            let tx = conn.unchecked_transaction()?;
+            let existing_cols: Vec<String> = {
+                let mut pragma = tx.prepare("PRAGMA table_info(media_assets);")?;
+                let cols: Vec<String> = pragma
+                    .query_map([], |r| r.get(1))?
+                    .filter_map(|res| res.ok())
+                    .collect();
+                cols
+            };
+
+            if !existing_cols.contains(&"crop_top".to_string()) {
+                tx.execute("ALTER TABLE media_assets ADD COLUMN crop_top REAL NOT NULL DEFAULT 0.0;", [])?;
+            }
+            if !existing_cols.contains(&"crop_bottom".to_string()) {
+                tx.execute("ALTER TABLE media_assets ADD COLUMN crop_bottom REAL NOT NULL DEFAULT 0.0;", [])?;
+            }
+            if !existing_cols.contains(&"crop_left".to_string()) {
+                tx.execute("ALTER TABLE media_assets ADD COLUMN crop_left REAL NOT NULL DEFAULT 0.0;", [])?;
+            }
+            if !existing_cols.contains(&"crop_right".to_string()) {
+                tx.execute("ALTER TABLE media_assets ADD COLUMN crop_right REAL NOT NULL DEFAULT 0.0;", [])?;
+            }
+            if !existing_cols.contains(&"rotation".to_string()) {
+                tx.execute("ALTER TABLE media_assets ADD COLUMN rotation INTEGER NOT NULL DEFAULT 0;", [])?;
+            }
+            if !existing_cols.contains(&"volume".to_string()) {
+                tx.execute("ALTER TABLE media_assets ADD COLUMN volume REAL NOT NULL DEFAULT 1.0;", [])?;
+            }
+            if !existing_cols.contains(&"trim_in".to_string()) {
+                tx.execute("ALTER TABLE media_assets ADD COLUMN trim_in REAL NOT NULL DEFAULT 0.0;", [])?;
+            }
+            if !existing_cols.contains(&"trim_out".to_string()) {
+                tx.execute("ALTER TABLE media_assets ADD COLUMN trim_out REAL;", [])?;
+            }
+            if !existing_cols.contains(&"is_looping".to_string()) {
+                tx.execute("ALTER TABLE media_assets ADD COLUMN is_looping INTEGER NOT NULL DEFAULT 1;", [])?;
+            }
+
+            let now = Utc::now().to_rfc3339();
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (28, ?1);",
+                params![now],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -2971,7 +3019,9 @@ impl DbManager {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, filename, original_filename, relative_path, mime_type, file_size, created_at,
-                    COALESCE(media_type, 'image'), duration_seconds, width, height, thumbnail_path
+                    COALESCE(media_type, 'image'), duration_seconds, width, height, thumbnail_path,
+                    COALESCE(crop_top, 0.0), COALESCE(crop_bottom, 0.0), COALESCE(crop_left, 0.0), COALESCE(crop_right, 0.0),
+                    COALESCE(rotation, 0), COALESCE(volume, 1.0), COALESCE(trim_in, 0.0), trim_out, COALESCE(is_looping, 1)
              FROM media_assets
              ORDER BY created_at DESC;",
         )?;
@@ -2990,6 +3040,15 @@ impl DbManager {
                 width: row.get(9)?,
                 height: row.get(10)?,
                 thumbnail_path: row.get(11)?,
+                crop_top: row.get(12)?,
+                crop_bottom: row.get(13)?,
+                crop_left: row.get(14)?,
+                crop_right: row.get(15)?,
+                rotation: row.get(16)?,
+                volume: row.get(17)?,
+                trim_in: row.get(18)?,
+                trim_out: row.get(19)?,
+                is_looping: row.get::<_, i64>(20)? != 0,
             })
         })?;
 
@@ -3004,7 +3063,9 @@ impl DbManager {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, filename, original_filename, relative_path, mime_type, file_size, created_at,
-                    COALESCE(media_type, 'image'), duration_seconds, width, height, thumbnail_path
+                    COALESCE(media_type, 'image'), duration_seconds, width, height, thumbnail_path,
+                    COALESCE(crop_top, 0.0), COALESCE(crop_bottom, 0.0), COALESCE(crop_left, 0.0), COALESCE(crop_right, 0.0),
+                    COALESCE(rotation, 0), COALESCE(volume, 1.0), COALESCE(trim_in, 0.0), trim_out, COALESCE(is_looping, 1)
              FROM media_assets
              WHERE id = ?1;",
         )?;
@@ -3023,6 +3084,15 @@ impl DbManager {
                 width: row.get(9)?,
                 height: row.get(10)?,
                 thumbnail_path: row.get(11)?,
+                crop_top: row.get(12)?,
+                crop_bottom: row.get(13)?,
+                crop_left: row.get(14)?,
+                crop_right: row.get(15)?,
+                rotation: row.get(16)?,
+                volume: row.get(17)?,
+                trim_in: row.get(18)?,
+                trim_out: row.get(19)?,
+                is_looping: row.get::<_, i64>(20)? != 0,
             })
         })?;
 
@@ -3073,8 +3143,8 @@ impl DbManager {
         let m_type = if asset.media_type.is_empty() { "image" } else { &asset.media_type };
 
         conn.execute(
-            "INSERT INTO media_assets (id, filename, original_filename, relative_path, mime_type, file_size, created_at, media_type, duration_seconds, width, height, thumbnail_path)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12);",
+            "INSERT INTO media_assets (id, filename, original_filename, relative_path, mime_type, file_size, created_at, media_type, duration_seconds, width, height, thumbnail_path, crop_top, crop_bottom, crop_left, crop_right, rotation, volume, trim_in, trim_out, is_looping)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21);",
             params![
                 id,
                 asset.filename,
@@ -3087,7 +3157,16 @@ impl DbManager {
                 asset.duration_seconds,
                 asset.width,
                 asset.height,
-                asset.thumbnail_path
+                asset.thumbnail_path,
+                asset.crop_top,
+                asset.crop_bottom,
+                asset.crop_left,
+                asset.crop_right,
+                asset.rotation,
+                asset.volume,
+                asset.trim_in,
+                asset.trim_out,
+                if asset.is_looping { 1 } else { 0 }
             ],
         )?;
 
@@ -3104,7 +3183,67 @@ impl DbManager {
             width: asset.width,
             height: asset.height,
             thumbnail_path: asset.thumbnail_path.clone(),
+            crop_top: asset.crop_top,
+            crop_bottom: asset.crop_bottom,
+            crop_left: asset.crop_left,
+            crop_right: asset.crop_right,
+            rotation: asset.rotation,
+            volume: asset.volume,
+            trim_in: asset.trim_in,
+            trim_out: asset.trim_out,
+            is_looping: asset.is_looping,
         })
+    }
+
+    pub fn update_media_asset(&self, asset: &MediaAsset) -> Result<MediaAsset> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE media_assets
+             SET filename = ?1,
+                 original_filename = ?2,
+                 relative_path = ?3,
+                 mime_type = ?4,
+                 media_type = ?5,
+                 duration_seconds = ?6,
+                 width = ?7,
+                 height = ?8,
+                 thumbnail_path = ?9,
+                 crop_top = ?10,
+                 crop_bottom = ?11,
+                 crop_left = ?12,
+                 crop_right = ?13,
+                 rotation = ?14,
+                 volume = ?15,
+                 trim_in = ?16,
+                 trim_out = ?17,
+                 is_looping = ?18
+             WHERE id = ?19;",
+            params![
+                asset.filename,
+                asset.original_filename,
+                asset.relative_path,
+                asset.mime_type,
+                asset.media_type,
+                asset.duration_seconds,
+                asset.width,
+                asset.height,
+                asset.thumbnail_path,
+                asset.crop_top,
+                asset.crop_bottom,
+                asset.crop_left,
+                asset.crop_right,
+                asset.rotation,
+                asset.volume,
+                asset.trim_in,
+                asset.trim_out,
+                if asset.is_looping { 1 } else { 0 },
+                asset.id
+            ],
+        )?;
+
+        drop(conn);
+        self.get_media_asset(&asset.id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)
     }
 
     pub fn delete_media_asset(&self, id: &str) -> Result<()> {
@@ -5811,8 +5950,8 @@ impl DbManager {
 
             if !exists {
                 tx.execute(
-                    "INSERT INTO media_assets (id, filename, original_filename, relative_path, mime_type, file_size, media_type, duration_seconds, width, height, thumbnail_path, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12);",
+                    "INSERT INTO media_assets (id, filename, original_filename, relative_path, mime_type, file_size, media_type, duration_seconds, width, height, thumbnail_path, created_at, crop_top, crop_bottom, crop_left, crop_right, rotation, volume, trim_in, trim_out, is_looping)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21);",
                     params![
                         m.id,
                         m.filename,
@@ -5825,7 +5964,16 @@ impl DbManager {
                         m.width,
                         m.height,
                         m.thumbnail_path,
-                        m.created_at
+                        m.created_at,
+                        m.crop_top,
+                        m.crop_bottom,
+                        m.crop_left,
+                        m.crop_right,
+                        m.rotation,
+                        m.volume,
+                        m.trim_in,
+                        m.trim_out,
+                        if m.is_looping { 1 } else { 0 }
                     ],
                 )?;
             }
@@ -7650,6 +7798,7 @@ mod tests {
             width: Some(1920),
             height: Some(1080),
             thumbnail_path: None,
+            ..Default::default()
         };
         db.create_media_asset(&media).unwrap();
 
@@ -8474,6 +8623,94 @@ mod tests {
         }
         let old: crate::models::BackupData = serde_json::from_value(value).unwrap();
         assert!(old.stage_configs.iter().all(|c| c.panels.is_empty()));
+    }
+
+    #[test]
+    fn test_media_inspector_crud_and_persistence() {
+        let db = DbManager::new_in_memory().unwrap();
+
+        // 1. Create media asset with default inspector fields
+        let media = MediaAsset {
+            id: "media-insp-1".to_string(),
+            filename: "insp-1.mp4".to_string(),
+            original_filename: "intro_video.mp4".to_string(),
+            relative_path: "media/insp-1.mp4".to_string(),
+            mime_type: "video/mp4".to_string(),
+            file_size: 2048576,
+            created_at: Utc::now().to_rfc3339(),
+            media_type: "video".to_string(),
+            duration_seconds: Some(45.0),
+            width: Some(1920),
+            height: Some(1080),
+            ..Default::default()
+        };
+        let created = db.create_media_asset(&media).unwrap();
+        assert_eq!(created.volume, 1.0);
+        assert_eq!(created.rotation, 0);
+        assert_eq!(created.crop_top, 0.0);
+        assert_eq!(created.crop_bottom, 0.0);
+        assert_eq!(created.crop_left, 0.0);
+        assert_eq!(created.crop_right, 0.0);
+        assert_eq!(created.trim_in, 0.0);
+        assert_eq!(created.trim_out, None);
+        assert!(created.is_looping);
+
+        // 2. Update media asset with inspector settings
+        let mut modified = created.clone();
+        modified.crop_top = 5.0;
+        modified.crop_bottom = 5.0;
+        modified.crop_left = 10.0;
+        modified.crop_right = 10.0;
+        modified.rotation = 90;
+        modified.volume = 0.75;
+        modified.trim_in = 2.5;
+        modified.trim_out = Some(40.0);
+        modified.is_looping = false;
+        modified.thumbnail_path = Some("media/thumbnails/insp-1.jpg".to_string());
+
+        let updated = db.update_media_asset(&modified).unwrap();
+        assert_eq!(updated.crop_top, 5.0);
+        assert_eq!(updated.crop_bottom, 5.0);
+        assert_eq!(updated.crop_left, 10.0);
+        assert_eq!(updated.crop_right, 10.0);
+        assert_eq!(updated.rotation, 90);
+        assert_eq!(updated.volume, 0.75);
+        assert_eq!(updated.trim_in, 2.5);
+        assert_eq!(updated.trim_out, Some(40.0));
+        assert!(!updated.is_looping);
+        assert_eq!(updated.thumbnail_path, Some("media/thumbnails/insp-1.jpg".to_string()));
+
+        // 3. Verify get_media_asset loads updated fields
+        let loaded = db.get_media_asset("media-insp-1").unwrap().unwrap();
+        assert_eq!(loaded.volume, 0.75);
+        assert_eq!(loaded.rotation, 90);
+        assert_eq!(loaded.trim_in, 2.5);
+        assert_eq!(loaded.trim_out, Some(40.0));
+        assert_eq!(loaded.thumbnail_path, Some("media/thumbnails/insp-1.jpg".to_string()));
+
+        // 4. Verify list_media_assets includes all fields
+        let list = db.list_media_assets().unwrap();
+        let item = list.iter().find(|m| m.id == "media-insp-1").unwrap();
+        assert_eq!(item.volume, 0.75);
+        assert_eq!(item.rotation, 90);
+
+        // 5. Verify backup export and restore preserves inspector settings
+        let backup = db.export_backup().unwrap();
+        let backup_item = backup.media_assets.iter().find(|m| m.id == "media-insp-1").unwrap();
+        assert_eq!(backup_item.volume, 0.75);
+        assert_eq!(backup_item.rotation, 90);
+        assert_eq!(backup_item.trim_in, 2.5);
+
+        // Wipe and restore
+        let db2 = DbManager::new_in_memory().unwrap();
+        db2.import_backup(&backup, "overwrite").unwrap();
+        let restored = db2.get_media_asset("media-insp-1").unwrap().unwrap();
+        assert_eq!(restored.crop_top, 5.0);
+        assert_eq!(restored.rotation, 90);
+        assert_eq!(restored.volume, 0.75);
+        assert_eq!(restored.trim_in, 2.5);
+        assert_eq!(restored.trim_out, Some(40.0));
+        assert!(!restored.is_looping);
     }
 }
 

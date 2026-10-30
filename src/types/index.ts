@@ -484,6 +484,16 @@ export interface MediaAsset {
   height?: number | null;
   thumbnailPath?: string | null;
   createdAt: string;
+  // Phase 10.3: Media Inspector Settings
+  cropTop?: number;
+  cropBottom?: number;
+  cropLeft?: number;
+  cropRight?: number;
+  rotation?: number; // 0, 90, 180, 270
+  volume?: number; // 0.0 to 1.0
+  trimIn?: number; // seconds
+  trimOut?: number | null; // seconds
+  isLooping?: boolean;
 }
 
 export interface SongExportData {

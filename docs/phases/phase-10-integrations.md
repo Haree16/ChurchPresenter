@@ -51,9 +51,30 @@ Done when: a Planning Center plan imports into a service and a Stream Deck page 
   - `StreamDeckDmxModal.tsx` wired into header via "Hardware" button and operator view with keyboard shortcut escape dismissal.
 - **Verification**: Verified with 298 passing backend Rust unit tests and 508 passing Vitest unit tests (`tests/streamdeck-dmx.test.tsx`).
 
-## 10.3 Media Inspector
-- Per-media settings: crop, rotation, volume, trim in/out, loop. Stored with the media asset and applied in `AudienceView`.
-- Thumbnails for video in the media library.
+## 10.3 Media Inspector [COMPLETED]
+- **Per-Media Inspector Settings & Persistence**:
+  - Extended SQLite `media_assets` table schema via Migration 28:
+    - Inset Crop: `crop_top`, `crop_bottom`, `crop_left`, `crop_right` (percentage 0-45%).
+    - Rotation: `rotation` (0°, 90°, 180°, 270°).
+    - Audio Level: `volume` (0.0 to 1.0) with instant mute/unmute.
+    - Playback Timing: `trim_in` (seconds), `trim_out` (seconds or nullable), `is_looping` (boolean).
+    - Custom Video Thumbnail: `thumbnail_path` (storing file path or data URI).
+  - Clean backup & restore integration: all inspector metadata is included in `export_backup` and restored in `import_backup`.
+- **Media Inspector UI Component**:
+  - Created `MediaInspector.tsx` integrated directly into the right preview pane of `MediaLibraryModal.tsx` via Details / Inspector tab toggle.
+  - Interactive crop sliders with percentage indicators and "Clear" quick button.
+  - 4-way rotation selector (0°, 90°, 180°, 270°) with immediate live visual rotation in the preview container.
+  - Audio volume slider with Mute/Unmute quick toggle.
+  - Video scrub bar with "Here" (set in/out point from current player frame) and loop playback checkbox.
+  - "Capture Current Frame as Thumbnail" button that snaps the current video frame to an offscreen `<canvas>` and saves as `thumbnailPath`.
+  - "Reset All" button to restore asset to raw defaults.
+- **Media Library Grid Video Thumbnails**:
+  - `MediaLibraryModal.tsx` renders custom video thumbnail frames (`<img>`) in the library grid cards when `thumbnailPath` is present.
+- **AudienceView Live Application**:
+  - Loads asset settings dynamically and listens to `media:asset-updated` Tauri events.
+  - Applies CSS `clipPath: inset(top% right% bottom% left%)` and `transform: rotate(deg)`.
+  - Enforces `volume`, `trimIn`, `trimOut` boundary loops, and `isLooping` state on both standalone fullscreen presentations and background motion videos.
+- **Verification**: Verified with 300 passing backend Rust unit tests and 515 passing Vitest unit tests (`tests/media-inspector.test.tsx`).
 
 ## 10.4 Auto-updater
 - Tauri updater plugin with a signed update feed; check on start, never install during a live service.

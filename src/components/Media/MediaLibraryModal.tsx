@@ -10,9 +10,12 @@ import {
   Play,
   AlertTriangle,
   FolderOpen,
+  Sliders,
+  Info,
 } from 'lucide-react';
 import { MediaAsset } from '../../types';
 import { api, isTauri } from '../../services/api';
+import { MediaInspector } from './MediaInspector';
 import {
   formatFileSize,
   formatMediaDuration,
@@ -50,6 +53,22 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
     usageCount: number;
     filename: string;
   } | null>(null);
+
+  // Phase 10.3: Media Inspector tab & preview video ref
+  const [previewTab, setPreviewTab] = useState<'details' | 'inspector'>('details');
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
+
+  const handleUpdateAsset = async (updated: MediaAsset) => {
+    try {
+      const saved = await api.updateMediaAsset(updated);
+      setAssets((prev) => prev.map((a) => (a.id === saved.id ? saved : a)));
+      setNotification(`Saved settings for ${saved.originalFilename}`);
+      setTimeout(() => setNotification(null), 3000);
+    } catch (err) {
+      console.error('Failed to update media asset:', err);
+      throw err;
+    }
+  };
 
   const refreshAssets = async () => {
     try {
@@ -586,20 +605,35 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
                           }}
                         />
                       ) : isVideo ? (
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            gap: '4px',
-                            color: '#38bdf8',
-                          }}
-                        >
-                          <Film size={28} />
-                          <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                            {asset.durationSeconds ? formatMediaDuration(asset.durationSeconds) : 'Video'}
-                          </span>
-                        </div>
+                        asset.thumbnailPath ? (
+                          <img
+                            src={
+                              asset.thumbnailPath.startsWith('data:')
+                                ? asset.thumbnailPath
+                                : mediaService.resolveMediaUrl(asset.thumbnailPath)
+                            }
+                            alt={asset.originalFilename}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            onError={(e) => {
+                              (e.currentTarget as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              gap: '4px',
+                              color: '#38bdf8',
+                            }}
+                          >
+                            <Film size={28} />
+                            <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                              {asset.durationSeconds ? formatMediaDuration(asset.durationSeconds) : 'Video'}
+                            </span>
+                          </div>
+                        )
                       ) : (
                         <div
                           style={{
@@ -678,7 +712,7 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
             <div
               data-testid="media-preview-pane"
               style={{
-                width: '320px',
+                width: '350px',
                 borderLeft: '1px solid #1e293b',
                 backgroundColor: '#0a0f1d',
                 padding: '20px',
@@ -689,8 +723,58 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
               }}
             >
               <h3 style={{ margin: 0, fontSize: '1rem', color: '#f8fafc' }}>
-                Asset Preview & Details
+                Asset Preview & Inspector
               </h3>
+
+              {/* Tab Selector: Details vs Inspector */}
+              <div style={{ display: 'flex', gap: '4px', backgroundColor: '#020617', padding: '3px', borderRadius: '6px' }}>
+                <button
+                  type="button"
+                  data-testid="media-tab-details"
+                  onClick={() => setPreviewTab('details')}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '6px 0',
+                    borderRadius: '4px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    border: 'none',
+                    cursor: 'pointer',
+                    backgroundColor: previewTab === 'details' ? '#1e293b' : 'transparent',
+                    color: previewTab === 'details' ? '#38bdf8' : '#94a3b8',
+                  }}
+                >
+                  <Info size={13} />
+                  <span>Details</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="media-tab-inspector"
+                  onClick={() => setPreviewTab('inspector')}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '6px 0',
+                    borderRadius: '4px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    border: 'none',
+                    cursor: 'pointer',
+                    backgroundColor: previewTab === 'inspector' ? '#1e293b' : 'transparent',
+                    color: previewTab === 'inspector' ? '#38bdf8' : '#94a3b8',
+                  }}
+                >
+                  <Sliders size={13} />
+                  <span>Inspector</span>
+                </button>
+              </div>
 
               {/* Interactive Preview Container */}
               <div
@@ -704,19 +788,35 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
+                  position: 'relative',
                 }}
               >
                 {selectedAsset.mediaType === 'image' ? (
                   <img
                     src={mediaService.resolveMediaUrl(selectedAsset.relativePath)}
                     alt={selectedAsset.originalFilename}
-                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      objectFit: 'contain',
+                      clipPath: `inset(${selectedAsset.cropTop ?? 0}% ${selectedAsset.cropRight ?? 0}% ${selectedAsset.cropBottom ?? 0}% ${selectedAsset.cropLeft ?? 0}%)`,
+                      transform: `rotate(${selectedAsset.rotation ?? 0}deg)`,
+                      transition: 'transform 0.2s, clip-path 0.15s',
+                    }}
                   />
                 ) : selectedAsset.mediaType === 'video' ? (
                   <video
+                    ref={previewVideoRef}
                     src={mediaService.resolveMediaUrl(selectedAsset.relativePath)}
                     controls
-                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'contain',
+                      clipPath: `inset(${selectedAsset.cropTop ?? 0}% ${selectedAsset.cropRight ?? 0}% ${selectedAsset.cropBottom ?? 0}% ${selectedAsset.cropLeft ?? 0}%)`,
+                      transform: `rotate(${selectedAsset.rotation ?? 0}deg)`,
+                      transition: 'transform 0.2s, clip-path 0.15s',
+                    }}
                   />
                 ) : (
                   <div style={{ width: '90%', textAlign: 'center' }}>
@@ -730,114 +830,137 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
                 )}
               </div>
 
-              {/* Asset Information Table */}
-              <div
-                style={{
-                  backgroundColor: '#0f172a',
-                  borderRadius: '6px',
-                  padding: '12px',
-                  fontSize: '0.8rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8' }}>Type:</span>
-                  <span style={{ color: '#f1f5f9', fontWeight: 600, textTransform: 'capitalize' }}>
-                    {selectedAsset.mediaType}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8' }}>File Size:</span>
-                  <span style={{ color: '#f1f5f9' }}>{formatFileSize(selectedAsset.fileSize)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8' }}>Format:</span>
-                  <span style={{ color: '#f1f5f9' }}>{selectedAsset.mimeType}</span>
-                </div>
-                {selectedAsset.durationSeconds && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8' }}>Duration:</span>
-                    <span style={{ color: '#f1f5f9' }}>
-                      {formatMediaDuration(selectedAsset.durationSeconds)}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: 'auto' }}>
-                <button
-                  data-testid="media-present-live-btn"
-                  onClick={() => handlePresentLive(selectedAsset)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    padding: '10px 14px',
-                    backgroundColor: '#0284c7',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontSize: '0.85rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Play size={16} />
-                  Present Live Now
-                </button>
-
-                {onSelectMedia && (
-                  <button
-                    data-testid="media-apply-bg-btn"
-                    onClick={() => {
-                      onSelectMedia(selectedAsset);
-                      onClose();
-                    }}
+              {previewTab === 'details' ? (
+                <>
+                  {/* Asset Information Table */}
+                  <div
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                      padding: '10px 14px',
-                      backgroundColor: '#22c55e',
-                      color: '#000',
-                      border: 'none',
+                      backgroundColor: '#0f172a',
                       borderRadius: '6px',
-                      fontSize: '0.85rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
+                      padding: '12px',
+                      fontSize: '0.8rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
                     }}
                   >
-                    <Check size={16} />
-                    Apply as Background
-                  </button>
-                )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Type:</span>
+                      <span style={{ color: '#f1f5f9', fontWeight: 600, textTransform: 'capitalize' }}>
+                        {selectedAsset.mediaType}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>File Size:</span>
+                      <span style={{ color: '#f1f5f9' }}>{formatFileSize(selectedAsset.fileSize)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Format:</span>
+                      <span style={{ color: '#f1f5f9' }}>{selectedAsset.mimeType}</span>
+                    </div>
+                    {selectedAsset.durationSeconds && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Duration:</span>
+                        <span style={{ color: '#f1f5f9' }}>
+                          {formatMediaDuration(selectedAsset.durationSeconds)}
+                        </span>
+                      </div>
+                    )}
+                    {selectedAsset.rotation ? (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Rotation:</span>
+                        <span style={{ color: '#38bdf8' }}>{selectedAsset.rotation}°</span>
+                      </div>
+                    ) : null}
+                    {selectedAsset.volume !== undefined && selectedAsset.volume !== 1.0 ? (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Volume:</span>
+                        <span style={{ color: '#38bdf8' }}>{Math.round(selectedAsset.volume * 100)}%</span>
+                      </div>
+                    ) : null}
+                  </div>
 
-                <button
-                  data-testid="media-delete-btn"
-                  onClick={() => handleTriggerDelete(selectedAsset)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    padding: '8px 12px',
-                    backgroundColor: '#7f1d1d',
-                    color: '#fca5a5',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontSize: '0.8rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Trash2 size={14} />
-                  Delete Asset
-                </button>
-              </div>
+                  {/* Action Buttons */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: 'auto' }}>
+                    <button
+                      data-testid="media-present-live-btn"
+                      onClick={() => handlePresentLive(selectedAsset)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        padding: '10px 14px',
+                        backgroundColor: '#0284c7',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Play size={16} />
+                      Present Live Now
+                    </button>
+
+                    {onSelectMedia && (
+                      <button
+                        data-testid="media-apply-bg-btn"
+                        onClick={() => {
+                          onSelectMedia(selectedAsset);
+                          onClose();
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          padding: '10px 14px',
+                          backgroundColor: '#22c55e',
+                          color: '#000',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '0.85rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Check size={16} />
+                        Apply as Background
+                      </button>
+                    )}
+
+                    <button
+                      data-testid="media-delete-btn"
+                      onClick={() => handleTriggerDelete(selectedAsset)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        padding: '8px 12px',
+                        backgroundColor: '#7f1d1d',
+                        color: '#fca5a5',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Trash2 size={14} />
+                      Delete Asset
+                    </button>
+                  </div>
+                </>
+              ) : (
+                /* Inspector Tab */
+                <MediaInspector
+                  asset={selectedAsset}
+                  onUpdateAsset={handleUpdateAsset}
+                  videoElementRef={previewVideoRef}
+                />
+              )}
             </div>
           )}
         </div>

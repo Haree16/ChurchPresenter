@@ -316,6 +316,14 @@ fn default_media_type() -> String {
     "image".to_string()
 }
 
+fn default_one_f64() -> f64 {
+    1.0
+}
+
+fn default_true_bool() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaAsset {
@@ -336,6 +344,53 @@ pub struct MediaAsset {
     pub height: Option<u32>,
     #[serde(default)]
     pub thumbnail_path: Option<String>,
+    // Phase 10.3: Media Inspector Settings
+    #[serde(default)]
+    pub crop_top: f64,
+    #[serde(default)]
+    pub crop_bottom: f64,
+    #[serde(default)]
+    pub crop_left: f64,
+    #[serde(default)]
+    pub crop_right: f64,
+    #[serde(default)]
+    pub rotation: i32,
+    #[serde(default = "default_one_f64")]
+    pub volume: f64,
+    #[serde(default)]
+    pub trim_in: f64,
+    #[serde(default)]
+    pub trim_out: Option<f64>,
+    #[serde(default = "default_true_bool")]
+    pub is_looping: bool,
+}
+
+impl Default for MediaAsset {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            filename: String::new(),
+            original_filename: String::new(),
+            relative_path: String::new(),
+            mime_type: String::new(),
+            file_size: 0,
+            created_at: String::new(),
+            media_type: default_media_type(),
+            duration_seconds: None,
+            width: None,
+            height: None,
+            thumbnail_path: None,
+            crop_top: 0.0,
+            crop_bottom: 0.0,
+            crop_left: 0.0,
+            crop_right: 0.0,
+            rotation: 0,
+            volume: 1.0,
+            trim_in: 0.0,
+            trim_out: None,
+            is_looping: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
