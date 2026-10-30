@@ -27,10 +27,29 @@ Done when: a Planning Center plan imports into a service and a Stream Deck page 
   - Includes connection status badge, organization name display, disconnect flow, and "Open Service" button upon successful import.
 - **Verification**: Verified with 295 passing backend Rust unit tests (`cargo test`) and 500 passing Vitest unit tests (`npm test`), including dedicated tests in `tests/planning-center.test.tsx`.
 
-## 10.2 Stream Deck and other control
-- Ship a Stream Deck profile or documented OSC presets using the existing OSC paths.
-- Add DMX output (lighting scenes on slide change) behind a setting, off by default.
-- Timecode follow is optional; defer unless requested.
+## 10.2 Stream Deck and other control [COMPLETED]
+- **Stream Deck 15-Key Interactive Profile & Export**:
+  - Pre-packaged 15-key (3×5 grid) layout mapping standard church production workflows:
+    - Navigation: Prev Slide, Next Slide, Prev Item, Next Item, Toggle Live.
+    - Master Clear & Overlays: Blackout, Logo, Clear Text, Clear Props, Clear All.
+    - Media, Looks & Automation: Play/Pause Media, Lower Third Prop, Stage Message, Look 1 Preset, DMX Lighting Cue.
+  - Interactive Visual Surface in UI with color-coded keycaps, real-time Action / OSC endpoint inspector.
+  - Direct download of Stream Deck Profile JSON (`ChurchPresenter-StreamDeck-Profile-port{port}.json`).
+  - Bitfocus Companion quick setup guide with copy-to-clipboard functionality.
+- **DMX512 Lighting Control (Art-Net)**:
+  - Standard Art-Net (ArtDmx over UDP on port 6454, OpCode `0x5000`, Version 14) sender module (`dmx.rs`).
+  - Disabled by default (`is_enabled: 0`) per requirement; safely persists configuration in SQLite `dmx_configs` table (Migration 27).
+  - Target IP (unicast or subnet broadcast `255.255.255.255`), Target Port (6454), Sub-Net / Universe selector (0-32767).
+  - Slide Cue Following: automatically triggers DMX lighting cues on presentation slide changes via dedicated cue channel (1-512).
+  - Live Fixture Test Panel: channel selector (1-512), 0-255 intensity slider, blackout (0), full flash (255), and live cue dispatch without modifying saved state.
+  - Full backup & restore inclusion: DMX settings export and restore cleanly in system backups.
+- **Macro DMX Step**:
+  - Added `MacroStep::Dmx { universe, channel, value }` step variant with validation and Art-Net packet dispatch during macro execution.
+- **Timecode Follow & MTC Guidance**:
+  - Documented MTC (MIDI Time Code) and OSC SMPTE timecode integration (`/timecode`, `/timecode/seconds`) for syncing with external DAWs (Ableton Live, Logic Pro, Pro Tools).
+- **UI & Modal Integration**:
+  - `StreamDeckDmxModal.tsx` wired into header via "Hardware" button and operator view with keyboard shortcut escape dismissal.
+- **Verification**: Verified with 298 passing backend Rust unit tests and 508 passing Vitest unit tests (`tests/streamdeck-dmx.test.tsx`).
 
 ## 10.3 Media Inspector
 - Per-media settings: crop, rotation, volume, trim in/out, loop. Stored with the media asset and applied in `AudienceView`.

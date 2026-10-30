@@ -158,6 +158,39 @@ export interface PcoImportResult {
   totalItemsCount: number;
 }
 
+/** Phase 10.2: DMX512 Lighting Control (Art-Net). */
+export interface DmxConfig {
+  id: string;
+  isEnabled: boolean;
+  targetIp: string;
+  targetPort: number;
+  universe: number;
+  triggerOnSlideChange: boolean;
+  slideCueChannel: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Phase 10.2: Stream Deck Button layout model. */
+export interface StreamDeckButton {
+  row: number;
+  col: number;
+  title: string;
+  oscPath: string;
+  action: string;
+  color: string;
+  icon: string;
+  description: string;
+}
+
+/** Phase 10.2: Stream Deck & Companion profile export package. */
+export interface StreamDeckProfileExport {
+  application: string;
+  defaultOscPort: number;
+  buttons: StreamDeckButton[];
+  companionOscSummary: string;
+}
+
 /** A saved overlay (text lower-third, logo bug, ...) toggled over the audience output. */
 export interface Prop {
   id: string;

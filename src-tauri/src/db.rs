@@ -1548,6 +1548,36 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 27: DMX lighting control =================
+        if current_version < 27 {
+            let tx = conn.unchecked_transaction()?;
+            let now = Utc::now().to_rfc3339();
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS dmx_configs (
+                    id TEXT PRIMARY KEY,
+                    is_enabled INTEGER NOT NULL DEFAULT 0,
+                    target_ip TEXT NOT NULL DEFAULT '127.0.0.1',
+                    target_port INTEGER NOT NULL DEFAULT 6454,
+                    universe INTEGER NOT NULL DEFAULT 0,
+                    trigger_on_slide_change INTEGER NOT NULL DEFAULT 0,
+                    slide_cue_channel INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+            tx.execute(
+                "INSERT OR IGNORE INTO dmx_configs (id, is_enabled, target_ip, target_port, universe, trigger_on_slide_change, slide_cue_channel, created_at, updated_at)
+                 VALUES ('default-dmx', 0, '127.0.0.1', 6454, 0, 0, 1, ?1, ?1);",
+                params![now],
+            )?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (27, ?1);",
+                params![now],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -5389,6 +5419,8 @@ impl DbManager {
         let midi_mappings = self.list_midi_mappings()?;
         let osc_config = self.get_osc_config()?;
         let osc_configs = vec![osc_config];
+        let dmx_config = self.get_dmx_config()?;
+        let dmx_configs = vec![dmx_config];
         let action_mappings = self.list_action_mappings()?;
 
         let settings = {
@@ -5437,6 +5469,7 @@ impl DbManager {
             remote_devices,
             midi_mappings,
             osc_configs,
+            dmx_configs,
             action_mappings,
             workspace_state,
             settings,
@@ -6079,6 +6112,33 @@ impl DbManager {
             )?;
         }
 
+        // Restore DMX configs
+        for dmx in &backup.dmx_configs {
+            tx.execute(
+                "INSERT INTO dmx_configs (id, is_enabled, target_ip, target_port, universe, trigger_on_slide_change, slide_cue_channel, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 ON CONFLICT(id) DO UPDATE SET
+                    is_enabled = excluded.is_enabled,
+                    target_ip = excluded.target_ip,
+                    target_port = excluded.target_port,
+                    universe = excluded.universe,
+                    trigger_on_slide_change = excluded.trigger_on_slide_change,
+                    slide_cue_channel = excluded.slide_cue_channel,
+                    updated_at = excluded.updated_at;",
+                params![
+                    dmx.id,
+                    if dmx.is_enabled { 1 } else { 0 },
+                    dmx.target_ip,
+                    dmx.target_port as i32,
+                    dmx.universe as i32,
+                    if dmx.trigger_on_slide_change { 1 } else { 0 },
+                    dmx.slide_cue_channel as i32,
+                    dmx.created_at,
+                    dmx.updated_at
+                ],
+            )?;
+        }
+
         // Restore action mappings
         for act in &backup.action_mappings {
             tx.execute(
@@ -6663,6 +6723,69 @@ impl DbManager {
                 if config.is_enabled { 1 } else { 0 },
                 config.listen_port as i32,
                 config.allowlist_actions,
+                now
+            ],
+        )?;
+        Ok(())
+    }
+
+    // ================= Phase 10.2: DMX Lighting Config =================
+
+    pub fn get_dmx_config(&self) -> Result<crate::models::DmxConfig> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, is_enabled, target_ip, target_port, universe, trigger_on_slide_change, slide_cue_channel, created_at, updated_at
+             FROM dmx_configs
+             WHERE id = 'default-dmx';",
+        )?;
+
+        let mut iter = stmt.query_map([], |row| {
+            Ok(crate::models::DmxConfig {
+                id: row.get(0)?,
+                is_enabled: row.get::<_, i32>(1)? != 0,
+                target_ip: row.get(2)?,
+                target_port: row.get::<_, i32>(3)? as u16,
+                universe: row.get::<_, i32>(4)? as u16,
+                trigger_on_slide_change: row.get::<_, i32>(5)? != 0,
+                slide_cue_channel: row.get::<_, i32>(6)? as u16,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })?;
+
+        if let Some(cfg) = iter.next() {
+            Ok(cfg?)
+        } else {
+            Ok(crate::models::DmxConfig {
+                id: "default-dmx".to_string(),
+                is_enabled: false,
+                target_ip: "127.0.0.1".to_string(),
+                target_port: 6454,
+                universe: 0,
+                trigger_on_slide_change: false,
+                slide_cue_channel: 1,
+                created_at: Utc::now().to_rfc3339(),
+                updated_at: Utc::now().to_rfc3339(),
+            })
+        }
+    }
+
+    pub fn update_dmx_config(&self, config: &crate::models::DmxConfig) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE dmx_configs
+             SET is_enabled = ?2, target_ip = ?3, target_port = ?4, universe = ?5,
+                 trigger_on_slide_change = ?6, slide_cue_channel = ?7, updated_at = ?8
+             WHERE id = ?1;",
+            params![
+                config.id,
+                if config.is_enabled { 1 } else { 0 },
+                config.target_ip,
+                config.target_port as i32,
+                config.universe as i32,
+                if config.trigger_on_slide_change { 1 } else { 0 },
+                config.slide_cue_channel as i32,
                 now
             ],
         )?;

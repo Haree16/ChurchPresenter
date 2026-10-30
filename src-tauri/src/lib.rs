@@ -25,6 +25,7 @@ mod remote;
 mod search;
 mod service_templates;
 pub mod planning_center;
+pub mod dmx;
 
 use db::DbManager;
 use midi::MidiService;
@@ -156,6 +157,7 @@ pub fn run() {
             app.manage(macros::MacroRunner::new());
             app.manage(MidiService::new());
             app.manage(OscService::new());
+            app.manage(dmx::DmxService::new());
 
             Ok(())
         })
@@ -398,6 +400,11 @@ pub fn run() {
             commands::list_planning_center_plans,
             commands::get_planning_center_plan_details,
             commands::import_planning_center_plan,
+            // Phase 10.2: Stream Deck & DMX Lighting Control
+            commands::get_dmx_config,
+            commands::update_dmx_config,
+            commands::send_dmx_test_cue,
+            commands::get_stream_deck_profile,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -78,6 +78,13 @@ pub enum MacroStep {
     Look { look_id: String },
     /// Clear the layers of a saved clear group.
     ClearGroup { group_id: String },
+    /// Send a DMX Art-Net lighting cue.
+    Dmx {
+        #[serde(default)]
+        universe: Option<u16>,
+        channel: u16,
+        value: u8,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -155,6 +162,13 @@ pub fn validate_step(step: &MacroStep) -> std::result::Result<(), String> {
                     "the auto-advance interval must be between {} and {} seconds.",
                     MIN_AUTO_ADVANCE_SECONDS, MAX_AUTO_ADVANCE_SECONDS
                 ))
+            }
+        }
+        MacroStep::Dmx { channel, .. } => {
+            if (1..=512).contains(channel) {
+                Ok(())
+            } else {
+                Err("DMX channel must be between 1 and 512.".to_string())
             }
         }
     }
@@ -339,6 +353,19 @@ pub fn apply_step_core(
         MacroStep::AutoAdvance { interval_seconds, loop_at_end } => {
             let state = pres.start_auto_advance_core(*interval_seconds, *loop_at_end, now_ms)?;
             Ok(StepOutcome::AutoAdvanceStarted(state.auto_advance.map(|a| a.id).unwrap_or_default()))
+        }
+        MacroStep::Dmx { universe, channel, value } => {
+            if let Ok(cfg) = db.get_dmx_config() {
+                if cfg.is_enabled {
+                    let u = universe.unwrap_or(cfg.universe);
+                    let mut ch = [0u8; crate::dmx::DMX_CHANNELS];
+                    if *channel >= 1 && *channel <= crate::dmx::DMX_CHANNELS as u16 {
+                        ch[(*channel - 1) as usize] = *value;
+                        let _ = crate::dmx::send_artnet_dmx(&cfg.target_ip, cfg.target_port, u, 1, &ch);
+                    }
+                }
+            }
+            Ok(StepOutcome::Done)
         }
     }
 }

@@ -22,6 +22,7 @@ import { ProductionIntegrationsModal } from './Production/ProductionIntegrations
 import { DiagnosticsModal } from './Production/DiagnosticsModal';
 import { MultiViewerModal } from './Production/MultiViewerModal';
 import { SettingsModal } from './Settings/SettingsModal';
+import { StreamDeckDmxModal } from './StreamDeckDmxModal';
 import { Slide, SlideTemplate, AudienceWindowStatus, StageWindowStatus, RemoteServerStatus, KeyBinding } from '../types';
 import { cloneElements } from '../services/slideElements';
 import { api } from '../services/api';
@@ -171,6 +172,7 @@ export const OperatorView: React.FC = () => {
   const [isMultiViewerModalOpen, setIsMultiViewerModalOpen] = useState(false);
   const [isOverlayModalOpen, setIsOverlayModalOpen] = useState(false);
   const [isIntegrationsModalOpen, setIsIntegrationsModalOpen] = useState(false);
+  const [isHardwareModalOpen, setIsHardwareModalOpen] = useState(false);
   const [isDiagnosticsModalOpen, setIsDiagnosticsModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
@@ -220,6 +222,7 @@ export const OperatorView: React.FC = () => {
     isMultiViewerModalOpen ||
     isOverlayModalOpen ||
     isIntegrationsModalOpen ||
+    isHardwareModalOpen ||
     isDiagnosticsModalOpen ||
     isSettingsModalOpen;
 
@@ -260,6 +263,7 @@ export const OperatorView: React.FC = () => {
       else if (isOutputModalOpen) setIsOutputModalOpen(false);
       else if (isOverlayModalOpen) setIsOverlayModalOpen(false);
       else if (isIntegrationsModalOpen) setIsIntegrationsModalOpen(false);
+      else if (isHardwareModalOpen) setIsHardwareModalOpen(false);
       else if (isDiagnosticsModalOpen) setIsDiagnosticsModalOpen(false);
       else if (isSettingsModalOpen) setIsSettingsModalOpen(false);
       else if (activeView === 'themes') setActiveView('presentations');
@@ -353,6 +357,7 @@ export const OperatorView: React.FC = () => {
         onOpenMultiViewerModal={() => setIsMultiViewerModalOpen(true)}
         onOpenOverlayModal={() => setIsOverlayModalOpen(true)}
         onOpenIntegrationsModal={() => setIsIntegrationsModalOpen(true)}
+        onOpenHardwareModal={() => setIsHardwareModalOpen(true)}
         onOpenDiagnosticsModal={() => setIsDiagnosticsModalOpen(true)}
         onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
         onToggleBlackout={toggleBlackout}
@@ -707,6 +712,12 @@ export const OperatorView: React.FC = () => {
       <ProductionIntegrationsModal
         isOpen={isIntegrationsModalOpen}
         onClose={() => setIsIntegrationsModalOpen(false)}
+      />
+
+      {/* Phase 10.2: Stream Deck, DMX Lighting & Timecode Modal */}
+      <StreamDeckDmxModal
+        isOpen={isHardwareModalOpen}
+        onClose={() => setIsHardwareModalOpen(false)}
       />
 
       {/* Phase 5: System Diagnostics & Health Modal */}

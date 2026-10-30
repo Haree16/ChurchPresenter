@@ -81,7 +81,7 @@ describe('Phase 10.1: Planning Center Services Integration', () => {
 
     // Clean up
     await api.deleteService(result.serviceId);
-    await api.deleteSong(existingSong.id);
+    await api.deleteSong(existingSong.song.id);
     await api.disconnectPlanningCenter();
   });
 

@@ -19,6 +19,7 @@ import {
   Zap,
   Activity,
   Settings,
+  Sliders,
 } from 'lucide-react';
 import {
   PresentationState,
@@ -64,6 +65,7 @@ interface HeaderProps {
   onOpenMultiViewerModal?: () => void;
   onOpenOverlayModal?: () => void;
   onOpenIntegrationsModal?: () => void;
+  onOpenHardwareModal?: () => void;
   onOpenDiagnosticsModal?: () => void;
   onOpenSettingsModal?: () => void;
   onToggleBlackout: () => void;
@@ -89,6 +91,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenMultiViewerModal,
   onOpenOverlayModal,
   onOpenIntegrationsModal,
+  onOpenHardwareModal,
   onOpenDiagnosticsModal,
   onOpenSettingsModal,
   onToggleBlackout,
@@ -587,6 +590,24 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Zap size={14} />
             <span>Integrations</span>
+          </button>
+        )}
+
+        {onOpenHardwareModal && (
+          <button
+            type="button"
+            data-testid="header-hardware-btn"
+            onClick={onOpenHardwareModal}
+            title="Stream Deck, DMX Lighting & Timecode"
+            style={{
+              ...headerBtn,
+              backgroundColor: '#1e293b',
+              color: '#cbd5e1',
+              border: '1px solid #334155',
+            }}
+          >
+            <Sliders size={14} />
+            <span>Hardware</span>
           </button>
         )}
 

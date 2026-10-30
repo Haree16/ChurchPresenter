@@ -1,7 +1,7 @@
 use crate::db::DbManager;
 use crate::models::{AudienceAlert, AutoAdvanceStatus, MediaPlaybackState, PresentationState, TimerState};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 pub const MIN_AUTO_ADVANCE_SECONDS: u32 = 1;
 pub const MAX_AUTO_ADVANCE_SECONDS: u32 = 3600;
@@ -113,6 +113,14 @@ pub struct PresentationManager {
     last_action: Arc<Mutex<(Option<String>, i64)>>,
     /// The service item and day last counted for CCLI, so moving between slides does not look it up again.
     last_counted: Arc<Mutex<Option<(String, String)>>>,
+}
+
+fn trigger_dmx_slide_follow(app: &AppHandle, db: &DbManager, state: &PresentationState) {
+    if state.is_live && !state.is_blackout {
+        if let Some(dmx) = app.try_state::<crate::dmx::DmxService>() {
+            let _ = dmx.on_slide_change(db, state.current_slide_index);
+        }
+    }
 }
 
 impl PresentationManager {
@@ -575,6 +583,7 @@ impl PresentationManager {
     ) -> PresentationState {
         let cloned = self.set_live_slide_core(db, presentation_id, slide_id);
         app.emit("presentation:state-changed", &cloned).ok();
+        trigger_dmx_slide_follow(app, db, &cloned);
         cloned
     }
 
@@ -607,6 +616,7 @@ impl PresentationManager {
     ) -> PresentationState {
         let cloned = self.set_live_service_item_slide_core(db, service_id, item_id, slide_id);
         app.emit("presentation:state-changed", &cloned).ok();
+        trigger_dmx_slide_follow(app, db, &cloned);
         cloned
     }
 
@@ -1016,6 +1026,7 @@ impl PresentationManager {
     pub fn next_slide(&self, app: &AppHandle, db: &DbManager) -> PresentationState {
         let cloned = self.next_slide_core(db);
         app.emit("presentation:state-changed", &cloned).ok();
+        trigger_dmx_slide_follow(app, db, &cloned);
         cloned
     }
 
@@ -1077,6 +1088,7 @@ impl PresentationManager {
     pub fn previous_slide(&self, app: &AppHandle, db: &DbManager) -> PresentationState {
         let cloned = self.previous_slide_core(db);
         app.emit("presentation:state-changed", &cloned).ok();
+        trigger_dmx_slide_follow(app, db, &cloned);
         cloned
     }
 

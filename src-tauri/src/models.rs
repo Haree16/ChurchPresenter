@@ -435,6 +435,8 @@ pub struct BackupData {
     #[serde(default)]
     pub osc_configs: Vec<OscConfig>,
     #[serde(default)]
+    pub dmx_configs: Vec<DmxConfig>,
+    #[serde(default)]
     pub action_mappings: Vec<ActionMapping>,
     #[serde(default)]
     pub workspace_state: Option<WorkspaceState>,
@@ -834,6 +836,20 @@ pub struct OscConfig {
     pub is_enabled: bool,
     pub listen_port: u16,
     pub allowlist_actions: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DmxConfig {
+    pub id: String,
+    pub is_enabled: bool,
+    pub target_ip: String,
+    pub target_port: u16,
+    pub universe: u16,
+    pub trigger_on_slide_change: bool,
+    pub slide_cue_channel: u16,
     pub created_at: String,
     pub updated_at: String,
 }

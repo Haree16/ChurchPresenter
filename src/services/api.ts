@@ -70,6 +70,8 @@ import {
   PcoPlan,
   PcoPlanDetail,
   PcoImportResult,
+  DmxConfig,
+  StreamDeckProfileExport,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
@@ -4926,6 +4928,63 @@ class MockDataStore {
     }
     return presentation;
   }
+
+  // ================= DMX & Stream Deck Mock Store =================
+  private dmxConfig: DmxConfig = {
+    id: 'default-dmx',
+    isEnabled: false,
+    targetIp: '127.0.0.1',
+    targetPort: 6454,
+    universe: 0,
+    triggerOnSlideChange: false,
+    slideCueChannel: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  public async getDmxConfig(): Promise<DmxConfig> {
+    return { ...this.dmxConfig };
+  }
+
+  public async updateDmxConfig(config: DmxConfig): Promise<DmxConfig> {
+    this.dmxConfig = { ...config, updatedAt: new Date().toISOString() };
+    return { ...this.dmxConfig };
+  }
+
+  public async sendDmxTestCue(channel: number, _value: number): Promise<void> {
+    if (channel < 1 || channel > 512) {
+      throw new Error('DMX channel must be between 1 and 512.');
+    }
+  }
+
+  public async getStreamDeckProfile(): Promise<StreamDeckProfileExport> {
+    return {
+      application: 'ChurchPresenter',
+      defaultOscPort: 8000,
+      buttons: [
+        { row: 0, col: 0, title: 'PREV\nSLIDE', oscPath: '/slide/prev', action: 'prev_slide', color: '#0284c7', icon: 'arrow-left', description: 'Go to previous slide' },
+        { row: 0, col: 1, title: 'NEXT\nSLIDE', oscPath: '/slide/next', action: 'next_slide', color: '#0284c7', icon: 'arrow-right', description: 'Advance to next slide' },
+        { row: 0, col: 2, title: 'PREV\nITEM', oscPath: '/item/prev', action: 'prev_item', color: '#475569', icon: 'skip-back', description: 'Jump to previous service item' },
+        { row: 0, col: 3, title: 'NEXT\nITEM', oscPath: '/item/next', action: 'next_item', color: '#475569', icon: 'skip-forward', description: 'Jump to next service item' },
+        { row: 0, col: 4, title: 'LIVE', oscPath: '/live', action: 'toggle_live', color: '#16a34a', icon: 'radio', description: 'Toggle presentation live output' },
+        { row: 1, col: 0, title: 'BLACK\nOUT', oscPath: '/blackout', action: 'toggle_blackout', color: '#dc2626', icon: 'moon', description: 'Toggle black screen output' },
+        { row: 1, col: 1, title: 'LOGO', oscPath: '/logo', action: 'toggle_logo', color: '#7c3aed', icon: 'image', description: 'Toggle church logo display' },
+        { row: 1, col: 2, title: 'CLEAR\nTEXT', oscPath: '/clear/text', action: 'clear_text', color: '#eab308', icon: 'type', description: 'Clear slide text, preserve background' },
+        { row: 1, col: 3, title: 'CLEAR\nPROPS', oscPath: '/clear/props', action: 'clear_props', color: '#f97316', icon: 'layers', description: 'Hide all active overlay props' },
+        { row: 1, col: 4, title: 'CLEAR\nALL', oscPath: '/clear/all', action: 'clear_all', color: '#ef4444', icon: 'x-circle', description: 'Clear all live layers immediately' },
+        { row: 2, col: 0, title: 'PLAY/\nPAUSE', oscPath: '/media/play-pause', action: 'media_play_pause', color: '#059669', icon: 'play', description: 'Play or pause background media' },
+        { row: 2, col: 1, title: 'LOWER\nTHIRD', oscPath: '/prop/lower-third', action: 'prop_lower_third', color: '#6366f1', icon: 'tv', description: 'Toggle lower third overlay prop' },
+        { row: 2, col: 2, title: 'STAGE\nMSG', oscPath: '/stage/message', action: 'stage_message', color: '#d97706', icon: 'message-square', description: 'Prompt stage display message' },
+        { row: 2, col: 3, title: 'LOOK 1', oscPath: '/look/1', action: 'look_1', color: '#8b5cf6', icon: 'eye', description: 'Apply Look preset 1' },
+        { row: 2, col: 4, title: 'DMX\nCUE', oscPath: '/dmx/cue', action: 'dmx_cue', color: '#0d9488', icon: 'zap', description: 'Trigger DMX stage lighting cue' },
+      ],
+      companionOscSummary: `Bitfocus Companion Setup Guide:
+1. Add the generic-osc connection in Bitfocus Companion.
+2. Set Target IP to Church Presenter host (e.g. 127.0.0.1 or LAN IP).
+3. Set Target Port to 8000 (UDP).
+4. Assign button presses to send OSC string messages to any of the 15 paths above.`,
+    };
+  }
 }
 
 const mockStore = new MockDataStore();
@@ -6859,6 +6918,37 @@ export const api = {
       return await invoke<PcoImportResult>('import_planning_center_plan', { serviceTypeId, planId });
     }
     return mockStore.importPlanningCenterPlan(serviceTypeId, planId);
+  },
+
+  // ================= Phase 10.2: Stream Deck & DMX Lighting Control =================
+
+  getDmxConfig: async (): Promise<DmxConfig> => {
+    if (isTauri()) {
+      return await invoke<DmxConfig>('get_dmx_config');
+    }
+    return mockStore.getDmxConfig();
+  },
+
+  updateDmxConfig: async (config: DmxConfig): Promise<DmxConfig> => {
+    if (isTauri()) {
+      return await invoke<DmxConfig>('update_dmx_config', { config });
+    }
+    return mockStore.updateDmxConfig(config);
+  },
+
+  sendDmxTestCue: async (channel: number, value: number): Promise<void> => {
+    if (isTauri()) {
+      await invoke<void>('send_dmx_test_cue', { channel, value });
+      return;
+    }
+    return mockStore.sendDmxTestCue(channel, value);
+  },
+
+  getStreamDeckProfile: async (): Promise<StreamDeckProfileExport> => {
+    if (isTauri()) {
+      return await invoke<StreamDeckProfileExport>('get_stream_deck_profile');
+    }
+    return mockStore.getStreamDeckProfile();
   },
 };
 

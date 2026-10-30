@@ -2496,6 +2496,46 @@ pub async fn import_planning_center_plan(
     db.import_planning_center_plan(&service_type_id, &plan_id)
 }
 
+// ================= Phase 10.2: Stream Deck & DMX Lighting Control =================
+
+#[tauri::command]
+pub async fn get_dmx_config(
+    db: State<'_, DbManager>,
+) -> Result<crate::models::DmxConfig, String> {
+    db.get_dmx_config().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_dmx_config(
+    config: crate::models::DmxConfig,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<crate::models::DmxConfig, String> {
+    let mut cfg = config;
+    cfg.updated_at = Utc::now().to_rfc3339();
+    db.update_dmx_config(&cfg).map_err(|e| e.to_string())?;
+    app.emit("dmx:config-updated", &cfg).ok();
+    Ok(cfg)
+}
+
+#[tauri::command]
+pub async fn send_dmx_test_cue(
+    channel: u16,
+    value: u8,
+    db: State<'_, DbManager>,
+    dmx: State<'_, crate::dmx::DmxService>,
+) -> Result<(), String> {
+    dmx.test_flash(&db, channel, value)
+}
+
+#[tauri::command]
+pub async fn get_stream_deck_profile(
+    db: State<'_, DbManager>,
+) -> Result<crate::dmx::StreamDeckProfileExport, String> {
+    let osc_port = db.get_osc_config().map(|c| c.listen_port).unwrap_or(8000);
+    Ok(crate::dmx::get_stream_deck_profile(osc_port))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
