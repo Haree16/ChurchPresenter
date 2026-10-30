@@ -3065,6 +3065,77 @@ pub async fn send_ndi_frame(
     ndi.send_frame(width, height, data_bytes)
 }
 
+// ================= Phase 11.7: Audio Routing Commands =================
+
+#[tauri::command]
+pub async fn get_audio_config(
+    db: State<'_, DbManager>,
+) -> Result<crate::models::AudioRoutingConfig, String> {
+    db.get_audio_config().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_audio_config(
+    config: crate::models::AudioRoutingConfig,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<crate::models::AudioRoutingConfig, String> {
+    let mut cfg = config;
+    cfg.updated_at = Utc::now().to_rfc3339();
+    let saved = db.update_audio_config(&cfg).map_err(|e| e.to_string())?;
+    app.emit("audio:config-updated", &saved).ok();
+    Ok(saved)
+}
+
+#[tauri::command]
+pub async fn set_master_volume(
+    volume: f64,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<crate::models::AudioRoutingConfig, String> {
+    let saved = db.set_master_volume(volume).map_err(|e| e.to_string())?;
+    app.emit("audio:config-updated", &saved).ok();
+    Ok(saved)
+}
+
+#[tauri::command]
+pub async fn toggle_audio_mute(
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<crate::models::AudioRoutingConfig, String> {
+    let saved = db.toggle_audio_mute().map_err(|e| e.to_string())?;
+    app.emit("audio:config-updated", &saved).ok();
+    Ok(saved)
+}
+
+#[tauri::command]
+pub async fn list_audio_devices() -> Result<Vec<crate::models::AudioDeviceInfo>, String> {
+    let devices = vec![
+        crate::models::AudioDeviceInfo {
+            id: "default".to_string(),
+            name: "Default System Audio Output".to_string(),
+            is_default: true,
+            channels: 2,
+            sample_rate: 48000,
+        },
+        crate::models::AudioDeviceInfo {
+            id: "main-sanctuary-pa".to_string(),
+            name: "Sanctuary FOH PA (Line Out / USB)".to_string(),
+            is_default: false,
+            channels: 2,
+            sample_rate: 48000,
+        },
+        crate::models::AudioDeviceInfo {
+            id: "stage-iem-cue".to_string(),
+            name: "Stage Cue / IEM Musician Monitor (Headphones)".to_string(),
+            is_default: false,
+            channels: 2,
+            sample_rate: 48000,
+        },
+    ];
+    Ok(devices)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

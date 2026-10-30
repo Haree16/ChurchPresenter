@@ -111,6 +111,14 @@ pub enum MacroStep {
         #[serde(default)]
         output_id: Option<String>,
     },
+    /// Phase 11.7: Audio Routing Step
+    Audio {
+        command: String, // "mute" | "unmute" | "toggle_mute" | "set_volume" | "set_device"
+        #[serde(default)]
+        volume: Option<f64>,
+        #[serde(default)]
+        device_id: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -240,6 +248,25 @@ pub fn validate_step(step: &MacroStep) -> std::result::Result<(), String> {
             match command.as_str() {
                 "enable" | "disable" | "toggle" | "test_pattern" => Ok(()),
                 other => Err(format!("unknown edge blend command: '{}'", other)),
+            }
+        }
+        MacroStep::Audio { command, volume, .. } => {
+            if command.trim().is_empty() {
+                return Err("choose an audio command.".to_string());
+            }
+            match command.as_str() {
+                "mute" | "unmute" | "toggle_mute" | "set_device" => Ok(()),
+                "set_volume" => {
+                    if let Some(vol) = volume {
+                        if !(0.0..=1.0).contains(vol) {
+                            return Err("volume must be between 0.0 and 1.0.".to_string());
+                        }
+                        Ok(())
+                    } else {
+                        Err("set_volume requires a volume value between 0.0 and 1.0.".to_string())
+                    }
+                }
+                other => Err(format!("unknown audio command: '{}'", other)),
             }
         }
     }
@@ -501,6 +528,40 @@ pub fn apply_step_core(
                 }
                 "test_pattern" => {
                     let _ = db.toggle_edge_blend_test_pattern(target_id);
+                }
+                _ => {}
+            }
+            Ok(StepOutcome::Done)
+        }
+        MacroStep::Audio { command, volume, device_id } => {
+            match command.as_str() {
+                "mute" => {
+                    if let Ok(mut cfg) = db.get_audio_config() {
+                        cfg.is_muted = true;
+                        let _ = db.update_audio_config(&cfg);
+                    }
+                }
+                "unmute" => {
+                    if let Ok(mut cfg) = db.get_audio_config() {
+                        cfg.is_muted = false;
+                        let _ = db.update_audio_config(&cfg);
+                    }
+                }
+                "toggle_mute" => {
+                    let _ = db.toggle_audio_mute();
+                }
+                "set_volume" => {
+                    if let Some(vol) = volume {
+                        let _ = db.set_master_volume(*vol);
+                    }
+                }
+                "set_device" => {
+                    if let Some(dev_id) = device_id {
+                        if let Ok(mut cfg) = db.get_audio_config() {
+                            cfg.main_device_id = dev_id.clone();
+                            let _ = db.update_audio_config(&cfg);
+                        }
+                    }
                 }
                 _ => {}
             }

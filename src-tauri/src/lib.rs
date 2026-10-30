@@ -468,6 +468,12 @@ pub fn run() {
             commands::update_output_edge_blend,
             commands::toggle_output_edge_blend,
             commands::toggle_output_edge_blend_test_pattern,
+            // Phase 11.7: Audio Routing
+            commands::get_audio_config,
+            commands::update_audio_config,
+            commands::set_master_volume,
+            commands::toggle_audio_mute,
+            commands::list_audio_devices,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

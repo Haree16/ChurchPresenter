@@ -33,6 +33,7 @@ export const MediaInspector: React.FC<MediaInspectorProps> = ({
   const [trimOut, setTrimOut] = useState<number | null>(asset.trimOut ?? null);
   const [isLooping, setIsLooping] = useState<boolean>(asset.isLooping ?? true);
   const [thumbnailPath, setThumbnailPath] = useState<string | null>(asset.thumbnailPath ?? null);
+  const [audioOutputDeviceId, setAudioOutputDeviceId] = useState<string | null>(asset.audioOutputDeviceId ?? null);
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -50,6 +51,7 @@ export const MediaInspector: React.FC<MediaInspectorProps> = ({
     setTrimOut(asset.trimOut ?? null);
     setIsLooping(asset.isLooping ?? true);
     setThumbnailPath(asset.thumbnailPath ?? null);
+    setAudioOutputDeviceId(asset.audioOutputDeviceId ?? null);
     setSaveSuccess(false);
     setError(null);
   }, [asset.id]);
@@ -72,6 +74,7 @@ export const MediaInspector: React.FC<MediaInspectorProps> = ({
         trimOut,
         isLooping,
         thumbnailPath,
+        audioOutputDeviceId,
         ...overrides,
       };
 
@@ -135,6 +138,7 @@ export const MediaInspector: React.FC<MediaInspectorProps> = ({
     setTrimIn(0);
     setTrimOut(null);
     setIsLooping(true);
+    setAudioOutputDeviceId(null);
 
     await handleSave({
       cropTop: 0,
@@ -146,6 +150,7 @@ export const MediaInspector: React.FC<MediaInspectorProps> = ({
       trimIn: 0,
       trimOut: null,
       isLooping: true,
+      audioOutputDeviceId: null,
     });
   };
 
@@ -377,6 +382,31 @@ export const MediaInspector: React.FC<MediaInspectorProps> = ({
             onChange={(e) => setVolume(parseFloat(e.target.value))}
             style={{ width: '100%', accentColor: '#38bdf8' }}
           />
+
+          {/* Phase 11.7: Audio Output Soundcard Override */}
+          <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Audio Output Target:</span>
+            <select
+              data-testid="audio-output-device-select"
+              aria-label="Audio Output Target"
+              value={audioOutputDeviceId ?? ''}
+              onChange={(e) => setAudioOutputDeviceId(e.target.value || null)}
+              style={{
+                width: '100%',
+                backgroundColor: '#1e293b',
+                color: '#e2e8f0',
+                border: '1px solid #334155',
+                borderRadius: '4px',
+                padding: '4px 8px',
+                fontSize: '0.75rem',
+                outline: 'none',
+              }}
+            >
+              <option value="">Default Audio Routing (Policy)</option>
+              <option value="main-sanctuary-pa">Main Sanctuary PA (FOH)</option>
+              <option value="stage-iem-cue">Stage Cue / Musician IEM</option>
+            </select>
+          </div>
         </div>
       )}
 

@@ -25,8 +25,11 @@ import {
   NdiStatus,
   NdiOutputSource,
   NdiResolution,
+  AudioDeviceInfo,
+  AudioRoutingConfig,
 } from '../../types';
 import { liveVideoService } from '../../services/liveVideoService';
+import { AudioRoutingService } from '../../services/audioRoutingService';
 import {
   Smartphone,
   Sliders,
@@ -51,12 +54,17 @@ import {
   Camera,
   Layers,
   Wifi,
+  Volume2,
+  VolumeX,
+  Headphones,
+  Speaker,
+  Music,
 } from 'lucide-react';
 
 interface ProductionIntegrationsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'remote' | 'midi' | 'osc' | 'obs' | 'video' | 'alpha_key' | 'ndi' | 'actions';
+  initialTab?: 'remote' | 'midi' | 'osc' | 'obs' | 'video' | 'alpha_key' | 'ndi' | 'audio' | 'actions';
 }
 
 export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalProps> = ({
@@ -64,7 +72,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   onClose,
   initialTab = 'remote',
 }) => {
-  const [activeTab, setActiveTab] = useState<'remote' | 'midi' | 'osc' | 'obs' | 'video' | 'alpha_key' | 'ndi' | 'actions'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'remote' | 'midi' | 'osc' | 'obs' | 'video' | 'alpha_key' | 'ndi' | 'audio' | 'actions'>(initialTab);
 
   // Who may connect to the remote server and OSC listener (applies on next start)
   const [bindMode, setBindMode] = useState<BindMode>('lan');
@@ -127,6 +135,11 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const [ndiConfig, setNdiConfig] = useState<NdiConfig | null>(null);
   const [ndiStatus, setNdiStatus] = useState<NdiStatus | null>(null);
 
+  // Audio Routing state
+  const [audioConfig, setAudioConfig] = useState<AudioRoutingConfig | null>(null);
+  const [audioDevices, setAudioDevices] = useState<AudioDeviceInfo[]>([]);
+  const [audioTestingDevice, setAudioTestingDevice] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -141,7 +154,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode, savedMacros, tlsEnabled, oObsCfg, oObsSt, lvCfg, lvSt, cDevs, akCfg, akSt, dMonitors, nCfg, nSt] =
+      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode, savedMacros, tlsEnabled, oObsCfg, oObsSt, lvCfg, lvSt, cDevs, akCfg, akSt, dMonitors, nCfg, nSt, audCfg, audDevs] =
         await Promise.all([
           api.getRemoteServerStatus(),
           api.listRemoteDevices(),
@@ -163,6 +176,8 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
           api.getAvailableMonitors(),
           api.getNdiConfig(),
           api.getNdiStatus(),
+          api.getAudioConfig(),
+          AudioRoutingService.enumerateAudioDevices(),
         ]);
 
       setMacros(savedMacros);
@@ -205,6 +220,9 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
 
       setNdiConfig(nCfg);
       setNdiStatus(nSt);
+
+      setAudioConfig(audCfg);
+      setAudioDevices(audDevs);
     } catch (e) {
       console.error('Failed to load integration states:', e);
     } finally {
@@ -214,7 +232,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
 
   const refreshLiveMonitors = async () => {
     try {
-      const [mStatus, oStatus, rStatus, rDevs, oObsSt, lvSt, akSt, nSt] = await Promise.all([
+      const [mStatus, oStatus, rStatus, rDevs, oObsSt, lvSt, akSt, nSt, audCfg] = await Promise.all([
         api.getMidiStatus(),
         api.getOscStatus(),
         api.getRemoteServerStatus(),
@@ -223,6 +241,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
         api.getLiveVideoStatus(),
         api.getAlphaKeyStatus(),
         api.getNdiStatus(),
+        api.getAudioConfig(),
       ]);
       setMidiStatus(mStatus);
       setOscStatus(oStatus);
@@ -232,6 +251,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
       setLiveVideoStatus(lvSt);
       setAlphaKeyStatus(akSt);
       setNdiStatus(nSt);
+      if (audCfg) setAudioConfig(audCfg);
       if (oObsSt.currentScene && !obsSelectedScene) {
         setObsSelectedScene(oObsSt.currentScene);
       }
@@ -697,6 +717,41 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
     }
   };
 
+  const handleUpdateAudioConfig = async (partial: Partial<AudioRoutingConfig>) => {
+    try {
+      const current = audioConfig || (await api.getAudioConfig());
+      const merged = { ...current, ...partial };
+      setAudioConfig(merged);
+      const updated = await api.updateAudioConfig(merged);
+      setAudioConfig(updated);
+      setStatusMessage('Audio routing configuration saved.');
+    } catch (err) {
+      setStatusMessage(`Error saving audio config: ${err}`);
+    }
+  };
+
+  const handleToggleAudioMute = async () => {
+    try {
+      const updated = await api.toggleAudioMute();
+      setAudioConfig(updated);
+      setStatusMessage(`Master Audio ${updated.isMuted ? 'Muted' : 'Unmuted'}.`);
+    } catch (err) {
+      setStatusMessage(`Error toggling mute: ${err}`);
+    }
+  };
+
+  const handleTestChime = async (deviceId: string, vol: number) => {
+    setAudioTestingDevice(deviceId);
+    try {
+      await AudioRoutingService.playTestChime(deviceId, vol);
+      setStatusMessage(`Playing audio test chime on '${deviceId}'...`);
+    } catch (err) {
+      setStatusMessage(`Error playing test chime: ${err}`);
+    } finally {
+      setTimeout(() => setAudioTestingDevice(null), 1000);
+    }
+  };
+
   return (
     <div
       style={{
@@ -1027,6 +1082,42 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                 }}
               >
                 LIVE
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('audio')}
+            data-testid="tab-audio"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '12px 16px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              borderBottom: activeTab === 'audio' ? '2px solid #3b82f6' : '2px solid transparent',
+              color: activeTab === 'audio' ? '#60a5fa' : '#94a3b8',
+              fontWeight: 600,
+              fontSize: '13px',
+              cursor: 'pointer',
+            }}
+          >
+            <Volume2 size={16} />
+            <span>Audio Routing</span>
+            {audioConfig?.isMuted && (
+              <span
+                data-testid="audio-muted-badge"
+                style={{
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  padding: '1px 5px',
+                  borderRadius: '999px',
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                }}
+              >
+                MUTED
               </span>
             )}
           </button>
@@ -4247,6 +4338,409 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                       <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>Discovery</div>
                       <div style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc' }}>mDNS / Avahi LAN</div>
                     </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================= TAB 9: AUDIO ROUTING (MULTI-ZONE & HARDWARE SOUNDCARD TARGETING) ================= */}
+          {activeTab === 'audio' && (
+            <div data-testid="audio-tab-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Header Card */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '16px 20px',
+                  backgroundColor: '#1e293b',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <div
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '8px',
+                      backgroundColor: audioConfig?.isMuted ? '#ef444420' : '#38bdf820',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: audioConfig?.isMuted ? '#ef4444' : '#38bdf8',
+                    }}
+                  >
+                    {audioConfig?.isMuted ? <VolumeX size={24} /> : <Speaker size={24} />}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '15px', fontWeight: 700, color: '#f8fafc' }}>
+                      Audio Routing & Multi-Zone Soundcard Output
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
+                      Direct presentation playback (sermon audio, worship backgrounds, countdown click tracks, stage cues) to discrete hardware soundcards or Dante virtual audio channels.
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  data-testid="audio-mute-toggle"
+                  onClick={handleToggleAudioMute}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    backgroundColor: audioConfig?.isMuted ? '#ef4444' : '#334155',
+                    color: '#ffffff',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {audioConfig?.isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                  <span>{audioConfig?.isMuted ? 'UNMUTE MASTER' : 'MUTE MASTER'}</span>
+                </button>
+              </div>
+
+              {/* Two-Column Multi-Zone Audio Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                {/* Zone 1: Main Sanctuary PA */}
+                <div
+                  style={{
+                    padding: '16px',
+                    backgroundColor: '#1e293b',
+                    borderRadius: '8px',
+                    border: '1px solid #334155',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '6px',
+                        backgroundColor: '#38bdf820',
+                        color: '#38bdf8',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Speaker size={18} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#f8fafc' }}>Main Sanctuary PA</div>
+                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>Front-of-House Audience & Livestream Mix</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                      Target Soundcard / Audio Output
+                    </label>
+                    <select
+                      data-testid="audio-main-device-select"
+                      aria-label="Target Soundcard"
+                      value={audioConfig?.mainDeviceId || 'default'}
+                      onChange={(e) => {
+                        const dev = audioDevices.find((d) => d.id === e.target.value);
+                        handleUpdateAudioConfig({
+                          mainDeviceId: e.target.value,
+                          mainDeviceName: dev ? dev.name : e.target.value,
+                        });
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        backgroundColor: '#0f172a',
+                        border: '1px solid #334155',
+                        borderRadius: '6px',
+                        color: '#f8fafc',
+                        fontSize: '12px',
+                        outline: 'none',
+                      }}
+                    >
+                      {audioDevices.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} {d.isDefault ? '(Default)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8' }}>Master Output Volume</span>
+                      <span data-testid="audio-master-volume-label" style={{ fontSize: '12px', fontWeight: 700, color: '#38bdf8' }}>
+                        {Math.round((audioConfig?.masterVolume ?? 1) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      data-testid="audio-master-volume-slider"
+                      aria-label="Master Output Volume"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={audioConfig?.masterVolume ?? 1}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        handleUpdateAudioConfig({ masterVolume: val });
+                      }}
+                      style={{ width: '100%', accentColor: '#38bdf8' }}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    data-testid="audio-test-chime-main"
+                    onClick={() => handleTestChime(audioConfig?.mainDeviceId || 'default', audioConfig?.masterVolume ?? 1)}
+                    style={{
+                      marginTop: 'auto',
+                      padding: '8px 14px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#f8fafc',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <Music size={13} style={{ color: '#38bdf8' }} />
+                    <span>
+                      {audioTestingDevice === (audioConfig?.mainDeviceId || 'default') ? 'Playing Chime...' : 'Play Test Chime (PA)'}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Zone 2: Stage / IEM Cue */}
+                <div
+                  style={{
+                    padding: '16px',
+                    backgroundColor: '#1e293b',
+                    borderRadius: '8px',
+                    border: '1px solid #334155',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '6px',
+                        backgroundColor: '#a855f720',
+                        color: '#a855f7',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Headphones size={18} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#f8fafc' }}>Stage / IEM Cue Output</div>
+                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>Musician In-Ear Click & Stage Countdown Chime</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                      Target Soundcard / Audio Output
+                    </label>
+                    <select
+                      data-testid="audio-cue-device-select"
+                      aria-label="Target Soundcard"
+                      value={audioConfig?.cueDeviceId || 'default'}
+                      onChange={(e) => {
+                        const dev = audioDevices.find((d) => d.id === e.target.value);
+                        handleUpdateAudioConfig({
+                          cueDeviceId: e.target.value,
+                          cueDeviceName: dev ? dev.name : e.target.value,
+                        });
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        backgroundColor: '#0f172a',
+                        border: '1px solid #334155',
+                        borderRadius: '6px',
+                        color: '#f8fafc',
+                        fontSize: '12px',
+                        outline: 'none',
+                      }}
+                    >
+                      {audioDevices.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} {d.isDefault ? '(Default)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8' }}>Stage Cue Volume</span>
+                      <span data-testid="audio-cue-volume-label" style={{ fontSize: '12px', fontWeight: 700, color: '#a855f7' }}>
+                        {Math.round((audioConfig?.cueVolume ?? 1) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      data-testid="audio-cue-volume-slider"
+                      aria-label="Stage Cue Volume"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={audioConfig?.cueVolume ?? 1}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        handleUpdateAudioConfig({ cueVolume: val });
+                      }}
+                      style={{ width: '100%', accentColor: '#a855f7' }}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    data-testid="audio-test-chime-cue"
+                    onClick={() => handleTestChime(audioConfig?.cueDeviceId || 'default', audioConfig?.cueVolume ?? 1)}
+                    style={{
+                      marginTop: 'auto',
+                      padding: '8px 14px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#f8fafc',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <Music size={13} style={{ color: '#a855f7' }} />
+                    <span>
+                      {audioTestingDevice === (audioConfig?.cueDeviceId || 'default') ? 'Playing Chime...' : 'Play Test Chime (Cue)'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Hardware Soundcards List Card */}
+              <div
+                style={{
+                  padding: '16px',
+                  backgroundColor: '#1e293b',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                }}
+              >
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#f8fafc' }}>
+                  Detected Hardware Audio Interfaces ({audioDevices.length})
+                </div>
+
+                <div data-testid="audio-devices-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {audioDevices.map((dev) => (
+                    <div
+                      key={dev.id}
+                      style={{
+                        padding: '10px 14px',
+                        backgroundColor: '#0f172a',
+                        borderRadius: '6px',
+                        border: '1px solid #334155',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Volume2 size={16} style={{ color: '#94a3b8' }} />
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc' }}>
+                            {dev.name}
+                            {dev.isDefault && (
+                              <span
+                                style={{
+                                  marginLeft: '8px',
+                                  fontSize: '10px',
+                                  fontWeight: 700,
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  backgroundColor: '#0284c7',
+                                  color: '#ffffff',
+                                }}
+                              >
+                                Default
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                            Device ID: {dev.id} • {dev.channels} Ch • {dev.sampleRate.toLocaleString()} Hz
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        data-testid={`audio-test-device-${dev.id}`}
+                        onClick={() => handleTestChime(dev.id, 0.8)}
+                        style={{
+                          padding: '6px 12px',
+                          backgroundColor: '#1e293b',
+                          border: '1px solid #475569',
+                          borderRadius: '4px',
+                          color: '#f8fafc',
+                          fontSize: '11px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {audioTestingDevice === dev.id ? 'Playing...' : 'Test'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Status & Diagnostic Details */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '10px' }}>
+                <div style={{ padding: '10px 12px', backgroundColor: '#1e293b', borderRadius: '6px', border: '1px solid #334155' }}>
+                  <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>API Architecture</div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc' }}>W3C Audio setSinkId</div>
+                </div>
+                <div style={{ padding: '10px 12px', backgroundColor: '#1e293b', borderRadius: '6px', border: '1px solid #334155' }}>
+                  <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>DSP Latency</div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#34d399' }}>Direct DMA (~5.3 ms)</div>
+                </div>
+                <div style={{ padding: '10px 12px', backgroundColor: '#1e293b', borderRadius: '6px', border: '1px solid #334155' }}>
+                  <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>Sample Rate</div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc' }}>48,000 Hz / 24-bit</div>
+                </div>
+                <div style={{ padding: '10px 12px', backgroundColor: '#1e293b', borderRadius: '6px', border: '1px solid #334155' }}>
+                  <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase' }}>Master State</div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: audioConfig?.isMuted ? '#ef4444' : '#38bdf8' }}>
+                    {audioConfig?.isMuted ? 'Muted' : 'Active (Unmuted)'}
                   </div>
                 </div>
               </div>

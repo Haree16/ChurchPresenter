@@ -58,6 +58,7 @@ const STEP_TYPES: { type: MacroStep['type']; label: string }[] = [
   { type: 'alpha_key', label: 'Alpha Key (Key & Fill)' },
   { type: 'ndi', label: 'NDI Video Output' },
   { type: 'edge_blend', label: 'Edge Blending (Multi-Projector)' },
+  { type: 'audio', label: 'Audio Routing' },
 ];
 
 export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, onClose }) => {
@@ -358,6 +359,48 @@ export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, on
               <option value="disable">Disable Edge Blend</option>
               <option value="test_pattern">Toggle Test Pattern</option>
             </select>
+          </div>
+        );
+      case 'audio':
+        return (
+          <div style={{ display: 'flex', gap: '6px', flex: 1, alignItems: 'center' }}>
+            <select
+              data-testid="step-audio-command"
+              aria-label="Audio command"
+              style={{ ...field, width: '150px' }}
+              value={step.command}
+              onChange={(e) =>
+                setStep(i, {
+                  type: 'audio',
+                  command: e.target.value as any,
+                  volume: step.volume ?? 1.0,
+                  deviceId: step.deviceId,
+                })
+              }
+            >
+              <option value="toggle_mute">Toggle Mute</option>
+              <option value="mute">Mute Output</option>
+              <option value="unmute">Unmute Output</option>
+              <option value="set_volume">Set Volume</option>
+            </select>
+            {step.command === 'set_volume' && (
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="5"
+                data-testid="step-audio-volume"
+                aria-label="Volume percentage"
+                style={{ ...field, width: '70px' }}
+                value={Math.round((step.volume ?? 1) * 100)}
+                onChange={(e) =>
+                  setStep(i, {
+                    ...step,
+                    volume: Math.max(0, Math.min(100, Number(e.target.value) || 0)) / 100,
+                  })
+                }
+              />
+            )}
           </div>
         );
     }

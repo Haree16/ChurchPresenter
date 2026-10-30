@@ -1902,6 +1902,52 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 36: Audio Routing (Multi-Zone & Soundcard Targeting) =================
+        if current_version < 36 {
+            let tx = conn.unchecked_transaction()?;
+
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS audio_routing_configs (
+                    id TEXT PRIMARY KEY,
+                    main_device_id TEXT NOT NULL DEFAULT 'default',
+                    main_device_name TEXT NOT NULL DEFAULT 'Default Audio - Main Sanctuary PA',
+                    cue_device_id TEXT NOT NULL DEFAULT 'default',
+                    cue_device_name TEXT NOT NULL DEFAULT 'Default Audio - Stage / IEM Cue',
+                    master_volume REAL NOT NULL DEFAULT 1.0,
+                    cue_volume REAL NOT NULL DEFAULT 1.0,
+                    is_muted INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+
+            let _ = tx.execute("ALTER TABLE media_assets ADD COLUMN audio_output_device_id TEXT;", []);
+
+            let now = Utc::now().to_rfc3339();
+
+            tx.execute(
+                "INSERT OR IGNORE INTO audio_routing_configs (id, main_device_id, main_device_name, cue_device_id, cue_device_name, master_volume, cue_volume, is_muted, created_at, updated_at)
+                 VALUES ('default-audio', 'default', 'Default Audio - Main Sanctuary PA', 'default', 'Default Audio - Stage / IEM Cue', 1.0, 1.0, 0, ?1, ?1);",
+                params![now],
+            )?;
+
+            tx.execute(
+                "INSERT OR IGNORE INTO action_mappings (id, action_name, display_label, category, keyboard_shortcut, is_enabled, created_at, updated_at)
+                 VALUES
+                 ('act-toggle-audio-mute', 'toggle_audio_mute', 'Toggle Master Audio Mute', 'media', NULL, 1, ?1, ?1),
+                 ('act-audio-volume-up', 'volume_up', 'Master Audio Volume Up (+5%)', 'media', NULL, 1, ?1, ?1),
+                 ('act-audio-volume-down', 'volume_down', 'Master Audio Volume Down (-5%)', 'media', NULL, 1, ?1, ?1);",
+                params![now],
+            )?;
+
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (36, ?1);",
+                params![now],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -3297,7 +3343,8 @@ impl DbManager {
             "SELECT id, filename, original_filename, relative_path, mime_type, file_size, created_at,
                     COALESCE(media_type, 'image'), duration_seconds, width, height, thumbnail_path,
                     COALESCE(crop_top, 0.0), COALESCE(crop_bottom, 0.0), COALESCE(crop_left, 0.0), COALESCE(crop_right, 0.0),
-                    COALESCE(rotation, 0), COALESCE(volume, 1.0), COALESCE(trim_in, 0.0), trim_out, COALESCE(is_looping, 1)
+                    COALESCE(rotation, 0), COALESCE(volume, 1.0), COALESCE(trim_in, 0.0), trim_out, COALESCE(is_looping, 1),
+                    audio_output_device_id
              FROM media_assets
              ORDER BY created_at DESC;",
         )?;
@@ -3325,6 +3372,7 @@ impl DbManager {
                 trim_in: row.get(18)?,
                 trim_out: row.get(19)?,
                 is_looping: row.get::<_, i64>(20)? != 0,
+                audio_output_device_id: row.get(21)?,
             })
         })?;
 
@@ -3341,7 +3389,8 @@ impl DbManager {
             "SELECT id, filename, original_filename, relative_path, mime_type, file_size, created_at,
                     COALESCE(media_type, 'image'), duration_seconds, width, height, thumbnail_path,
                     COALESCE(crop_top, 0.0), COALESCE(crop_bottom, 0.0), COALESCE(crop_left, 0.0), COALESCE(crop_right, 0.0),
-                    COALESCE(rotation, 0), COALESCE(volume, 1.0), COALESCE(trim_in, 0.0), trim_out, COALESCE(is_looping, 1)
+                    COALESCE(rotation, 0), COALESCE(volume, 1.0), COALESCE(trim_in, 0.0), trim_out, COALESCE(is_looping, 1),
+                    audio_output_device_id
              FROM media_assets
              WHERE id = ?1;",
         )?;
@@ -3369,6 +3418,7 @@ impl DbManager {
                 trim_in: row.get(18)?,
                 trim_out: row.get(19)?,
                 is_looping: row.get::<_, i64>(20)? != 0,
+                audio_output_device_id: row.get(21)?,
             })
         })?;
 
@@ -3419,8 +3469,8 @@ impl DbManager {
         let m_type = if asset.media_type.is_empty() { "image" } else { &asset.media_type };
 
         conn.execute(
-            "INSERT INTO media_assets (id, filename, original_filename, relative_path, mime_type, file_size, created_at, media_type, duration_seconds, width, height, thumbnail_path, crop_top, crop_bottom, crop_left, crop_right, rotation, volume, trim_in, trim_out, is_looping)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21);",
+            "INSERT INTO media_assets (id, filename, original_filename, relative_path, mime_type, file_size, created_at, media_type, duration_seconds, width, height, thumbnail_path, crop_top, crop_bottom, crop_left, crop_right, rotation, volume, trim_in, trim_out, is_looping, audio_output_device_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22);",
             params![
                 id,
                 asset.filename,
@@ -3442,7 +3492,8 @@ impl DbManager {
                 asset.volume,
                 asset.trim_in,
                 asset.trim_out,
-                if asset.is_looping { 1 } else { 0 }
+                if asset.is_looping { 1 } else { 0 },
+                asset.audio_output_device_id
             ],
         )?;
 
@@ -3468,6 +3519,7 @@ impl DbManager {
             trim_in: asset.trim_in,
             trim_out: asset.trim_out,
             is_looping: asset.is_looping,
+            audio_output_device_id: asset.audio_output_device_id.clone(),
         })
     }
 
@@ -3492,8 +3544,9 @@ impl DbManager {
                  volume = ?15,
                  trim_in = ?16,
                  trim_out = ?17,
-                 is_looping = ?18
-             WHERE id = ?19;",
+                 is_looping = ?18,
+                 audio_output_device_id = ?19
+             WHERE id = ?20;",
             params![
                 asset.filename,
                 asset.original_filename,
@@ -3513,6 +3566,7 @@ impl DbManager {
                 asset.trim_in,
                 asset.trim_out,
                 if asset.is_looping { 1 } else { 0 },
+                asset.audio_output_device_id,
                 asset.id
             ],
         )?;
@@ -5844,6 +5898,8 @@ impl DbManager {
         let alpha_key_configs = vec![alpha_key_config];
         let ndi_config = self.get_ndi_config()?;
         let ndi_configs = vec![ndi_config];
+        let audio_config = self.get_audio_config().unwrap_or_default();
+        let audio_configs = vec![audio_config];
         let action_mappings = self.list_action_mappings()?;
 
         let settings = {
@@ -5897,6 +5953,7 @@ impl DbManager {
             live_video_configs,
             alpha_key_configs,
             ndi_configs,
+            audio_configs,
             action_mappings,
             workspace_state,
             settings,
@@ -6238,8 +6295,8 @@ impl DbManager {
 
             if !exists {
                 tx.execute(
-                    "INSERT INTO media_assets (id, filename, original_filename, relative_path, mime_type, file_size, media_type, duration_seconds, width, height, thumbnail_path, created_at, crop_top, crop_bottom, crop_left, crop_right, rotation, volume, trim_in, trim_out, is_looping)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21);",
+                    "INSERT INTO media_assets (id, filename, original_filename, relative_path, mime_type, file_size, media_type, duration_seconds, width, height, thumbnail_path, created_at, crop_top, crop_bottom, crop_left, crop_right, rotation, volume, trim_in, trim_out, is_looping, audio_output_device_id)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22);",
                     params![
                         m.id,
                         m.filename,
@@ -6261,7 +6318,8 @@ impl DbManager {
                         m.volume,
                         m.trim_in,
                         m.trim_out,
-                        if m.is_looping { 1 } else { 0 }
+                        if m.is_looping { 1 } else { 0 },
+                        m.audio_output_device_id
                     ],
                 )?;
             }
@@ -6717,6 +6775,35 @@ impl DbManager {
                     ndi.ndi_group,
                     ndi.created_at,
                     ndi.updated_at
+                ],
+            )?;
+        }
+
+        // Restore Audio Routing configs
+        for audio in &backup.audio_configs {
+            tx.execute(
+                "INSERT INTO audio_routing_configs (id, main_device_id, main_device_name, cue_device_id, cue_device_name, master_volume, cue_volume, is_muted, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                 ON CONFLICT(id) DO UPDATE SET
+                    main_device_id = excluded.main_device_id,
+                    main_device_name = excluded.main_device_name,
+                    cue_device_id = excluded.cue_device_id,
+                    cue_device_name = excluded.cue_device_name,
+                    master_volume = excluded.master_volume,
+                    cue_volume = excluded.cue_volume,
+                    is_muted = excluded.is_muted,
+                    updated_at = excluded.updated_at;",
+                params![
+                    audio.id,
+                    audio.main_device_id,
+                    audio.main_device_name,
+                    audio.cue_device_id,
+                    audio.cue_device_name,
+                    audio.master_volume,
+                    audio.cue_volume,
+                    if audio.is_muted { 1 } else { 0 },
+                    audio.created_at,
+                    audio.updated_at
                 ],
             )?;
         }
@@ -7735,6 +7822,91 @@ impl DbManager {
         )?;
         drop(conn);
         self.get_ndi_config()
+    }
+
+    // ================= Phase 11.7: Audio Routing Config =================
+
+    pub fn get_audio_config(&self) -> Result<crate::models::AudioRoutingConfig> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, main_device_id, main_device_name, cue_device_id, cue_device_name, master_volume, cue_volume, is_muted, created_at, updated_at
+             FROM audio_routing_configs
+             WHERE id = 'default-audio';",
+        )?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            Ok(crate::models::AudioRoutingConfig {
+                id: row.get(0)?,
+                main_device_id: row.get(1)?,
+                main_device_name: row.get(2)?,
+                cue_device_id: row.get(3)?,
+                cue_device_name: row.get(4)?,
+                master_volume: row.get(5)?,
+                cue_volume: row.get(6)?,
+                is_muted: row.get::<_, i64>(7)? != 0,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+            })
+        } else {
+            Ok(crate::models::AudioRoutingConfig::default())
+        }
+    }
+
+    pub fn update_audio_config(&self, cfg: &crate::models::AudioRoutingConfig) -> Result<crate::models::AudioRoutingConfig> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO audio_routing_configs (id, main_device_id, main_device_name, cue_device_id, cue_device_name, master_volume, cue_volume, is_muted, created_at, updated_at)
+             VALUES ('default-audio', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+                main_device_id = excluded.main_device_id,
+                main_device_name = excluded.main_device_name,
+                cue_device_id = excluded.cue_device_id,
+                cue_device_name = excluded.cue_device_name,
+                master_volume = excluded.master_volume,
+                cue_volume = excluded.cue_volume,
+                is_muted = excluded.is_muted,
+                updated_at = excluded.updated_at;",
+            params![
+                &cfg.main_device_id,
+                &cfg.main_device_name,
+                &cfg.cue_device_id,
+                &cfg.cue_device_name,
+                cfg.master_volume,
+                cfg.cue_volume,
+                if cfg.is_muted { 1 } else { 0 },
+                &now,
+            ],
+        )?;
+        drop(conn);
+        self.get_audio_config()
+    }
+
+    pub fn set_master_volume(&self, volume: f64) -> Result<crate::models::AudioRoutingConfig> {
+        let clamped = volume.max(0.0).min(1.0);
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE audio_routing_configs
+             SET master_volume = ?1, updated_at = ?2
+             WHERE id = 'default-audio';",
+            params![clamped, &now],
+        )?;
+        drop(conn);
+        self.get_audio_config()
+    }
+
+    pub fn toggle_audio_mute(&self) -> Result<crate::models::AudioRoutingConfig> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE audio_routing_configs
+             SET is_muted = CASE WHEN is_muted = 0 THEN 1 ELSE 0 END, updated_at = ?1
+             WHERE id = 'default-audio';",
+            params![&now],
+        )?;
+        drop(conn);
+        self.get_audio_config()
     }
 
     // ================= Phase 10.2: DMX Lighting Config =================

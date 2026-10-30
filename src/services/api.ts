@@ -87,6 +87,8 @@ import {
   AlphaKeyStatus,
   NdiConfig,
   NdiStatus,
+  AudioDeviceInfo,
+  AudioRoutingConfig,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
@@ -2021,6 +2023,20 @@ class MockDataStore {
         }
         return;
       }
+      case 'audio':
+        if (step.command === 'mute') {
+          this.audioConfig.isMuted = true;
+        } else if (step.command === 'unmute') {
+          this.audioConfig.isMuted = false;
+        } else if (step.command === 'toggle_mute') {
+          this.audioConfig.isMuted = !this.audioConfig.isMuted;
+        } else if (step.command === 'set_volume' && typeof step.volume === 'number') {
+          this.audioConfig.masterVolume = Math.max(0, Math.min(1, step.volume));
+        } else if (step.command === 'set_device' && step.deviceId) {
+          this.audioConfig.mainDeviceId = step.deviceId;
+        }
+        this.audioConfig.updatedAt = new Date().toISOString();
+        return;
       case 'wait':
         return; // handled by the runner
     }
@@ -4669,6 +4685,15 @@ class MockDataStore {
       case 'toggle_edge_blend_test_pattern':
         await this.toggleOutputEdgeBlendTestPattern('output-audience');
         return this.getPresentationState();
+      case 'toggle_audio_mute':
+        await this.toggleAudioMute();
+        return this.getPresentationState();
+      case 'volume_up':
+        await this.setMasterVolume(Math.min(1, this.audioConfig.masterVolume + 0.05));
+        return this.getPresentationState();
+      case 'volume_down':
+        await this.setMasterVolume(Math.max(0, this.audioConfig.masterVolume - 0.05));
+        return this.getPresentationState();
       default:
         return this.getPresentationState();
     }
@@ -5680,6 +5705,67 @@ class MockDataStore {
 
   public async sendNdiFrame(_frameDataBase64: string): Promise<boolean> {
     return this.ndiConfig.isActive;
+  }
+
+  // ================= Phase 11.7: Audio Routing Mock Methods =================
+
+  private audioConfig: AudioRoutingConfig = {
+    id: 'default-audio',
+    mainDeviceId: 'default',
+    mainDeviceName: 'Default Audio - Main Sanctuary PA',
+    cueDeviceId: 'default',
+    cueDeviceName: 'Default Audio - Stage / IEM Cue',
+    masterVolume: 1.0,
+    cueVolume: 1.0,
+    isMuted: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  public async getAudioConfig(): Promise<AudioRoutingConfig> {
+    return { ...this.audioConfig };
+  }
+
+  public async updateAudioConfig(config: AudioRoutingConfig): Promise<AudioRoutingConfig> {
+    this.audioConfig = { ...this.audioConfig, ...config, updatedAt: new Date().toISOString() };
+    return { ...this.audioConfig };
+  }
+
+  public async setMasterVolume(volume: number): Promise<AudioRoutingConfig> {
+    const clamped = Math.max(0, Math.min(1, volume));
+    this.audioConfig = { ...this.audioConfig, masterVolume: clamped, updatedAt: new Date().toISOString() };
+    return { ...this.audioConfig };
+  }
+
+  public async toggleAudioMute(): Promise<AudioRoutingConfig> {
+    this.audioConfig = { ...this.audioConfig, isMuted: !this.audioConfig.isMuted, updatedAt: new Date().toISOString() };
+    return { ...this.audioConfig };
+  }
+
+  public async listAudioDevices(): Promise<AudioDeviceInfo[]> {
+    return [
+      {
+        id: 'default',
+        name: 'Default System Audio Output',
+        isDefault: true,
+        channels: 2,
+        sampleRate: 48000,
+      },
+      {
+        id: 'main-sanctuary-pa',
+        name: 'Sanctuary FOH PA (Line Out / USB)',
+        isDefault: false,
+        channels: 2,
+        sampleRate: 48000,
+      },
+      {
+        id: 'stage-iem-cue',
+        name: 'Stage Cue / IEM Musician Monitor (Headphones)',
+        isDefault: false,
+        channels: 2,
+        sampleRate: 48000,
+      },
+    ];
   }
 }
 
@@ -8186,6 +8272,58 @@ export const api = {
     if (isTauri()) {
       let unlisten: UnlistenFn | undefined;
       listen<NdiStatus>('ndi:status-changed', (event) => {
+        callback(event.payload);
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        if (unlisten) unlisten();
+      };
+    }
+    return () => {};
+  },
+
+  // ================= Phase 11.7: Audio Routing & Multi-Zone Soundcard API =================
+
+  getAudioConfig: async (): Promise<AudioRoutingConfig> => {
+    if (isTauri()) {
+      return await invoke<AudioRoutingConfig>('get_audio_config');
+    }
+    return mockStore.getAudioConfig();
+  },
+
+  updateAudioConfig: async (config: AudioRoutingConfig): Promise<AudioRoutingConfig> => {
+    if (isTauri()) {
+      return await invoke<AudioRoutingConfig>('update_audio_config', { config });
+    }
+    return mockStore.updateAudioConfig(config);
+  },
+
+  setMasterVolume: async (volume: number): Promise<AudioRoutingConfig> => {
+    if (isTauri()) {
+      return await invoke<AudioRoutingConfig>('set_master_volume', { volume });
+    }
+    return mockStore.setMasterVolume(volume);
+  },
+
+  toggleAudioMute: async (): Promise<AudioRoutingConfig> => {
+    if (isTauri()) {
+      return await invoke<AudioRoutingConfig>('toggle_audio_mute');
+    }
+    return mockStore.toggleAudioMute();
+  },
+
+  listAudioDevices: async (): Promise<AudioDeviceInfo[]> => {
+    if (isTauri()) {
+      return await invoke<AudioDeviceInfo[]>('list_audio_devices');
+    }
+    return mockStore.listAudioDevices();
+  },
+
+  onAudioConfigUpdated: (callback: (config: AudioRoutingConfig) => void): (() => void) => {
+    if (isTauri()) {
+      let unlisten: UnlistenFn | undefined;
+      listen<AudioRoutingConfig>('audio:config-updated', (event) => {
         callback(event.payload);
       }).then((fn) => {
         unlisten = fn;

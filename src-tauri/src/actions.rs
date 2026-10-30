@@ -109,7 +109,8 @@ impl ActionDispatcher {
             | "toggle_live_camera" | "switch_next_camera"
             | "toggle_alpha_key" | "open_alpha_key_outputs" | "close_alpha_key_outputs"
             | "toggle_ndi_output" | "start_ndi_output" | "stop_ndi_output"
-            | "toggle_edge_blend" | "toggle_edge_blend_test_pattern" => {
+            | "toggle_edge_blend" | "toggle_edge_blend_test_pattern"
+            | "toggle_audio_mute" | "volume_up" | "volume_down" => {
                 pres_mgr.get_state()
             }
             unknown => return Err(format!("Unsupported action '{}'", unknown)),
@@ -273,6 +274,30 @@ impl ActionDispatcher {
             };
             if let Ok(updated_output) = res {
                 app.emit("output:edge-blend-updated", &updated_output).ok();
+            }
+            app.emit(
+                "action:dispatched",
+                serde_json::json!({ "action": action_name, "timestamp": Utc::now().to_rfc3339() }),
+            )
+            .ok();
+            return Ok(pres_mgr.get_state());
+        }
+
+        if action_name == "toggle_audio_mute" || action_name == "volume_up" || action_name == "volume_down" {
+            let res = match action_name {
+                "toggle_audio_mute" => db.toggle_audio_mute(),
+                "volume_up" => {
+                    let cur = db.get_audio_config().map(|c| c.master_volume).unwrap_or(1.0);
+                    db.set_master_volume((cur + 0.05).min(1.0))
+                }
+                "volume_down" => {
+                    let cur = db.get_audio_config().map(|c| c.master_volume).unwrap_or(1.0);
+                    db.set_master_volume((cur - 0.05).max(0.0))
+                }
+                _ => db.get_audio_config(),
+            };
+            if let Ok(cfg) = res {
+                app.emit("audio:config-updated", &cfg).ok();
             }
             app.emit(
                 "action:dispatched",

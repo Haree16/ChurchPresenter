@@ -363,6 +363,9 @@ pub struct MediaAsset {
     pub trim_out: Option<f64>,
     #[serde(default = "default_true_bool")]
     pub is_looping: bool,
+    // Phase 11.7: Audio Routing Override
+    #[serde(default)]
+    pub audio_output_device_id: Option<String>,
 }
 
 impl Default for MediaAsset {
@@ -389,6 +392,7 @@ impl Default for MediaAsset {
             trim_in: 0.0,
             trim_out: None,
             is_looping: true,
+            audio_output_device_id: None,
         }
     }
 }
@@ -499,6 +503,8 @@ pub struct BackupData {
     pub alpha_key_configs: Vec<AlphaKeyConfig>,
     #[serde(default)]
     pub ndi_configs: Vec<NdiConfig>,
+    #[serde(default)]
+    pub audio_configs: Vec<AudioRoutingConfig>,
     #[serde(default)]
     pub action_mappings: Vec<ActionMapping>,
     #[serde(default)]
@@ -1411,6 +1417,51 @@ impl Default for NdiStatus {
             fps: 0.0,
             output_source: "audience".to_string(),
             error: None,
+        }
+    }
+}
+
+// ================= Phase 11.7: Audio Routing Models =================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioDeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+    pub channels: u32,
+    pub sample_rate: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioRoutingConfig {
+    pub id: String,
+    pub main_device_id: String,
+    pub main_device_name: String,
+    pub cue_device_id: String,
+    pub cue_device_name: String,
+    pub master_volume: f64,
+    pub cue_volume: f64,
+    pub is_muted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl Default for AudioRoutingConfig {
+    fn default() -> Self {
+        let now = chrono::Utc::now().to_rfc3339();
+        Self {
+            id: "default-audio".to_string(),
+            main_device_id: "default".to_string(),
+            main_device_name: "Default Audio - Main Sanctuary PA".to_string(),
+            cue_device_id: "default".to_string(),
+            cue_device_name: "Default Audio - Stage / IEM Cue".to_string(),
+            master_volume: 1.0,
+            cue_volume: 1.0,
+            is_muted: false,
+            created_at: now.clone(),
+            updated_at: now,
         }
     }
 }

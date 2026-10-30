@@ -78,6 +78,14 @@ export function validateStep(step: MacroStep): string | null {
     case 'edge_blend':
       if (!step.command) return 'choose an edge blend command.';
       return null;
+    case 'audio':
+      if (!step.command) return 'choose an audio command.';
+      if (step.command === 'set_volume') {
+        if (typeof step.volume !== 'number' || step.volume < 0 || step.volume > 1) {
+          return 'volume must be between 0.0 and 1.0.';
+        }
+      }
+      return null;
     default:
       return `unknown step type '${(step as { type: string }).type}'.`;
   }
@@ -153,6 +161,13 @@ export function stepLabel(
       if (step.command === 'toggle') return 'Edge Blend: Toggle Overlap';
       if (step.command === 'test_pattern') return 'Edge Blend: Toggle Test Pattern';
       return `Edge Blend: ${step.command}`;
+    case 'audio':
+      if (step.command === 'mute') return 'Audio: Mute Output';
+      if (step.command === 'unmute') return 'Audio: Unmute Output';
+      if (step.command === 'toggle_mute') return 'Audio: Toggle Mute';
+      if (step.command === 'set_volume') return `Audio: Set Volume to ${Math.round((step.volume ?? 1) * 100)}%`;
+      if (step.command === 'set_device') return `Audio: Set Output Soundcard (${step.deviceId || '…'})`;
+      return `Audio: ${step.command}`;
   }
 }
 
@@ -183,5 +198,7 @@ export function newStep(type: MacroStep['type']): MacroStep {
       return { type, command: 'toggle' };
     case 'edge_blend':
       return { type, command: 'toggle' };
+    case 'audio':
+      return { type, command: 'toggle_mute' };
   }
 }

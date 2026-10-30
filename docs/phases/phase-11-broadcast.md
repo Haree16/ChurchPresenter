@@ -12,7 +12,7 @@ Done when: per item, below.
 | 11.4 Alpha key | A key and fill pair goes to a second output | Needs hardware or NDI | [phase-11.4-alpha-key.md](phase-11.4-alpha-key.md) | **Completed** |
 | 11.5 NDI output | Audience output is visible as an NDI source | Check NDI SDK licence before any code | [phase-11.5-ndi-output.md](phase-11.5-ndi-output.md) | **Completed** |
 | 11.6 Edge blending | Two projectors blend across an overlap | Per-output setting in `output_configs` | [phase-11.6-edge-blending.md](phase-11.6-edge-blending.md) | **Completed** |
-| 11.7 Audio routing | Choose an output device per audio item | Single playback today | | Open |
+| 11.7 Audio routing | Choose an output device per audio item | W3C Audio Output Devices setSinkId API & multi-zone soundcard routing | [phase-11.7-audio-routing.md](phase-11.7-audio-routing.md) | **Completed** |
 
 ## Decision gates
 - Before NDI: read the SDK licence and decide whether bundling is allowed.

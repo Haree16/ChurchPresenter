@@ -271,6 +271,12 @@ export type MacroStep =
       type: 'edge_blend';
       command: 'enable' | 'disable' | 'toggle' | 'test_pattern';
       outputId?: string;
+    }
+  | {
+      type: 'audio';
+      command: 'mute' | 'unmute' | 'toggle_mute' | 'set_volume' | 'set_device';
+      volume?: number;
+      deviceId?: string;
     };
 
 export type KeyBindingTargetType = 'action' | 'prop' | 'macro' | 'look' | 'clearGroup';
@@ -517,6 +523,8 @@ export interface MediaAsset {
   trimIn?: number; // seconds
   trimOut?: number | null; // seconds
   isLooping?: boolean;
+  // Phase 11.7: Audio Routing Override
+  audioOutputDeviceId?: string | null;
 }
 
 export interface SongExportData {
@@ -580,6 +588,7 @@ export interface BackupData {
   liveVideoConfigs?: LiveVideoConfig[];
   alphaKeyConfigs?: AlphaKeyConfig[];
   ndiConfigs?: NdiConfig[];
+  audioConfigs?: AudioRoutingConfig[];
   actionMappings?: ActionMapping[];
   workspaceState?: WorkspaceState | null;
   settings: Record<string, string>;
@@ -1247,6 +1256,29 @@ export interface NdiStatus {
   ndiVersion?: string | null;
   error?: string | null;
 }
+
+// Phase 11.7: Audio Routing & Multi-Zone Soundcard Output
+export interface AudioDeviceInfo {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  channels: number;
+  sampleRate: number;
+}
+
+export interface AudioRoutingConfig {
+  id: string;
+  mainDeviceId: string;
+  mainDeviceName: string;
+  cueDeviceId: string;
+  cueDeviceName: string;
+  masterVolume: number; // 0.0 to 1.0
+  cueVolume: number; // 0.0 to 1.0
+  isMuted: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 
 
 
