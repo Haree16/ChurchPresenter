@@ -85,6 +85,12 @@ pub enum MacroStep {
         channel: u16,
         value: u8,
     },
+    /// Phase 11.2: OBS Studio WebSocket v5 Step
+    Obs {
+        command: String,
+        #[serde(default)]
+        scene_name: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -170,6 +176,15 @@ pub fn validate_step(step: &MacroStep) -> std::result::Result<(), String> {
             } else {
                 Err("DMX channel must be between 1 and 512.".to_string())
             }
+        }
+        MacroStep::Obs { command, scene_name } => {
+            if command.trim().is_empty() {
+                return Err("choose an OBS command.".to_string());
+            }
+            if command == "set_scene" && scene_name.as_deref().unwrap_or("").trim().is_empty() {
+                return Err("choose an OBS scene name.".to_string());
+            }
+            Ok(())
         }
     }
 }
@@ -363,6 +378,14 @@ pub fn apply_step_core(
                         ch[(*channel - 1) as usize] = *value;
                         let _ = crate::dmx::send_artnet_dmx(&cfg.target_ip, cfg.target_port, u, 1, &ch);
                     }
+                }
+            }
+            Ok(StepOutcome::Done)
+        }
+        MacroStep::Obs { command, scene_name } => {
+            if let Ok(cfg) = db.get_obs_config() {
+                if cfg.is_enabled {
+                    let _ = crate::obs::dispatch_obs_command(&cfg, command, scene_name.as_deref());
                 }
             }
             Ok(StepOutcome::Done)

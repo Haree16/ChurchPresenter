@@ -1692,6 +1692,49 @@ impl DbManager {
             tx.commit()?;
         }
 
+        // ================= Migration 31: OBS WebSocket Integration =================
+        if current_version < 31 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "CREATE TABLE IF NOT EXISTS obs_configs (
+                    id TEXT PRIMARY KEY,
+                    is_enabled INTEGER NOT NULL DEFAULT 0,
+                    host TEXT NOT NULL DEFAULT '127.0.0.1',
+                    port INTEGER NOT NULL DEFAULT 4455,
+                    password TEXT,
+                    auto_connect INTEGER NOT NULL DEFAULT 1,
+                    switch_scene_on_service_item INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );",
+                [],
+            )?;
+
+            let now = Utc::now().to_rfc3339();
+            tx.execute(
+                "INSERT OR IGNORE INTO obs_configs (id, is_enabled, host, port, password, auto_connect, switch_scene_on_service_item, created_at, updated_at)
+                 VALUES ('default-obs', 0, '127.0.0.1', 4455, NULL, 1, 0, ?1, ?1);",
+                params![now],
+            )?;
+
+            // Seed OBS actions in action_mappings
+            tx.execute(
+                "INSERT OR IGNORE INTO action_mappings (id, action_name, display_label, category, keyboard_shortcut, is_enabled, created_at, updated_at)
+                 VALUES
+                 ('act-obs-start-stream', 'obs_start_stream', 'OBS: Start Stream', 'broadcast', NULL, 1, ?1, ?1),
+                 ('act-obs-stop-stream', 'obs_stop_stream', 'OBS: Stop Stream', 'broadcast', NULL, 1, ?1, ?1),
+                 ('act-obs-start-record', 'obs_start_record', 'OBS: Start Record', 'broadcast', NULL, 1, ?1, ?1),
+                 ('act-obs-stop-record', 'obs_stop_record', 'OBS: Stop Record', 'broadcast', NULL, 1, ?1, ?1);",
+                params![now],
+            )?;
+
+            tx.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (31, ?1);",
+                params![now],
+            )?;
+            tx.commit()?;
+        }
+
         Ok(())
     }
 
@@ -5626,6 +5669,8 @@ impl DbManager {
         let osc_configs = vec![osc_config];
         let dmx_config = self.get_dmx_config()?;
         let dmx_configs = vec![dmx_config];
+        let obs_config = self.get_obs_config()?;
+        let obs_configs = vec![obs_config];
         let action_mappings = self.list_action_mappings()?;
 
         let settings = {
@@ -5675,6 +5720,7 @@ impl DbManager {
             midi_mappings,
             osc_configs,
             dmx_configs,
+            obs_configs,
             action_mappings,
             workspace_state,
             settings,
@@ -6353,6 +6399,33 @@ impl DbManager {
             )?;
         }
 
+        // Restore OBS configs
+        for obs in &backup.obs_configs {
+            tx.execute(
+                "INSERT INTO obs_configs (id, is_enabled, host, port, password, auto_connect, switch_scene_on_service_item, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 ON CONFLICT(id) DO UPDATE SET
+                    is_enabled = excluded.is_enabled,
+                    host = excluded.host,
+                    port = excluded.port,
+                    password = excluded.password,
+                    auto_connect = excluded.auto_connect,
+                    switch_scene_on_service_item = excluded.switch_scene_on_service_item,
+                    updated_at = excluded.updated_at;",
+                params![
+                    obs.id,
+                    if obs.is_enabled { 1 } else { 0 },
+                    obs.host,
+                    obs.port as i32,
+                    obs.password,
+                    if obs.auto_connect { 1 } else { 0 },
+                    if obs.switch_scene_on_service_item { 1 } else { 0 },
+                    obs.created_at,
+                    obs.updated_at
+                ],
+            )?;
+        }
+
         // Restore action mappings
         for act in &backup.action_mappings {
             tx.execute(
@@ -7016,6 +7089,60 @@ impl DbManager {
         Ok(cfg.clone())
     }
 
+    // ================= Phase 11.2: OBS WebSocket Config =================
+
+    pub fn get_obs_config(&self) -> Result<crate::models::ObsConfig> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, is_enabled, host, port, password, auto_connect, switch_scene_on_service_item, created_at, updated_at
+             FROM obs_configs
+             WHERE id = 'default-obs';",
+        )?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            Ok(crate::models::ObsConfig {
+                id: row.get(0)?,
+                is_enabled: row.get::<_, i64>(1)? != 0,
+                host: row.get(2)?,
+                port: row.get::<_, u32>(3)? as u16,
+                password: row.get(4)?,
+                auto_connect: row.get::<_, i64>(5)? != 0,
+                switch_scene_on_service_item: row.get::<_, i64>(6)? != 0,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        } else {
+            Ok(crate::models::ObsConfig::default())
+        }
+    }
+
+    pub fn update_obs_config(&self, cfg: &crate::models::ObsConfig) -> Result<crate::models::ObsConfig> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO obs_configs (id, is_enabled, host, port, password, auto_connect, switch_scene_on_service_item, created_at, updated_at)
+             VALUES ('default-obs', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+             ON CONFLICT(id) DO UPDATE SET
+                is_enabled = excluded.is_enabled,
+                host = excluded.host,
+                port = excluded.port,
+                password = excluded.password,
+                auto_connect = excluded.auto_connect,
+                switch_scene_on_service_item = excluded.switch_scene_on_service_item,
+                updated_at = excluded.updated_at;",
+            params![
+                if cfg.is_enabled { 1 } else { 0 },
+                cfg.host,
+                cfg.port as i64,
+                cfg.password,
+                if cfg.auto_connect { 1 } else { 0 },
+                if cfg.switch_scene_on_service_item { 1 } else { 0 },
+                now
+            ],
+        )?;
+        Ok(cfg.clone())
+    }
+
     // ================= Phase 10.2: DMX Lighting Config =================
 
     pub fn get_dmx_config(&self) -> Result<crate::models::DmxConfig> {
@@ -7153,7 +7280,11 @@ impl DbManager {
              ('act-stop-auto-advance', 'stop_auto_advance', 'Stop Auto-Advance', 'presentation', NULL, 1, ?1, ?1),
              ('act-start-recording', 'start_recording', 'Start Audience Recording', 'recording', NULL, 1, ?1, ?1),
              ('act-stop-recording', 'stop_recording', 'Stop Audience Recording', 'recording', NULL, 1, ?1, ?1),
-             ('act-toggle-recording', 'toggle_recording', 'Toggle Audience Recording', 'recording', NULL, 1, ?1, ?1);",
+             ('act-toggle-recording', 'toggle_recording', 'Toggle Audience Recording', 'recording', NULL, 1, ?1, ?1),
+             ('act-obs-start-stream', 'obs_start_stream', 'OBS: Start Stream', 'broadcast', NULL, 1, ?1, ?1),
+             ('act-obs-stop-stream', 'obs_stop_stream', 'OBS: Stop Stream', 'broadcast', NULL, 1, ?1, ?1),
+             ('act-obs-start-record', 'obs_start_record', 'OBS: Start Record', 'broadcast', NULL, 1, ?1, ?1),
+             ('act-obs-stop-record', 'obs_stop_record', 'OBS: Stop Record', 'broadcast', NULL, 1, ?1, ?1);",
             params![now],
         )?;
         Ok(())

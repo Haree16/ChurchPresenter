@@ -2709,6 +2709,109 @@ pub async fn open_recording_folder(
     recorder.open_recording_folder(&db)
 }
 
+// ================= Phase 11.2: OBS Studio WebSocket v5 =================
+
+#[tauri::command]
+pub async fn get_obs_config(
+    db: State<'_, DbManager>,
+) -> Result<crate::models::ObsConfig, String> {
+    db.get_obs_config().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_obs_config(
+    config: crate::models::ObsConfig,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<crate::models::ObsConfig, String> {
+    let mut cfg = config;
+    cfg.updated_at = Utc::now().to_rfc3339();
+    db.update_obs_config(&cfg).map_err(|e| e.to_string())?;
+    app.emit("obs:config-updated", &cfg).ok();
+    Ok(cfg)
+}
+
+#[tauri::command]
+pub async fn get_obs_status(
+    obs: State<'_, std::sync::Arc<crate::obs::ObsService>>,
+) -> Result<crate::models::ObsStatus, String> {
+    Ok(obs.get_status())
+}
+
+#[tauri::command]
+pub async fn obs_connect(
+    obs: State<'_, std::sync::Arc<crate::obs::ObsService>>,
+    db: State<'_, DbManager>,
+    app: AppHandle,
+) -> Result<crate::models::ObsStatus, String> {
+    let config = db.get_obs_config().map_err(|e| e.to_string())?;
+    let status = obs.connect(&config)?;
+    app.emit("obs:status-changed", &status).ok();
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn obs_disconnect(
+    obs: State<'_, std::sync::Arc<crate::obs::ObsService>>,
+    app: AppHandle,
+) -> Result<crate::models::ObsStatus, String> {
+    let status = obs.disconnect()?;
+    app.emit("obs:status-changed", &status).ok();
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn obs_set_scene(
+    scene_name: String,
+    obs: State<'_, std::sync::Arc<crate::obs::ObsService>>,
+    app: AppHandle,
+) -> Result<crate::models::ObsStatus, String> {
+    let status = obs.set_scene(&scene_name)?;
+    app.emit("obs:status-changed", &status).ok();
+    app.emit("obs:scene-changed", &scene_name).ok();
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn obs_start_stream(
+    obs: State<'_, std::sync::Arc<crate::obs::ObsService>>,
+    app: AppHandle,
+) -> Result<crate::models::ObsStatus, String> {
+    let status = obs.start_stream()?;
+    app.emit("obs:status-changed", &status).ok();
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn obs_stop_stream(
+    obs: State<'_, std::sync::Arc<crate::obs::ObsService>>,
+    app: AppHandle,
+) -> Result<crate::models::ObsStatus, String> {
+    let status = obs.stop_stream()?;
+    app.emit("obs:status-changed", &status).ok();
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn obs_start_record(
+    obs: State<'_, std::sync::Arc<crate::obs::ObsService>>,
+    app: AppHandle,
+) -> Result<crate::models::ObsStatus, String> {
+    let status = obs.start_record()?;
+    app.emit("obs:status-changed", &status).ok();
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn obs_stop_record(
+    obs: State<'_, std::sync::Arc<crate::obs::ObsService>>,
+    app: AppHandle,
+) -> Result<crate::models::ObsStatus, String> {
+    let status = obs.stop_record()?;
+    app.emit("obs:status-changed", &status).ok();
+    Ok(status)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

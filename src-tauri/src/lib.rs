@@ -28,6 +28,7 @@ pub mod planning_center;
 pub mod dmx;
 pub mod updater;
 pub mod recorder;
+pub mod obs;
 
 use db::DbManager;
 use midi::MidiService;
@@ -161,6 +162,7 @@ pub fn run() {
             app.manage(OscService::new());
             app.manage(dmx::DmxService::new());
             app.manage(std::sync::Arc::new(recorder::RecorderService::new(app_data_dir.clone())));
+            app.manage(std::sync::Arc::new(obs::ObsService::new()));
 
             Ok(())
         })
@@ -428,6 +430,17 @@ pub fn run() {
             commands::list_recordings,
             commands::delete_recording,
             commands::open_recording_folder,
+            // Phase 11.2: OBS Studio WebSocket v5
+            commands::get_obs_config,
+            commands::update_obs_config,
+            commands::get_obs_status,
+            commands::obs_connect,
+            commands::obs_disconnect,
+            commands::obs_set_scene,
+            commands::obs_start_stream,
+            commands::obs_stop_stream,
+            commands::obs_start_record,
+            commands::obs_stop_record,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

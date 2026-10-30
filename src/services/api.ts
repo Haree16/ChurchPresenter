@@ -78,6 +78,8 @@ import {
   RecordingConfig,
   RecordingStatus,
   RecordedFile,
+  ObsConfig,
+  ObsStatus,
 } from '../types';
 import { validateTemplate } from './slideTemplates';
 import { validateMacro, validateStep } from './macroSteps';
@@ -1956,6 +1958,19 @@ class MockDataStore {
         return;
       case 'clearGroup':
         await this.runClearGroup(step.groupId);
+        return;
+      case 'obs':
+        if (step.command === 'set_scene' && step.sceneName) {
+          await this.obsSetScene(step.sceneName);
+        } else if (step.command === 'start_stream') {
+          await this.obsStartStream();
+        } else if (step.command === 'stop_stream') {
+          await this.obsStopStream();
+        } else if (step.command === 'start_record') {
+          await this.obsStartRecord();
+        } else if (step.command === 'stop_record') {
+          await this.obsStopRecord();
+        }
         return;
       case 'wait':
         return; // handled by the runner
@@ -4498,6 +4513,18 @@ class MockDataStore {
           await this.startRecording(`rec-${Date.now()}`);
         }
         return this.getPresentationState();
+      case 'obs_start_stream':
+        await this.obsStartStream();
+        return this.getPresentationState();
+      case 'obs_stop_stream':
+        await this.obsStopStream();
+        return this.getPresentationState();
+      case 'obs_start_record':
+        await this.obsStartRecord();
+        return this.getPresentationState();
+      case 'obs_stop_record':
+        await this.obsStopRecord();
+        return this.getPresentationState();
       default:
         return this.getPresentationState();
     }
@@ -5218,6 +5245,95 @@ class MockDataStore {
 
   public async openRecordingFolder(): Promise<void> {
     // Mock open folder
+  }
+
+  // Phase 11.2: OBS Studio WebSocket v5
+  private obsConfig: ObsConfig = {
+    id: 'default-obs',
+    isEnabled: true,
+    host: '127.0.0.1',
+    port: 4455,
+    password: null,
+    autoConnect: true,
+    switchSceneOnServiceItem: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  private obsStatus: ObsStatus = {
+    isConnected: false,
+    isAuthenticated: false,
+    currentScene: 'Worship Wide',
+    scenes: ['Worship Wide', 'Pulpit Close', 'Presentation Full', 'Lower Third Overlay'],
+    isStreaming: false,
+    isRecording: false,
+    isVirtualCamActive: false,
+    error: null,
+    obsVersion: '30.0.0',
+  };
+
+  public async getObsConfig(): Promise<ObsConfig> {
+    return { ...this.obsConfig };
+  }
+
+  public async updateObsConfig(config: ObsConfig): Promise<ObsConfig> {
+    this.obsConfig = { ...config, updatedAt: new Date().toISOString() };
+    return { ...this.obsConfig };
+  }
+
+  public async getObsStatus(): Promise<ObsStatus> {
+    return { ...this.obsStatus };
+  }
+
+  public async obsConnect(): Promise<ObsStatus> {
+    if (!this.obsConfig.isEnabled) {
+      this.obsStatus.isConnected = false;
+      this.obsStatus.isAuthenticated = false;
+      this.obsStatus.error = 'OBS Integration is disabled in settings';
+      return { ...this.obsStatus };
+    }
+    this.obsStatus.isConnected = true;
+    this.obsStatus.isAuthenticated = true;
+    this.obsStatus.error = null;
+    return { ...this.obsStatus };
+  }
+
+  public async obsDisconnect(): Promise<ObsStatus> {
+    this.obsStatus.isConnected = false;
+    this.obsStatus.isAuthenticated = false;
+    this.obsStatus.isStreaming = false;
+    this.obsStatus.isRecording = false;
+    this.obsStatus.isVirtualCamActive = false;
+    this.obsStatus.error = null;
+    return { ...this.obsStatus };
+  }
+
+  public async obsSetScene(sceneName: string): Promise<ObsStatus> {
+    this.obsStatus.currentScene = sceneName;
+    if (!this.obsStatus.scenes.includes(sceneName)) {
+      this.obsStatus.scenes.push(sceneName);
+    }
+    return { ...this.obsStatus };
+  }
+
+  public async obsStartStream(): Promise<ObsStatus> {
+    this.obsStatus.isStreaming = true;
+    return { ...this.obsStatus };
+  }
+
+  public async obsStopStream(): Promise<ObsStatus> {
+    this.obsStatus.isStreaming = false;
+    return { ...this.obsStatus };
+  }
+
+  public async obsStartRecord(): Promise<ObsStatus> {
+    this.obsStatus.isRecording = true;
+    return { ...this.obsStatus };
+  }
+
+  public async obsStopRecord(): Promise<ObsStatus> {
+    this.obsStatus.isRecording = false;
+    return { ...this.obsStatus };
   }
 }
 
@@ -7373,6 +7489,107 @@ export const api = {
     if (isTauri()) {
       let unlisten: UnlistenFn | undefined;
       listen<RecordedFile>('recording:completed', (event) => {
+        callback(event.payload);
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        if (unlisten) unlisten();
+      };
+    }
+    return () => {};
+  },
+
+  // Phase 11.2: OBS Studio WebSocket v5
+  getObsConfig: async (): Promise<ObsConfig> => {
+    if (isTauri()) {
+      return await invoke<ObsConfig>('get_obs_config');
+    }
+    return mockStore.getObsConfig();
+  },
+
+  updateObsConfig: async (config: ObsConfig): Promise<ObsConfig> => {
+    if (isTauri()) {
+      return await invoke<ObsConfig>('update_obs_config', { config });
+    }
+    return mockStore.updateObsConfig(config);
+  },
+
+  getObsStatus: async (): Promise<ObsStatus> => {
+    if (isTauri()) {
+      return await invoke<ObsStatus>('get_obs_status');
+    }
+    return mockStore.getObsStatus();
+  },
+
+  obsConnect: async (): Promise<ObsStatus> => {
+    if (isTauri()) {
+      return await invoke<ObsStatus>('obs_connect');
+    }
+    return mockStore.obsConnect();
+  },
+
+  obsDisconnect: async (): Promise<ObsStatus> => {
+    if (isTauri()) {
+      return await invoke<ObsStatus>('obs_disconnect');
+    }
+    return mockStore.obsDisconnect();
+  },
+
+  obsSetScene: async (sceneName: string): Promise<ObsStatus> => {
+    if (isTauri()) {
+      return await invoke<ObsStatus>('obs_set_scene', { sceneName });
+    }
+    return mockStore.obsSetScene(sceneName);
+  },
+
+  obsStartStream: async (): Promise<ObsStatus> => {
+    if (isTauri()) {
+      return await invoke<ObsStatus>('obs_start_stream');
+    }
+    return mockStore.obsStartStream();
+  },
+
+  obsStopStream: async (): Promise<ObsStatus> => {
+    if (isTauri()) {
+      return await invoke<ObsStatus>('obs_stop_stream');
+    }
+    return mockStore.obsStopStream();
+  },
+
+  obsStartRecord: async (): Promise<ObsStatus> => {
+    if (isTauri()) {
+      return await invoke<ObsStatus>('obs_start_record');
+    }
+    return mockStore.obsStartRecord();
+  },
+
+  obsStopRecord: async (): Promise<ObsStatus> => {
+    if (isTauri()) {
+      return await invoke<ObsStatus>('obs_stop_record');
+    }
+    return mockStore.obsStopRecord();
+  },
+
+  onObsStatusChanged: (callback: (status: ObsStatus) => void): (() => void) => {
+    if (isTauri()) {
+      let unlisten: UnlistenFn | undefined;
+      listen<ObsStatus>('obs:status-changed', (event) => {
+        callback(event.payload);
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        if (unlisten) unlisten();
+      };
+    }
+    return () => {};
+  },
+
+  onObsSceneChanged: (callback: (sceneName: string) => void): (() => void) => {
+    if (isTauri()) {
+      let unlisten: UnlistenFn | undefined;
+      listen<string>('obs:scene-changed', (event) => {
         callback(event.payload);
       }).then((fn) => {
         unlisten = fn;

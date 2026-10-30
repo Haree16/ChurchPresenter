@@ -53,6 +53,7 @@ const STEP_TYPES: { type: MacroStep['type']; label: string }[] = [
   { type: 'look', label: 'Look' },
   { type: 'clearGroup', label: 'Clear group' },
   { type: 'autoAdvance', label: 'Auto-advance' },
+  { type: 'obs', label: 'OBS Studio' },
 ];
 
 export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, onClose }) => {
@@ -211,6 +212,46 @@ export const MacroManagerModal: React.FC<MacroManagerModalProps> = ({ isOpen, on
               Loop
             </label>
           </>
+        );
+      case 'obs':
+        return (
+          <div style={{ display: 'flex', gap: '6px', flex: 1, alignItems: 'center' }}>
+            <select
+              data-testid="step-obs-command"
+              aria-label="OBS command"
+              style={{ ...field, width: '130px' }}
+              value={step.command}
+              onChange={(e) =>
+                setStep(i, {
+                  type: 'obs',
+                  command: e.target.value as any,
+                  sceneName: step.sceneName ?? '',
+                })
+              }
+            >
+              <option value="set_scene">Set Scene</option>
+              <option value="start_stream">Start Stream</option>
+              <option value="stop_stream">Stop Stream</option>
+              <option value="start_record">Start Record</option>
+              <option value="stop_record">Stop Record</option>
+            </select>
+            {step.command === 'set_scene' && (
+              <input
+                data-testid="step-obs-scene"
+                aria-label="OBS scene name"
+                placeholder="Scene name (e.g. Sermon Wide)"
+                style={{ ...field, flex: 1 }}
+                value={step.sceneName ?? ''}
+                onChange={(e) =>
+                  setStep(i, {
+                    type: 'obs',
+                    command: 'set_scene',
+                    sceneName: e.target.value,
+                  })
+                }
+              />
+            )}
+          </div>
         );
     }
   };

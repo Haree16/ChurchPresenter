@@ -492,6 +492,8 @@ pub struct BackupData {
     #[serde(default)]
     pub dmx_configs: Vec<DmxConfig>,
     #[serde(default)]
+    pub obs_configs: Vec<ObsConfig>,
+    #[serde(default)]
     pub action_mappings: Vec<ActionMapping>,
     #[serde(default)]
     pub workspace_state: Option<WorkspaceState>,
@@ -1111,6 +1113,69 @@ pub struct RecordedFile {
     pub duration_seconds: u64,
     pub created_at: String,
     pub container_format: String,
+}
+
+// ================= Phase 11.2: OBS Studio WebSocket v5 Models =================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ObsConfig {
+    pub id: String,
+    pub is_enabled: bool,
+    pub host: String,
+    pub port: u16,
+    pub password: Option<String>,
+    pub auto_connect: bool,
+    pub switch_scene_on_service_item: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl Default for ObsConfig {
+    fn default() -> Self {
+        let now = chrono::Utc::now().to_rfc3339();
+        Self {
+            id: "default-obs".to_string(),
+            is_enabled: false,
+            host: "127.0.0.1".to_string(),
+            port: 4455,
+            password: None,
+            auto_connect: true,
+            switch_scene_on_service_item: false,
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ObsStatus {
+    pub is_connected: bool,
+    pub is_authenticated: bool,
+    pub current_scene: Option<String>,
+    pub scenes: Vec<String>,
+    pub is_streaming: bool,
+    pub is_recording: bool,
+    pub is_virtual_cam_active: bool,
+    pub error: Option<String>,
+    pub obs_version: Option<String>,
+}
+
+impl Default for ObsStatus {
+    fn default() -> Self {
+        Self {
+            is_connected: false,
+            is_authenticated: false,
+            current_scene: None,
+            scenes: Vec::new(),
+            is_streaming: false,
+            is_recording: false,
+            is_virtual_cam_active: false,
+            error: None,
+            obs_version: None,
+        }
+    }
 }
 
 

@@ -104,7 +104,8 @@ impl ActionDispatcher {
                 let _ = db.set_overlay_cleared(new_cleared);
                 pres_mgr.get_state()
             }
-            "start_recording" | "stop_recording" | "toggle_recording" => {
+            "start_recording" | "stop_recording" | "toggle_recording"
+            | "obs_start_stream" | "obs_stop_stream" | "obs_start_record" | "obs_stop_record" => {
                 pres_mgr.get_state()
             }
             unknown => return Err(format!("Unsupported action '{}'", unknown)),
@@ -161,6 +162,40 @@ impl ActionDispatcher {
                             app.emit("recording:status-changed", &st).ok();
                         }
                     }
+                }
+            }
+            app.emit(
+                "action:dispatched",
+                serde_json::json!({ "action": action_name, "timestamp": Utc::now().to_rfc3339() }),
+            )
+            .ok();
+            return Ok(pres_mgr.get_state());
+        }
+
+        if action_name.starts_with("obs_") {
+            if let Some(obs) = app.try_state::<std::sync::Arc<crate::obs::ObsService>>() {
+                match action_name {
+                    "obs_start_stream" => {
+                        if let Ok(st) = obs.start_stream() {
+                            app.emit("obs:status-changed", &st).ok();
+                        }
+                    }
+                    "obs_stop_stream" => {
+                        if let Ok(st) = obs.stop_stream() {
+                            app.emit("obs:status-changed", &st).ok();
+                        }
+                    }
+                    "obs_start_record" => {
+                        if let Ok(st) = obs.start_record() {
+                            app.emit("obs:status-changed", &st).ok();
+                        }
+                    }
+                    "obs_stop_record" => {
+                        if let Ok(st) = obs.stop_record() {
+                            app.emit("obs:status-changed", &st).ok();
+                        }
+                    }
+                    _ => {}
                 }
             }
             app.emit(

@@ -13,6 +13,8 @@ import {
   OscStatus,
   ActionMapping,
   Macro,
+  ObsConfig,
+  ObsStatus,
 } from '../../types';
 import {
   Smartphone,
@@ -34,12 +36,13 @@ import {
   Key,
   Eye,
   EyeOff,
+  Tv,
 } from 'lucide-react';
 
 interface ProductionIntegrationsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'remote' | 'midi' | 'osc' | 'actions';
+  initialTab?: 'remote' | 'midi' | 'osc' | 'obs' | 'actions';
 }
 
 export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalProps> = ({
@@ -47,7 +50,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   onClose,
   initialTab = 'remote',
 }) => {
-  const [activeTab, setActiveTab] = useState<'remote' | 'midi' | 'osc' | 'actions'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'remote' | 'midi' | 'osc' | 'obs' | 'actions'>(initialTab);
 
   // Who may connect to the remote server and OSC listener (applies on next start)
   const [bindMode, setBindMode] = useState<BindMode>('lan');
@@ -86,6 +89,14 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const [actionMappings, setActionMappings] = useState<ActionMapping[]>([]);
   const [actionTestResult, setActionTestResult] = useState<string | null>(null);
 
+  // OBS state
+  const [obsConfig, setObsConfig] = useState<ObsConfig | null>(null);
+  const [obsStatus, setObsStatus] = useState<ObsStatus | null>(null);
+  const [showObsPassword, setShowObsPassword] = useState<boolean>(false);
+  const [obsConnecting, setObsConnecting] = useState<boolean>(false);
+  const [obsSelectedScene, setObsSelectedScene] = useState<string>('');
+  const [obsTestSceneResult, setObsTestSceneResult] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -100,7 +111,7 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode, savedMacros, tlsEnabled] =
+      const [rStatus, rDevs, mStatus, mMappings, oCfg, oStatus, aMappings, bMode, savedMacros, tlsEnabled, oObsCfg, oObsSt] =
         await Promise.all([
           api.getRemoteServerStatus(),
           api.listRemoteDevices(),
@@ -112,6 +123,8 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
           api.getNetworkBindMode(),
           api.listMacros(),
           api.getRemoteTlsEnabled(),
+          api.getObsConfig(),
+          api.getObsStatus(),
         ]);
 
       setMacros(savedMacros);
@@ -135,6 +148,14 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
       setOscSecretDraft(oCfg.sharedSecret || '');
 
       setActionMappings(aMappings);
+
+      setObsConfig(oObsCfg);
+      setObsStatus(oObsSt);
+      if (oObsSt.currentScene) {
+        setObsSelectedScene(oObsSt.currentScene);
+      } else if (oObsSt.scenes.length > 0) {
+        setObsSelectedScene(oObsSt.scenes[0]);
+      }
     } catch (e) {
       console.error('Failed to load integration states:', e);
     } finally {
@@ -144,16 +165,21 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
 
   const refreshLiveMonitors = async () => {
     try {
-      const [mStatus, oStatus, rStatus, rDevs] = await Promise.all([
+      const [mStatus, oStatus, rStatus, rDevs, oObsSt] = await Promise.all([
         api.getMidiStatus(),
         api.getOscStatus(),
         api.getRemoteServerStatus(),
         api.listRemoteDevices(),
+        api.getObsStatus(),
       ]);
       setMidiStatus(mStatus);
       setOscStatus(oStatus);
       setRemoteStatus(rStatus);
       setRemoteDevices(rDevs);
+      setObsStatus(oObsSt);
+      if (oObsSt.currentScene && !obsSelectedScene) {
+        setObsSelectedScene(oObsSt.currentScene);
+      }
     } catch {
       // Ignore background refresh errors
     }
@@ -404,6 +430,91 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
     }
   };
 
+  // OBS Studio WebSocket Handlers
+  const handleConnectObs = async () => {
+    setObsConnecting(true);
+    try {
+      if (obsConfig) {
+        await api.updateObsConfig(obsConfig);
+      }
+      const st = await api.obsConnect();
+      setObsStatus(st);
+      if (st.currentScene) {
+        setObsSelectedScene(st.currentScene);
+      }
+      setStatusMessage(st.isConnected ? 'Connected to OBS Studio.' : `OBS: ${st.error || 'Connection failed'}`);
+    } catch (err) {
+      setStatusMessage(`Failed to connect to OBS: ${err}`);
+    } finally {
+      setObsConnecting(false);
+    }
+  };
+
+  const handleDisconnectObs = async () => {
+    try {
+      const st = await api.obsDisconnect();
+      setObsStatus(st);
+      setStatusMessage('Disconnected from OBS Studio.');
+    } catch (err) {
+      setStatusMessage(`Failed to disconnect from OBS: ${err}`);
+    }
+  };
+
+  const handleSaveObsConfig = async () => {
+    if (!obsConfig) return;
+    try {
+      const updated = await api.updateObsConfig(obsConfig);
+      setObsConfig(updated);
+      setStatusMessage('OBS WebSocket configuration saved.');
+    } catch (err) {
+      setStatusMessage(`Error saving OBS config: ${err}`);
+    }
+  };
+
+  const handleSetObsScene = async (sceneName: string) => {
+    try {
+      const st = await api.obsSetScene(sceneName);
+      setObsStatus(st);
+      setObsSelectedScene(sceneName);
+      setObsTestSceneResult(`Switched active OBS scene to "${sceneName}"`);
+      setTimeout(() => setObsTestSceneResult(null), 3000);
+    } catch (err) {
+      setObsTestSceneResult(`Failed to switch scene: ${err}`);
+    }
+  };
+
+  const handleToggleObsStream = async () => {
+    try {
+      if (obsStatus?.isStreaming) {
+        const st = await api.obsStopStream();
+        setObsStatus(st);
+        setStatusMessage('OBS Stream stopped.');
+      } else {
+        const st = await api.obsStartStream();
+        setObsStatus(st);
+        setStatusMessage('OBS Stream started.');
+      }
+    } catch (err) {
+      setStatusMessage(`Stream error: ${err}`);
+    }
+  };
+
+  const handleToggleObsRecord = async () => {
+    try {
+      if (obsStatus?.isRecording) {
+        const st = await api.obsStopRecord();
+        setObsStatus(st);
+        setStatusMessage('OBS Recording stopped.');
+      } else {
+        const st = await api.obsStartRecord();
+        setObsStatus(st);
+        setStatusMessage('OBS Recording started.');
+      }
+    } catch (err) {
+      setStatusMessage(`Record error: ${err}`);
+    }
+  };
+
   return (
     <div
       style={{
@@ -598,6 +709,37 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
             <Radio size={16} />
             <span>OSC Network Control</span>
             {oscStatus?.isRunning && (
+              <span
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: '#22c55e',
+                }}
+              />
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('obs')}
+            data-testid="tab-obs"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '12px 16px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              borderBottom: activeTab === 'obs' ? '2px solid #3b82f6' : '2px solid transparent',
+              color: activeTab === 'obs' ? '#60a5fa' : '#94a3b8',
+              fontWeight: 600,
+              fontSize: '13px',
+              cursor: 'pointer',
+            }}
+          >
+            <Tv size={16} />
+            <span>OBS Studio</span>
+            {obsStatus?.isConnected && (
               <span
                 style={{
                   width: '8px',
@@ -2037,6 +2179,499 @@ export const ProductionIntegrationsModal: React.FC<ProductionIntegrationsModalPr
                       Jumps directly to a 1-indexed slide in current presentation.
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================= TAB 4: OBS STUDIO WEBSOCKET V5 ================= */}
+          {activeTab === 'obs' && (
+            <div data-testid="obs-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Header Status Card */}
+              <div
+                style={{
+                  padding: '16px',
+                  backgroundColor: '#1e293b',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ fontWeight: 700, fontSize: '15px' }}>OBS Studio WebSocket v5</div>
+                    <span
+                      data-testid="obs-status-badge"
+                      style={{
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        backgroundColor: obsStatus?.isConnected
+                          ? 'rgba(34, 197, 94, 0.2)'
+                          : 'rgba(148, 163, 184, 0.2)',
+                        color: obsStatus?.isConnected ? '#4ade80' : '#94a3b8',
+                        border: `1px solid ${obsStatus?.isConnected ? '#22c55e' : '#64748b'}`,
+                      }}
+                    >
+                      {obsStatus?.isConnected
+                        ? `Connected (${obsStatus.obsVersion ? `OBS v${obsStatus.obsVersion}` : 'v5'})`
+                        : 'Disconnected'}
+                    </span>
+                    {obsStatus?.isStreaming && (
+                      <span
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                          color: '#f87171',
+                          border: '1px solid #ef4444',
+                        }}
+                      >
+                        LIVE ON AIR
+                      </span>
+                    )}
+                    {obsStatus?.isRecording && (
+                      <span
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          backgroundColor: 'rgba(234, 88, 12, 0.2)',
+                          color: '#fb923c',
+                          border: '1px solid #f97316',
+                        }}
+                      >
+                        REC
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
+                    Automate scene switching, broadcast streaming, and recording synchronization with OBS Studio v28+.
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {obsStatus?.isConnected ? (
+                    <button
+                      onClick={handleDisconnectObs}
+                      data-testid="obs-disconnect-btn"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '8px 14px',
+                        borderRadius: '6px',
+                        backgroundColor: '#ef4444',
+                        color: '#fff',
+                        fontWeight: 600,
+                        fontSize: '12px',
+                        border: 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Square size={13} fill="#fff" />
+                      <span>Disconnect</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleConnectObs}
+                      disabled={obsConnecting}
+                      data-testid="obs-connect-btn"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '8px 14px',
+                        borderRadius: '6px',
+                        backgroundColor: '#22c55e',
+                        color: '#fff',
+                        fontWeight: 600,
+                        fontSize: '12px',
+                        border: 'none',
+                        cursor: obsConnecting ? 'not-allowed' : 'pointer',
+                        opacity: obsConnecting ? 0.7 : 1,
+                      }}
+                    >
+                      <Play size={13} fill="#fff" />
+                      <span>{obsConnecting ? 'Connecting…' : 'Connect to OBS'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {obsStatus?.error && (
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: '6px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid #ef4444',
+                    color: '#fca5a5',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <AlertCircle size={16} />
+                  <span>{obsStatus.error}</span>
+                </div>
+              )}
+
+              {/* Grid of Cards: Connection Config & Live Scene Controls */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                {/* Connection Settings Card */}
+                <div
+                  style={{
+                    backgroundColor: '#1e293b',
+                    padding: '16px',
+                    borderRadius: '8px',
+                    border: '1px solid #334155',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: '13px', color: '#cbd5e1' }}>
+                    WebSocket Connection Settings
+                  </div>
+
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      data-testid="obs-enable-toggle"
+                      checked={obsConfig?.isEnabled ?? false}
+                      onChange={(e) =>
+                        obsConfig && setObsConfig({ ...obsConfig, isEnabled: e.target.checked })
+                      }
+                      style={{ accentColor: '#3b82f6', width: '16px', height: '16px' }}
+                    />
+                    <span>Enable OBS Studio Integration</span>
+                  </label>
+
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: 2 }}>
+                      <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                        Host / IP Address
+                      </label>
+                      <input
+                        type="text"
+                        data-testid="obs-host-input"
+                        value={obsConfig?.host || '127.0.0.1'}
+                        onChange={(e) =>
+                          obsConfig && setObsConfig({ ...obsConfig, host: e.target.value })
+                        }
+                        placeholder="127.0.0.1"
+                        style={{
+                          width: '100%',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          color: '#f8fafc',
+                          fontSize: '12px',
+                        }}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                        Port
+                      </label>
+                      <input
+                        type="number"
+                        data-testid="obs-port-input"
+                        value={obsConfig?.port || 4455}
+                        onChange={(e) =>
+                          obsConfig && setObsConfig({ ...obsConfig, port: Number(e.target.value) })
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          color: '#f8fafc',
+                          fontSize: '12px',
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                      Server Password (Optional)
+                    </label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        type={showObsPassword ? 'text' : 'password'}
+                        data-testid="obs-password-input"
+                        value={obsConfig?.password ?? ''}
+                        onChange={(e) =>
+                          obsConfig && setObsConfig({ ...obsConfig, password: e.target.value || null })
+                        }
+                        placeholder="Leave empty if password authentication is disabled in OBS"
+                        style={{
+                          flex: 1,
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          color: '#f8fafc',
+                          fontSize: '12px',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowObsPassword(!showObsPassword)}
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          color: '#94a3b8',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {showObsPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '12px',
+                        color: '#cbd5e1',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={obsConfig?.autoConnect ?? true}
+                        onChange={(e) =>
+                          obsConfig && setObsConfig({ ...obsConfig, autoConnect: e.target.checked })
+                        }
+                        style={{ accentColor: '#3b82f6' }}
+                      />
+                      <span>Auto-connect on application launch</span>
+                    </label>
+
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '12px',
+                        color: '#cbd5e1',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={obsConfig?.switchSceneOnServiceItem ?? false}
+                        onChange={(e) =>
+                          obsConfig &&
+                          setObsConfig({ ...obsConfig, switchSceneOnServiceItem: e.target.checked })
+                        }
+                        style={{ accentColor: '#3b82f6' }}
+                      />
+                      <span>Switch scene automatically when activating service items</span>
+                    </label>
+                  </div>
+
+                  <button
+                    onClick={handleSaveObsConfig}
+                    data-testid="obs-save-config-btn"
+                    style={{
+                      marginTop: '6px',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      backgroundColor: '#2563eb',
+                      border: 'none',
+                      color: '#fff',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    Save Settings
+                  </button>
+                </div>
+
+                {/* Live Scene Control & Broadcast Actions Card */}
+                <div
+                  style={{
+                    backgroundColor: '#1e293b',
+                    padding: '16px',
+                    borderRadius: '8px',
+                    border: '1px solid #334155',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: '13px', color: '#cbd5e1' }}>
+                    Active Scene & Program Output
+                  </div>
+
+                  <div
+                    style={{
+                      padding: '12px',
+                      backgroundColor: '#0f172a',
+                      borderRadius: '6px',
+                      border: '1px solid #334155',
+                    }}
+                  >
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
+                      Current Program Scene:
+                    </div>
+                    <div
+                      data-testid="obs-current-scene-name"
+                      style={{ fontSize: '15px', fontWeight: 700, color: '#38bdf8' }}
+                    >
+                      {obsStatus?.currentScene || (obsStatus?.isConnected ? 'None selected' : 'OBS Offline')}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                      Switch Program Scene
+                    </label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <select
+                        data-testid="obs-scene-select"
+                        value={obsSelectedScene}
+                        onChange={(e) => setObsSelectedScene(e.target.value)}
+                        disabled={!obsStatus?.isConnected}
+                        style={{
+                          flex: 1,
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          color: '#f8fafc',
+                          fontSize: '12px',
+                        }}
+                      >
+                        {obsStatus?.scenes && obsStatus.scenes.length > 0 ? (
+                          obsStatus.scenes.map((sc) => (
+                            <option key={sc} value={sc}>
+                              {sc}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="">No scenes available</option>
+                        )}
+                      </select>
+                      <button
+                        onClick={() => obsSelectedScene && handleSetObsScene(obsSelectedScene)}
+                        disabled={!obsStatus?.isConnected || !obsSelectedScene}
+                        data-testid="obs-switch-scene-btn"
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          backgroundColor: '#3b82f6',
+                          border: 'none',
+                          color: '#fff',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: !obsStatus?.isConnected ? 'not-allowed' : 'pointer',
+                          opacity: !obsStatus?.isConnected ? 0.5 : 1,
+                        }}
+                      >
+                        Switch
+                      </button>
+                    </div>
+                    {obsTestSceneResult && (
+                      <div style={{ fontSize: '11px', color: '#4ade80', marginTop: '6px' }}>
+                        {obsTestSceneResult}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Broadcast & Recording Trigger Buttons */}
+                  <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Live Broadcast Controls:</div>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button
+                        onClick={handleToggleObsStream}
+                        disabled={!obsStatus?.isConnected}
+                        data-testid="obs-stream-toggle-btn"
+                        style={{
+                          flex: 1,
+                          padding: '8px 12px',
+                          borderRadius: '6px',
+                          backgroundColor: obsStatus?.isStreaming ? '#ef4444' : '#1e3a8a',
+                          border: `1px solid ${obsStatus?.isStreaming ? '#dc2626' : '#2563eb'}`,
+                          color: '#fff',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          cursor: !obsStatus?.isConnected ? 'not-allowed' : 'pointer',
+                          opacity: !obsStatus?.isConnected ? 0.5 : 1,
+                        }}
+                      >
+                        {obsStatus?.isStreaming ? 'Stop Streaming' : 'Start Streaming'}
+                      </button>
+
+                      <button
+                        onClick={handleToggleObsRecord}
+                        disabled={!obsStatus?.isConnected}
+                        data-testid="obs-record-toggle-btn"
+                        style={{
+                          flex: 1,
+                          padding: '8px 12px',
+                          borderRadius: '6px',
+                          backgroundColor: obsStatus?.isRecording ? '#ea580c' : '#14532d',
+                          border: `1px solid ${obsStatus?.isRecording ? '#c2410c' : '#16a34a'}`,
+                          color: '#fff',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          cursor: !obsStatus?.isConnected ? 'not-allowed' : 'pointer',
+                          opacity: !obsStatus?.isConnected ? 0.5 : 1,
+                        }}
+                      >
+                        {obsStatus?.isRecording ? 'Stop Recording' : 'Start Recording'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Protocol v5 Documentation Box */}
+              <div
+                style={{
+                  backgroundColor: '#1e293b',
+                  padding: '14px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                }}
+              >
+                <div style={{ fontWeight: 700, fontSize: '13px', color: '#cbd5e1', marginBottom: '6px' }}>
+                  OBS Studio Setup Guide (WebSocket Protocol v5)
+                </div>
+                <div style={{ fontSize: '12px', color: '#94a3b8', lineHeight: 1.6 }}>
+                  1. In OBS Studio (v28 or later), open <strong>Tools &rarr; WebSocket Server Settings</strong>.<br />
+                  2. Check <strong>Enable WebSocket server</strong> with Server Port <code>4455</code>.<br />
+                  3. If Authentication is enabled, enter the exact password above.<br />
+                  4. Church Presenter automatically authenticates using standard SHA-256 challenge-response hashing.
                 </div>
               </div>
             </div>

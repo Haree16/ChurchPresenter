@@ -57,6 +57,12 @@ export function validateStep(step: MacroStep): string | null {
       return (step.lookId || '').trim() ? null : 'choose a look.';
     case 'clearGroup':
       return (step.groupId || '').trim() ? null : 'choose a clear group.';
+    case 'obs':
+      if (!step.command) return 'choose an OBS command.';
+      if (step.command === 'set_scene' && !(step.sceneName || '').trim()) {
+        return 'choose an OBS scene name.';
+      }
+      return null;
     default:
       return `unknown step type '${(step as { type: string }).type}'.`;
   }
@@ -101,6 +107,15 @@ export function stepLabel(
       return `Clear group ${clearGroupName?.(step.groupId) ?? ''}`.trim();
     case 'autoAdvance':
       return `Auto-advance every ${step.intervalSeconds} s${step.loopAtEnd ? ' (loop)' : ''}`;
+    case 'obs':
+      if (step.command === 'set_scene') {
+        return `OBS: Switch scene to ${step.sceneName || '…'}`;
+      }
+      if (step.command === 'start_stream') return 'OBS: Start Streaming';
+      if (step.command === 'stop_stream') return 'OBS: Stop Streaming';
+      if (step.command === 'start_record') return 'OBS: Start Recording';
+      if (step.command === 'stop_record') return 'OBS: Stop Recording';
+      return `OBS: ${step.command}`;
   }
 }
 
@@ -121,5 +136,7 @@ export function newStep(type: MacroStep['type']): MacroStep {
       return { type, lookId: '' };
     case 'clearGroup':
       return { type, groupId: '' };
+    case 'obs':
+      return { type, command: 'set_scene', sceneName: '' };
   }
 }

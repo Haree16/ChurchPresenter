@@ -248,7 +248,12 @@ export type MacroStep =
   | { type: 'wait'; seconds: number }
   | { type: 'autoAdvance'; intervalSeconds: number; loopAtEnd?: boolean }
   | { type: 'look'; lookId: string }
-  | { type: 'clearGroup'; groupId: string };
+  | { type: 'clearGroup'; groupId: string }
+  | {
+      type: 'obs';
+      command: 'set_scene' | 'start_stream' | 'stop_stream' | 'start_record' | 'stop_record';
+      sceneName?: string;
+    };
 
 export type KeyBindingTargetType = 'action' | 'prop' | 'macro' | 'look' | 'clearGroup';
 
@@ -553,6 +558,7 @@ export interface BackupData {
   remoteDevices?: RemoteDevice[];
   midiMappings?: MidiMapping[];
   oscConfigs?: OscConfig[];
+  obsConfigs?: ObsConfig[];
   actionMappings?: ActionMapping[];
   workspaceState?: WorkspaceState | null;
   settings: Record<string, string>;
@@ -1091,6 +1097,31 @@ export interface RecordedFile {
   durationSeconds: number;
   createdAt: string;
   containerFormat: string;
+}
+
+// Phase 11.2: OBS Studio WebSocket v5
+export interface ObsConfig {
+  id: string;
+  isEnabled: boolean;
+  host: string;
+  port: number;
+  password?: string | null;
+  autoConnect: boolean;
+  switchSceneOnServiceItem: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ObsStatus {
+  isConnected: boolean;
+  isAuthenticated: boolean;
+  currentScene?: string | null;
+  scenes: string[];
+  isStreaming: boolean;
+  isRecording: boolean;
+  isVirtualCamActive: boolean;
+  error?: string | null;
+  obsVersion?: string | null;
 }
 
 
