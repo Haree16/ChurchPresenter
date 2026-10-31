@@ -20,6 +20,8 @@ import {
   Play,
   RotateCcw,
   Link2,
+  Film,
+  X,
 } from 'lucide-react';
 import {
   Service,
@@ -32,7 +34,9 @@ import {
   BiblePassageQuery,
   PlaylistItemType,
 } from '../../types';
-import { backgroundImageCss } from '../../services/backgroundMedia';
+import { backgroundImageCss, isVideoBackground } from '../../services/backgroundMedia';
+import { mediaService } from '../../services/mediaService';
+import { MediaLibraryModal } from '../Media/MediaLibraryModal';
 import { api } from '../../services/api';
 import { PlaylistPanel } from './PlaylistPanel';
 import { BiblePassageModal } from './BiblePassageModal';
@@ -188,6 +192,34 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
 
   const currentService = services.find((s) => s.id === selectedServiceId) || null;
   const currentItem = items.find((it) => it.id === selectedItemId) || null;
+
+  // Slides a media-library pick will be applied to (one slide, or every slide of the item).
+  const [backgroundTargetIds, setBackgroundTargetIds] = useState<string[] | null>(null);
+
+  const applySlideBackground = async (relativePath: string | null) => {
+    if (!selectedItemId || !backgroundTargetIds) return;
+    const targets = new Set(backgroundTargetIds);
+    const updated = slides.map((sl) => (targets.has(sl.id) ? { ...sl, backgroundImage: relativePath } : sl));
+    try {
+      const saved = await api.saveServiceItemSlides(selectedItemId, updated);
+      setSlides(saved);
+    } catch (err) {
+      console.error('Failed to set slide background:', err);
+    }
+  };
+
+  const clearSlideBackground = async (slideId: string) => {
+    if (!selectedItemId) return;
+    try {
+      const saved = await api.saveServiceItemSlides(
+        selectedItemId,
+        slides.map((sl) => (sl.id === slideId ? { ...sl, backgroundImage: null } : sl))
+      );
+      setSlides(saved);
+    } catch (err) {
+      console.error('Failed to clear slide background:', err);
+    }
+  };
 
   // Filtered services
   const filteredServices = services.filter((s) => {
@@ -580,7 +612,7 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '220px 280px 1fr 280px',
+          gridTemplateColumns: 'minmax(230px, 250px) minmax(280px, 320px) minmax(0, 1fr) minmax(240px, 280px)',
           flex: 1,
           overflow: 'hidden',
         }}
@@ -603,12 +635,33 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              rowGap: '8px',
             }}
           >
-            <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
               Services
             </span>
-            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={() => setIsNewServiceOpen(true)}
+              style={{
+                padding: '5px 10px',
+                backgroundColor: '#2563eb',
+                border: 'none',
+                borderRadius: '5px',
+                color: '#ffffff',
+                fontSize: '12px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '3px',
+                cursor: 'pointer',
+              }}
+            >
+              <Plus size={12} /> New
+            </button>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexBasis: '100%' }}>
               <button
                 type="button"
                 data-testid="planning-center-btn"
@@ -652,25 +705,6 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
                 <Layers size={12} /> Templates
               </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsNewServiceOpen(true)}
-              style={{
-                padding: '4px 8px',
-                backgroundColor: '#2563eb',
-                border: 'none',
-                borderRadius: '5px',
-                color: '#ffffff',
-                fontSize: '11px',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '3px',
-                cursor: 'pointer',
-              }}
-            >
-              <Plus size={12} /> New
-            </button>
           </div>
 
           {/* Search bar */}
@@ -697,7 +731,7 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
                   border: 'none',
                   outline: 'none',
                   color: '#f8fafc',
-                  fontSize: '11px',
+                  fontSize: '12px',
                   width: '100%',
                 }}
               />
@@ -713,7 +747,7 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
                 border: '1px solid #334155',
                 borderRadius: '5px',
                 color: '#94a3b8',
-                fontSize: '11px',
+                fontSize: '12px',
               }}
             >
               <option value="all">All Categories</option>
@@ -887,6 +921,31 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
               </div>
             </div>
 
+            {currentItem && slides.length > 0 && (
+              <button
+                type="button"
+                data-testid="slides-set-background-all"
+                onClick={() => setBackgroundTargetIds(slides.map((sl) => sl.id))}
+                style={{
+                  padding: '5px 12px',
+                  backgroundColor: '#1e293b',
+                  border: '1px solid #334155',
+                  borderRadius: '6px',
+                  color: '#e2e8f0',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  cursor: 'pointer',
+                  marginLeft: 'auto',
+                  marginRight: '8px',
+                }}
+              >
+                <Film size={12} /> Background for all slides
+              </button>
+            )}
+
             {currentItem && (
               <button
                 type="button"
@@ -994,6 +1053,20 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
                         overflow: 'hidden',
                       }}
                     >
+                      {isVideoBackground(s.backgroundImage) && (
+                        <video
+                          data-testid="slide-card-bg-video"
+                          src={mediaService.resolveMediaUrl(s.backgroundImage)}
+                          muted
+                          loop
+                          playsInline
+                          preload="metadata"
+                          onMouseEnter={(e) => { e.currentTarget.play().catch(() => {}); }}
+                          onMouseLeave={(e) => { e.currentTarget.pause(); }}
+                          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0 }}
+                        />
+                      )}
+
                       {/* Dim Overlay */}
                       {s.overlayColor && (
                         <div
@@ -1068,8 +1141,34 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
                         justifyContent: 'space-between',
                       }}
                     >
-                      <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         Slide {index + 1}
+                        <button
+                          type="button"
+                          data-testid={`slide-set-background-${s.id}`}
+                          title={s.backgroundImage ? 'Change background video/image' : 'Set background video/image'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setBackgroundTargetIds([s.id]);
+                          }}
+                          style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', color: s.backgroundImage ? '#38bdf8' : '#94a3b8', display: 'flex' }}
+                        >
+                          <Film size={12} />
+                        </button>
+                        {s.backgroundImage && (
+                          <button
+                            type="button"
+                            data-testid={`slide-clear-background-${s.id}`}
+                            title="Remove background"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              clearSlideBackground(s.id);
+                            }}
+                            style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
                       </span>
                       <button
                         type="button"
@@ -1374,6 +1473,12 @@ export const ServicePlannerView: React.FC<ServicePlannerViewProps> = ({
           setStatusMessage(`Saved template "${t.name}".`);
           setTimeout(() => setStatusMessage(null), 3000);
         }}
+      />
+
+      <MediaLibraryModal
+        isOpen={backgroundTargetIds !== null}
+        onClose={() => setBackgroundTargetIds(null)}
+        onSelectMedia={(asset) => applySlideBackground(asset.relativePath)}
       />
 
       {/* 2. Scripture Lookup Modal */}

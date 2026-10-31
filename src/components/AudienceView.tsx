@@ -9,6 +9,7 @@ import { api } from '../services/api';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { goToSlideNumber } from '../services/slideJump';
 import { mediaService, getMediaTypeFromExtension } from '../services/mediaService';
+import { isVideoBackground } from '../services/backgroundMedia';
 import { liveVideoService } from '../services/liveVideoService';
 import { EdgeBlendOverlay } from './Broadcast/EdgeBlendOverlay';
 
@@ -263,6 +264,13 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
     }
   }, [mediaPlayback]);
 
+  // Themes by name, so a slide can inherit its theme's motion background instead of relying on
+  // the background copied onto it when it was generated.
+  const [allThemes, setAllThemes] = useState<Theme[]>([]);
+  useEffect(() => {
+    api.listThemes().then(setAllThemes).catch(() => setAllThemes([]));
+  }, [currentSlide?.themeOverride, screenThemeId]);
+
   // Reset background failure status when slide or media URL changes
   useEffect(() => {
     setBgFailed(false);
@@ -270,13 +278,20 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
 
   // Determine motion background video source:
   // Either from slide.backgroundImage (if it's a video file) or from active mediaPlayback of type video
-  const slideBgType = currentSlide?.backgroundImage
-    ? getMediaTypeFromExtension(currentSlide.backgroundImage)
-    : null;
+  const slideTheme = currentSlide?.themeOverride
+    ? allThemes.find((t) => t.name === currentSlide.themeOverride || t.id === currentSlide.themeOverride)
+    : undefined;
+  const inheritedThemeVideo = [overrideTheme, slideTheme]
+    .map((t) => t?.backgroundImagePath)
+    .find((p) => isVideoBackground(p));
+  const slideOwnBackground = currentSlide?.backgroundImage || null;
+  // A slide's own background wins; otherwise it inherits a video from its (or the screen's) theme.
+  const effectiveBackground = slideOwnBackground || inheritedThemeVideo || null;
+  const slideBgType = effectiveBackground ? getMediaTypeFromExtension(effectiveBackground) : null;
 
   const motionVideoUrl =
     slideBgType === 'video'
-      ? mediaService.resolveMediaUrl(currentSlide?.backgroundImage)
+      ? mediaService.resolveMediaUrl(effectiveBackground)
       : mediaPlayback?.mediaType === 'video' && mediaPlayback.mediaUrl
       ? mediaPlayback.mediaUrl
       : null;
@@ -580,7 +595,7 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
       }}
     >
       {/* Background Image Preload / Error Fallback Watcher */}
-      {currentSlide.backgroundImage && slideBgType !== 'video' && (
+      {slideOwnBackground && slideBgType !== 'video' && (
         <img
           src={mediaService.resolveMediaUrl(currentSlide.backgroundImage)}
           alt="bg-preload"
@@ -619,12 +634,13 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ outputId }) => {
             pointerEvents: 'none',
             ...mediaCropStyle,
           }}
-          onError={() => {
+          onError={(e) => {
             setBgFailed(true);
+            const mediaError = e.currentTarget.error;
             api.logClientDiagnostic(
               'WARN',
               'AudienceView',
-              'Motion background video failed to load; fell back to theme background color',
+              `Motion background video failed to load (code ${mediaError?.code ?? '?'}: ${mediaError?.message || 'no message'}); fell back to theme background color`,
               motionVideoUrl || undefined
             ).catch(() => {});
           }}

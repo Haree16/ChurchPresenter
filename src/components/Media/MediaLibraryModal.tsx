@@ -111,7 +111,7 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
         });
         if (selected && typeof selected === 'string') {
           if (!isSupportedMedia(selected)) {
-            alert(`Unsupported media format. Supported formats: ${ALL_SUPPORTED_EXTENSIONS.join(', ').toUpperCase()}`);
+            showNotification(`Unsupported media format. Supported formats: ${ALL_SUPPORTED_EXTENSIONS.join(', ').toUpperCase()}`);
             return;
           }
           setIsImporting(true);
@@ -121,7 +121,7 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
             setSelectedAssetId(newAsset.id);
             showNotification(`Imported ${newAsset.originalFilename}`);
           } catch (err: any) {
-            alert(err?.message || 'Failed to import media file');
+            showNotification(err?.message || 'Failed to import media file');
           } finally {
             setIsImporting(false);
           }
@@ -139,7 +139,7 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
     if (!file) return;
     const path = (file as any).path || file.name;
     if (!isSupportedMedia(path)) {
-      alert(`Cannot import '${path}'. Unsupported media format. Supported formats: ${ALL_SUPPORTED_EXTENSIONS.join(', ').toUpperCase()}`);
+      showNotification(`Cannot import '${path}'. Unsupported media format. Supported formats: ${ALL_SUPPORTED_EXTENSIONS.join(', ').toUpperCase()}`);
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -150,7 +150,7 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
       setSelectedAssetId(newAsset.id);
       showNotification(`Imported ${newAsset.originalFilename}`);
     } catch (err: any) {
-      alert(err?.message || 'Failed to import media file');
+      showNotification(err?.message || 'Failed to import media file');
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -165,7 +165,7 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
     const file = files[0];
     const path = (file as any).path || file.name;
     if (!isSupportedMedia(path)) {
-      alert(`Cannot import '${path}'. Unsupported media format. Supported formats: ${ALL_SUPPORTED_EXTENSIONS.join(', ').toUpperCase()}`);
+      showNotification(`Cannot import '${path}'. Unsupported media format. Supported formats: ${ALL_SUPPORTED_EXTENSIONS.join(', ').toUpperCase()}`);
       return;
     }
     setIsImporting(true);
@@ -175,7 +175,7 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
       setSelectedAssetId(newAsset.id);
       showNotification(`Imported ${newAsset.originalFilename}`);
     } catch (err: any) {
-      alert(err?.message || 'Failed to import media file');
+      showNotification(err?.message || 'Failed to import media file');
     } finally {
       setIsImporting(false);
     }
@@ -185,7 +185,7 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
     const trimmed = importPath.trim();
     if (!trimmed) return;
     if (!isSupportedMedia(trimmed)) {
-      alert(`Cannot import '${trimmed}'. Unsupported media format. Supported formats: ${ALL_SUPPORTED_EXTENSIONS.join(', ').toUpperCase()}`);
+      showNotification(`Cannot import '${trimmed}'. Unsupported media format. Supported formats: ${ALL_SUPPORTED_EXTENSIONS.join(', ').toUpperCase()}`);
       return;
     }
     setIsImporting(true);
@@ -196,7 +196,7 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
       setImportPath('');
       showNotification(`Imported ${newAsset.originalFilename}`);
     } catch (err: any) {
-      alert(err?.message || 'Failed to import media file');
+      showNotification(err?.message || 'Failed to import media file');
     } finally {
       setIsImporting(false);
     }
@@ -205,21 +205,9 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
   const handleTriggerDelete = async (asset: MediaAsset) => {
     try {
       const usageCount = await api.checkMediaAssetUsage(asset.id);
-      if (usageCount > 0) {
-        setWarningModal({
-          assetId: asset.id,
-          usageCount,
-          filename: asset.originalFilename,
-        });
-      } else {
-        if (window.confirm(`Delete "${asset.originalFilename}" from the media library?`)) {
-          await executeDelete(asset.id);
-        }
-      }
+      setWarningModal({ assetId: asset.id, usageCount, filename: asset.originalFilename });
     } catch {
-      if (window.confirm(`Delete "${asset.originalFilename}" from the media library?`)) {
-        await executeDelete(asset.id);
-      }
+      setWarningModal({ assetId: asset.id, usageCount: 0, filename: asset.originalFilename });
     }
   };
 
@@ -231,7 +219,7 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
       setWarningModal(null);
       showNotification('Media asset deleted');
     } catch (err: any) {
-      alert(err?.message || 'Failed to delete media asset');
+      showNotification(err?.message || 'Failed to delete media asset');
     }
   };
 
@@ -994,20 +982,28 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
               <AlertTriangle size={28} style={{ color: '#eab308' }} />
               <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#fef08a' }}>
-                Asset Currently In Use
+                {warningModal.usageCount > 0 ? 'Asset Currently In Use' : 'Delete Media Asset'}
               </h3>
             </div>
-            <p style={{ fontSize: '0.9rem', lineHeight: 1.5, color: '#cbd5e1' }}>
-              <strong>{warningModal.filename}</strong> is currently assigned to{' '}
-              <span style={{ color: '#38bdf8', fontWeight: 700 }}>
-                {warningModal.usageCount}
-              </span>{' '}
-              slide(s) or theme(s).
-            </p>
-            <p style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
-              Deleting it will cause those presentations to fall back to their solid background color.
-              Are you sure you want to proceed?
-            </p>
+            {warningModal.usageCount > 0 ? (
+              <>
+                <p style={{ fontSize: '0.9rem', lineHeight: 1.5, color: '#cbd5e1' }}>
+                  <strong>{warningModal.filename}</strong> is currently assigned to{' '}
+                  <span style={{ color: '#38bdf8', fontWeight: 700 }}>
+                    {warningModal.usageCount}
+                  </span>{' '}
+                  slide(s) or theme(s).
+                </p>
+                <p style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
+                  Deleting it will cause those presentations to fall back to their solid background color.
+                  Are you sure you want to proceed?
+                </p>
+              </>
+            ) : (
+              <p style={{ fontSize: '0.9rem', lineHeight: 1.5, color: '#cbd5e1' }}>
+                Delete <strong>{warningModal.filename}</strong> from the media library?
+              </p>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
               <button
                 onClick={() => setWarningModal(null)}
@@ -1035,7 +1031,7 @@ export const MediaLibraryModal: React.FC<MediaLibraryModalProps> = ({
                   cursor: 'pointer',
                 }}
               >
-                Delete Anyway
+                {warningModal.usageCount > 0 ? 'Delete Anyway' : 'Delete'}
               </button>
             </div>
           </div>

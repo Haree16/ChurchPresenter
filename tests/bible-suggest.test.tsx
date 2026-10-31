@@ -113,6 +113,28 @@ describe('Bible lookup box', () => {
     expect((screen.getByTestId('quick-reference-input') as HTMLInputElement).value).toBe('John 3:16-17');
   });
 
+  it('arrow keys move through the list and Enter picks the highlighted one; Escape closes it', async () => {
+    open();
+    const input = screen.getByTestId('quick-reference-input');
+    type('jn 3:1');
+    await screen.findByTestId('autocomplete-dropdown');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(screen.getByRole('button', { name: 'John 3:16' }).getAttribute('data-active')).toBe('true');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(screen.getByRole('button', { name: 'John 3:17' }).getAttribute('data-active')).toBe('true');
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    fireEvent.keyDown(input, { key: 'ArrowUp' }); // wraps to the last one
+    expect(screen.getByRole('button', { name: 'John 3:18' }).getAttribute('data-active')).toBe('true');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(screen.queryByTestId('autocomplete-dropdown')).toBeNull());
+    expect((input as HTMLInputElement).value).toBe('John 3:18');
+
+    type('jn 3:1');
+    await screen.findByTestId('autocomplete-dropdown');
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByTestId('autocomplete-dropdown')).toBeNull();
+  });
+
   it('shows nothing for a single letter or when nothing matches', async () => {
     open();
     type('j');

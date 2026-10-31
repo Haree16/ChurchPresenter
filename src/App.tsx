@@ -12,12 +12,18 @@ import { DatabaseHealth } from './types';
 export function App() {
   const [dbHealth, setDbHealth] = useState<DatabaseHealth | null>(null);
 
+  const [mediaReady, setMediaReady] = useState(false);
+
   useEffect(() => {
-    api.getAppDataDir().then((dir) => {
-      if (dir) {
-        mediaService.setAppDataDir(dir);
-      }
-    }).catch(() => {});
+    // Hold rendering until media URLs can be resolved, so video never gets an unplayable asset:// URL.
+    Promise.all([
+      api.getAppDataDir().then((dir) => {
+        if (dir) {
+          mediaService.setAppDataDir(dir);
+        }
+      }),
+      api.getMediaServerPort().then((port) => mediaService.setMediaServerPort(port)),
+    ].map((p) => p.catch(() => {}))).then(() => setMediaReady(true));
 
     api.getDatabaseHealth().then((health) => {
       if (health && !health.isHealthy) {
@@ -51,6 +57,10 @@ export function App() {
     }
     return 'operator';
   }, []);
+
+  if (!mediaReady) {
+    return null;
+  }
 
   if (windowMode === 'audience') {
     return <AudienceView />;

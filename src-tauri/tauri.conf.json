@@ -65,7 +65,7 @@
         "enable": true,
         "scope": ["$APPDATA/media/**", "$APPDATA/**"]
       },
-      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost http://asset.localhost data: blob:; media-src 'self' asset: https://asset.localhost http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ws: http: https:; script-src 'self'"
+      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost http://asset.localhost data: blob:; media-src 'self' http://127.0.0.1:* asset: https://asset.localhost http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ws: http: https:; script-src 'self'"
     }
   },
   "plugins": {
@@ -79,7 +79,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "category": "Presentation",
+    "category": "Productivity",
     "shortDescription": "Offline-First Church Presentation & Live Production Desktop Software",
     "longDescription": "High-performance church presentation desktop application supporting worship lyrics, scripture lookup, ordered service playlists, motion backgrounds, timers, stage confidence monitors, and livestream lower-thirds.",
     "copyright": "Copyright © 2026 Church Presenter Contributors",

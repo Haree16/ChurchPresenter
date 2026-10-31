@@ -1,5 +1,8 @@
 @charset "UTF-8";
 
+/* Utility classes used by the Hardware, Output Manager and Livestream Overlay screens */
+@tailwind utilities;
+
 /* Church Presenter Global Theme & Typography */
 :root {
   --bg-primary: #0f172a;
@@ -138,3 +141,8 @@ select option {
   overflow-wrap: break-word;
   white-space: pre-wrap;
 }
+
+/* the top bar scrolls sideways when the window is too narrow; its slim scroll bar is drawn by HeaderScrollBar */
+.header-bar { scrollbar-width: none; }
+.header-bar::-webkit-scrollbar { display: none; }
+.header-bar > * { flex-shrink: 0; }

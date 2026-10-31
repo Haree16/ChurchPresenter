@@ -140,6 +140,8 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
   const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<BibleSuggestion[]>([]);
   // only the newest suggestion request may update the list (answers can arrive out of order)
   const suggestionRequest = useRef(0);
+  // keyboard-highlighted suggestion (-1 = none)
+  const [activeSuggestion, setActiveSuggestion] = useState<number>(-1);
 
   // Search keyword state
   const [keywordQuery, setKeywordQuery] = useState<string>('');
@@ -172,6 +174,7 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
 
     // suggestions come from the verses imported for the chosen translation
     const requestId = ++suggestionRequest.current;
+    setActiveSuggestion(-1);
     if (val.trim().length >= 2) {
       try {
         const found = await api.suggestBibleReferences(val, translation);
@@ -536,6 +539,24 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
                 placeholder="Type passage (e.g. ps 23, jn 3:16-17, rom 8:38-39)..."
                 value={quickRefInput}
                 onChange={(e) => handleQuickRefChange(e.target.value)}
+                onKeyDown={(e) => {
+                  const count = autocompleteSuggestions.length;
+                  if (count === 0) return;
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setActiveSuggestion((i) => (i + 1) % count);
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setActiveSuggestion((i) => (i <= 0 ? count - 1 : i - 1));
+                  } else if (e.key === 'Enter' && activeSuggestion >= 0 && activeSuggestion < count) {
+                    e.preventDefault();
+                    applySuggestion(autocompleteSuggestions[activeSuggestion]);
+                  } else if (e.key === 'Escape') {
+                    e.stopPropagation();
+                    setAutocompleteSuggestions([]);
+                    setActiveSuggestion(-1);
+                  }
+                }}
                 style={{
                   width: '100%',
                   boxSizing: 'border-box',
@@ -570,13 +591,14 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
                     <button
                       key={idx}
                       type="button"
+                      data-active={idx === activeSuggestion}
                       onClick={() => applySuggestion(s)}
                       style={{
                         display: 'block',
                         width: '100%',
                         textAlign: 'left',
                         padding: '8px 12px',
-                        backgroundColor: 'transparent',
+                        backgroundColor: idx === activeSuggestion ? '#1e293b' : 'transparent',
                         border: 'none',
                         borderBottom: idx < autocompleteSuggestions.length - 1 ? '1px solid #1e293b' : 'none',
                         color: '#f8fafc',
@@ -584,7 +606,7 @@ export const BiblePassageModal: React.FC<BiblePassageModalProps> = ({
                         cursor: 'pointer',
                       }}
                       onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#1e293b')}
-                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = idx === activeSuggestion ? '#1e293b' : 'transparent')}
                     >
                       {s.label}
                     </button>

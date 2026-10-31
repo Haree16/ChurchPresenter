@@ -695,4 +695,32 @@ mod tests {
         let v = parse_bible_text("\u{feff}\\id RUT\n\\c 1\n\\v 1 Hello", "T").unwrap();
         assert_eq!(v[0].book_number, 8);
     }
+
+    /// Opt-in check against real Bible files: `BIBLE_FILES=/a.usfm:/b.xml cargo test real_bible_files -- --ignored --nocapture`.
+    /// Prints verse and book counts per file and fails on a file that parses to nothing or has an empty verse.
+    #[test]
+    #[ignore = "set BIBLE_FILES to a colon-separated list of real USFM/Zefania/OSIS/JSON files, or BIBLE_DIR to a folder"]
+    fn real_bible_files() {
+        let mut files: Vec<String> = std::env::var("BIBLE_FILES").unwrap_or_default().split(':').filter(|p| !p.is_empty()).map(String::from).collect();
+        if let Ok(dir) = std::env::var("BIBLE_DIR") {
+            let mut found: Vec<String> = std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("{dir}: {e}")).filter_map(|e| e.ok()).map(|e| e.path().to_string_lossy().into_owned()).collect();
+            found.sort();
+            files.extend(found);
+        }
+        let mut all = Vec::new();
+        for path in &files {
+            let Ok(raw) = std::fs::read_to_string(path) else { println!("skip (not text): {path}"); continue };
+            let Ok(verses) = parse_bible_text(&raw, "TEST") else { println!("skip (no verses): {path}"); continue };
+            for v in &verses {
+                assert!(!v.text.trim().is_empty() && v.chapter > 0 && v.verse > 0, "{path}: bad verse {} {}:{}", v.book, v.chapter, v.verse);
+            }
+            println!("== {path}: {} verses", verses.len());
+            all.extend(verses);
+        }
+        let mut books: Vec<i32> = all.iter().map(|v| v.book_number).collect();
+        books.sort();
+        books.dedup();
+        println!("TOTAL {} verses in {} books", all.len(), books.len());
+        assert!(!files.is_empty() && !all.is_empty(), "no input given");
+    }
 }

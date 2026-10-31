@@ -11,6 +11,7 @@ mod keybindings;
 mod layout;
 mod looks;
 mod macros;
+mod media_server;
 mod models;
 mod net_guard;
 mod osc;
@@ -151,6 +152,13 @@ pub fn run() {
 
             let pres_manager = PresentationManager::new();
             pres_manager.init_pointers(&db_manager);
+
+            // Taskbar/dock icon: set it on every window instead of relying on the desktop entry
+            if let Some(icon) = app.default_window_icon().cloned() {
+                for (_, window) in app.webview_windows() {
+                    let _ = window.set_icon(icon.clone());
+                }
+            }
 
             // Start monitor hotplug resilience watcher
             display::DisplayManager::start_monitor_hotplug_watcher(app.handle().clone());
@@ -390,6 +398,7 @@ pub fn run() {
             commands::get_app_info,
             commands::open_devtools,
             commands::get_app_data_dir,
+            commands::get_media_server_port,
             commands::resolve_media_url,
             commands::parse_bible_reference,
             commands::import_bible_verses,

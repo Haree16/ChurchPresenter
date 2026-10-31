@@ -2167,6 +2167,16 @@ pub async fn open_devtools(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Starts (once) the loopback server that streams video/audio from the media folder and returns its port.
+#[tauri::command]
+pub async fn get_media_server_port(app: AppHandle) -> Result<u16, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(".data"));
+    crate::media_server::start(app_data_dir.join("media"))
+}
+
 #[tauri::command]
 pub async fn get_app_data_dir(app: AppHandle) -> Result<String, String> {
     let app_data_dir = app

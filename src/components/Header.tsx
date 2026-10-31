@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Tv,
   HelpCircle,
@@ -48,6 +48,73 @@ const headerBtn: React.CSSProperties = {
   lineHeight: 1,
   whiteSpace: 'nowrap',
   flexShrink: 0,
+};
+
+/** Thin scroll bar for the top bar; the native one paints badly and cannot be made this slim. */
+const HeaderScrollBar: React.FC<{ scroller: React.RefObject<HTMLElement> }> = ({ scroller }) => {
+  const [thumb, setThumb] = useState<{ left: number; width: number } | null>(null);
+  const drag = useRef<{ startX: number; startScroll: number } | null>(null);
+
+  const measure = useCallback(() => {
+    const el = scroller.current;
+    if (!el || el.scrollWidth <= el.clientWidth + 1) return setThumb(null);
+    const width = Math.max(32, (el.clientWidth / el.scrollWidth) * el.clientWidth);
+    const room = el.clientWidth - width;
+    const max = el.scrollWidth - el.clientWidth;
+    setThumb({ width, left: max > 0 ? (el.scrollLeft / max) * room : 0 });
+  }, [scroller]);
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    measure();
+    el.addEventListener('scroll', measure);
+    window.addEventListener('resize', measure);
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    Array.from(el.children).forEach((c) => ro?.observe(c));
+    // a mouse wheel scrolls the bar sideways
+    const onWheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      el.scrollLeft += e.deltaY;
+      e.preventDefault();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      el.removeEventListener('scroll', measure);
+      window.removeEventListener('resize', measure);
+      el.removeEventListener('wheel', onWheel);
+      ro?.disconnect();
+    };
+  }, [scroller, measure]);
+
+  if (!thumb) return null;
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = scroller.current;
+    if (!el) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { startX: e.clientX, startScroll: el.scrollLeft };
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = scroller.current;
+    if (!el || !drag.current) return;
+    const room = el.clientWidth - thumb.width;
+    if (room <= 0) return;
+    el.scrollLeft = drag.current.startScroll + ((e.clientX - drag.current.startX) / room) * (el.scrollWidth - el.clientWidth);
+  };
+  return (
+    <div data-testid="header-scrollbar" style={{ position: 'absolute', left: 0, right: 0, bottom: 1, height: '3px', pointerEvents: 'none' }}>
+      <div
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={() => { drag.current = null; }}
+        style={{
+          position: 'absolute', top: 0, height: '3px', left: thumb.left, width: thumb.width,
+          borderRadius: '2px', backgroundColor: '#475569', pointerEvents: 'auto', cursor: 'grab', touchAction: 'none',
+        }}
+      />
+    </div>
+  );
 };
 
 export type OperatorActiveView = 'services' | 'presentations' | 'songs' | 'themes';
@@ -120,9 +187,13 @@ export const Header: React.FC<HeaderProps> = ({
   onClearAll,
 }) => {
   const { isLive, isBlackout, isLogo } = presentationState;
+  const scrollerRef = useRef<HTMLElement>(null);
 
   return (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
     <header
+      ref={scrollerRef}
+      className="header-bar"
       style={{
         height: '56px',
         backgroundColor: '#090d16',
@@ -132,30 +203,28 @@ export const Header: React.FC<HeaderProps> = ({
         justifyContent: 'space-between',
         padding: '0 16px',
         gap: '12px',
+        overflowX: 'auto',
+        overflowY: 'hidden',
       }}
     >
       {/* Brand & Navigation Tabs */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <img
-            src="/logo.png"
+            src="/app-icon.png"
             alt="Church Presenter"
-            style={{ width: '32px', height: '32px', borderRadius: '8px' }}
+            style={{ width: '36px', height: '36px', borderRadius: '8px' }}
           />
-          <div>
-            <div
-              style={{
-                fontWeight: 700,
-                fontSize: '14px',
-                color: '#f8fafc',
-                lineHeight: 1.2,
-              }}
-            >
-              Church Presenter
-            </div>
-            <div style={{ fontSize: '10px', color: '#64748b' }}>
-              Production Ready • Multi-Window & Livestream Presentation (v1.0.0)
-            </div>
+          <div
+            style={{
+              fontWeight: 700,
+              fontSize: '14px',
+              color: '#f8fafc',
+              lineHeight: 1.2,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Church Presenter
           </div>
         </div>
 
@@ -778,5 +847,7 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
       </div>
     </header>
+    <HeaderScrollBar scroller={scrollerRef} />
+    </div>
   );
 };

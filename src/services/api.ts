@@ -7534,6 +7534,13 @@ export const api = {
     return mockStore.getAppDataDir();
   },
 
+  getMediaServerPort: async (): Promise<number | null> => {
+    if (isTauri()) {
+      return await invoke<number>('get_media_server_port');
+    }
+    return null;
+  },
+
   resolveMediaUrl: async (relativePath: string): Promise<string> => {
     if (isTauri()) {
       return await invoke<string>('resolve_media_url', { relativePath });

@@ -48,6 +48,7 @@ export class MediaService {
   private preloadedMedia: Set<string> = new Set();
   private failedMedia: Set<string> = new Set();
   private appDataDir: string | null = null;
+  private mediaServerPort: number | null = null;
 
   private constructor() {}
 
@@ -60,6 +61,11 @@ export class MediaService {
 
   public setAppDataDir(dir: string): void {
     this.appDataDir = dir;
+  }
+
+  /** Port of the loopback media server; video/audio stream from it because WebKitGTK cannot play `asset://`. */
+  public setMediaServerPort(port: number | null): void {
+    this.mediaServerPort = port;
   }
 
   public getAppDataDir(): string | null {
@@ -89,6 +95,10 @@ export class MediaService {
     // In native Tauri desktop app runtime, resolve relative media to asset:// protocol
     if (typeof window !== 'undefined' && isTauri()) {
       const cleaned = pathOrRelative.replace(/^(\/|\\)+/, '');
+      const kind = getMediaTypeFromExtension(cleaned);
+      if (this.mediaServerPort && cleaned.startsWith('media/') && (kind === 'video' || kind === 'audio')) {
+        return `http://127.0.0.1:${this.mediaServerPort}/${cleaned.split('/').map(encodeURIComponent).join('/')}`;
+      }
       const fullPath = this.appDataDir ? `${this.appDataDir}/${cleaned}` : cleaned;
       try {
         return convertFileSrc(fullPath);

@@ -259,3 +259,36 @@ describe('service planner', () => {
     expect(service.id).not.toBe(made.id);
   });
 });
+
+describe('slide backgrounds', () => {
+  it('sets a video background on one slide and clears it again', async () => {
+    const { service } = await sampleService('Video Sunday');
+    const asset = await api.importMediaAsset('/tmp/loop.mp4');
+    const state = await api.getPresentationState();
+    render(<ServicePlannerView presentationState={state} audienceStatus={{ isOpen: false } as any} onRefreshPresentationState={vi.fn()} onToggleBlackout={vi.fn()} onToggleAudienceWindow={vi.fn()} />);
+
+    fireEvent.click((await screen.findAllByText('Video Sunday'))[0]);
+    const items = await api.getServiceItems(service.id);
+    const songItem = items.find((i) => i.itemType === 'song')!;
+    fireEvent.click(await screen.findByText(songItem.title));
+    const [first] = await api.getServiceItemSlides(songItem.id);
+
+    fireEvent.click(await screen.findByTestId(`slide-set-background-${first.id}`));
+    fireEvent.click(await screen.findByTestId(`media-asset-card-${asset.id}`));
+    fireEvent.click(await screen.findByTestId('media-apply-bg-btn'));
+
+    await waitFor(async () => {
+      const saved = await api.getServiceItemSlides(songItem.id);
+      expect(saved.find((s) => s.id === first.id)?.backgroundImage).toBe(asset.relativePath);
+      expect(saved.filter((s) => s.backgroundImage).length).toBe(1);
+    });
+    expect(await screen.findByTestId('slide-card-bg-video')).toBeTruthy();
+
+    fireEvent.click(await screen.findByTestId(`slide-clear-background-${first.id}`));
+    await waitFor(async () => {
+      const saved = await api.getServiceItemSlides(songItem.id);
+      expect(saved.every((s) => !s.backgroundImage)).toBe(true);
+    });
+    await api.deleteMediaAsset(asset.id);
+  });
+});

@@ -7,9 +7,9 @@ Done when: a church can import its songs and a PowerPoint deck, build a service 
 ## 8.1 Bible library
 Today: importers and FTS5 search exist; only about six passages are seeded and autocomplete uses a short hard-coded list.
 - Decide which public-domain translations ship (e.g. KJV, WEB) and confirm each licence. Open question for the owner.
-- DONE: autocomplete built from the imported verses (book, chapter, verse) instead of the hard-coded list of ten passages. Backend `bible_suggest.rs` (command `suggest_bible_references`); the Bible lookup box calls it. It only offers books, chapters and verses that exist, so a partial import (like the seeded John 3:16-18) never offers verses that are missing. Matches by name prefix or abbreviation in any language ("jn", "ps", "யோவ"). A space after a book offers its first chapters. Not yet: arrow-key selection in the list (mouse only).
+- DONE: autocomplete built from the imported verses (book, chapter, verse) instead of the hard-coded list of ten passages. Backend `bible_suggest.rs` (command `suggest_bible_references`); the Bible lookup box calls it. It only offers books, chapters and verses that exist, so a partial import (like the seeded John 3:16-18) never offers verses that are missing. Matches by name prefix or abbreviation in any language ("jn", "ps", "யோவ"). A space after a book offers its first chapters. Arrow keys (Up/Down, wrapping), Enter to pick and Escape to close work in the box.
 - Side-by-side translation layout on a slide: DONE. `AudienceView` renders dual-translation Bible slides (`chunk[0].translation / sec_tr`) in a side-by-side dual column grid layout with column translation badges and a dividing line.
-- Test against a full USFM and a full Zefania file (not yet done per `plan.md`).
+- Full USFM file: DONE. The complete Tamil IRV Bible (66 files) parses to 31,103 verses in 66 books, no empty verses. Re-run with `BIBLE_DIR=/folder cargo test real_bible_files -- --ignored --nocapture` (or `BIBLE_FILES=/a:/b`). Not done: a full Zefania file (no real sample available).
 
 ## 8.2 CCLI reporting
 Status: done, except matching CCLI's official file layout (see below). Migration 22, `ccli.rs`.
